@@ -67,9 +67,91 @@ export interface AudioDevices {
   system: string[];
 }
 
+export type ErrorMode = "wait" | "advance";
+
+export interface TrainerPrefs {
+  layout: "single" | "lane";
+  errorMode: ErrorMode;
+  names: "always" | "struggle" | "never";
+}
+
 export interface UiPrefs {
   noteNames: "solfege" | "latin";
   wizardDone: boolean;
+  trainer: TrainerPrefs;
+}
+
+export type Clef = "treble" | "bass";
+
+export interface TrainerLevel {
+  id: number;
+  title: string;
+  description: string;
+  grandStaff: boolean;
+  pool: [number, Clef][];
+}
+
+export interface LevelStat {
+  level: number;
+  sessions: number;
+  bestAccuracy: number;
+  lastAccuracy: number;
+  lastReactionMs: number;
+  passed: boolean;
+}
+
+export interface NoteStatView {
+  clef: Clef;
+  midi: number;
+  attempts: number;
+  accuracy: number;
+  avgReactionMs: number;
+}
+
+export interface TrainerOverview {
+  levels: TrainerLevel[];
+  unlocked: number;
+  levelStats: LevelStat[];
+  noteStats: NoteStatView[];
+  passAccuracy: number;
+  passReactionMs: number;
+  storageError: boolean;
+}
+
+export interface TrainerTarget {
+  id: string;
+  midi: number;
+  clef: Clef;
+  step: string;
+  alter: number;
+  octave: number;
+}
+
+export interface SessionView {
+  level: number;
+  mode: ErrorMode;
+  grandStaff: boolean;
+  targets: TrainerTarget[];
+}
+
+export type Feedback =
+  | { kind: "correct"; index: number; reactionMs: number }
+  | { kind: "wrong"; index: number; played: number; expected: number; hint: boolean; advanced: boolean };
+
+export interface TrainerSummary {
+  level: number;
+  notes: number;
+  firstTry: number;
+  accuracy: number;
+  avgReactionMs: number;
+  trouble: { midi: number; clef: Clef; errors: number }[];
+  passed: boolean;
+  unlockedLevel: number | null;
+}
+
+export interface TrainerEvent {
+  feedback: Feedback;
+  finished: TrainerSummary | null;
 }
 
 export interface FullState {
@@ -91,6 +173,7 @@ export interface Events {
   midi: MidiEvent;
   devices: DevicesSnapshot;
   audio: AudioStatus;
+  trainer: TrainerEvent;
 }
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -119,6 +202,11 @@ export const api = {
   playNote: (note: number, velocity: number, on: boolean) => invoke<void>("play_note", { note, velocity, on }),
   rescanDevices: () => invoke<DevicesSnapshot>("rescan_devices"),
   simulateMidi: (device: string, bytes: number[]) => invoke<void>("simulate_midi", { device, bytes }),
+  trainerOverview: () => invoke<TrainerOverview>("trainer_overview"),
+  trainerStart: (level: number, mode: ErrorMode, count = 20) =>
+    invoke<SessionView>("trainer_start", { level, mode, count }),
+  trainerReady: () => invoke<void>("trainer_ready"),
+  trainerStop: () => invoke<void>("trainer_stop"),
 };
 
 export async function pickSoundfont(): Promise<string | null> {

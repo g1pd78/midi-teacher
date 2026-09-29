@@ -2,6 +2,7 @@
 
 use mt_core::audio::AudioConfig;
 use mt_core::devices::DeviceSettings;
+use mt_core::trainer::ErrorMode;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -13,6 +14,28 @@ pub struct UiPrefs {
     pub note_names: String,
     /// Мастер первого запуска пройден.
     pub wizard_done: bool,
+    pub trainer: TrainerPrefs,
+}
+
+/// Настройки тренажёра чтения нот.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TrainerPrefs {
+    /// `single` — по одной ноте, `lane` — лентой.
+    pub layout: String,
+    pub error_mode: ErrorMode,
+    /// Подписи нот: `always`, `struggle` (при затруднении), `never`.
+    pub names: String,
+}
+
+impl Default for TrainerPrefs {
+    fn default() -> Self {
+        Self {
+            layout: "single".into(),
+            error_mode: ErrorMode::Wait,
+            names: "struggle".into(),
+        }
+    }
 }
 
 impl Default for UiPrefs {
@@ -20,6 +43,7 @@ impl Default for UiPrefs {
         Self {
             note_names: "solfege".into(),
             wizard_done: false,
+            trainer: TrainerPrefs::default(),
         }
     }
 }

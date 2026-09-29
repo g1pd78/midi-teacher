@@ -17,6 +17,7 @@
     "@tauri-apps/plugin-opener": "^2.6.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "verovio": "^6.3.0",
     "zustand": "^5.0.15"
   },
   "devDependencies": {

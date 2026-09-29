@@ -7,4 +7,6 @@ pub mod audio;
 pub mod clock;
 pub mod devices;
 pub mod midi;
+pub mod store;
 pub mod synth;
+pub mod trainer;

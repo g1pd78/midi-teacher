@@ -2,11 +2,13 @@
 //! команды и события Tauri и хранит настройки.
 
 mod settings;
+mod trainer;
 
 use crossbeam_channel::unbounded;
 use mt_core::audio::{AudioConfig, AudioDevices, AudioEngine, AudioMeters, AudioStatus};
 use mt_core::devices::{DeviceEvent, DeviceManager, DevicesSnapshot, InputSettings, SoundRoute};
 use mt_core::midi::MidiMessage;
+use mt_core::store::Store;
 use parking_lot::Mutex;
 use serde::Serialize;
 use settings::{AppSettings, UiPrefs};
@@ -15,6 +17,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
+use trainer::TrainerHub;
 
 struct AppState {
     devices: Arc<DeviceManager>,
@@ -180,6 +183,18 @@ pub fn run() {
             log::info!("настройки: {}", settings_path.display());
 
             let audio = AudioEngine::start(settings.audio.clone());
+            // Прогресс обучения. Если база недоступна, тренажёр работает без сохранения.
+            let data_dir = app.path().app_data_dir()?;
+            std::fs::create_dir_all(&data_dir)?;
+            let store = match Store::open(&data_dir.join("progress.db")) {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    log::error!("база прогресса недоступна: {e:#}");
+                    None
+                }
+            };
+            let hub = Arc::new(TrainerHub::new(store));
+
             let (tx, rx) = unbounded::<DeviceEvent>();
             let devices = DeviceManager::start(audio.clone(), tx, settings.devices.clone());
 
@@ -194,12 +209,16 @@ pub fn run() {
             // События ядра → интерфейс.
             let handle = app.handle().clone();
             let dev = devices.clone();
+            let trainer_hub = hub.clone();
             thread::Builder::new()
                 .name("mt-events".into())
                 .spawn(move || {
                     for ev in rx {
                         match ev {
                             DeviceEvent::Midi(e) => {
+                                if let MidiMessage::NoteOn { note, .. } = e.msg {
+                                    trainer_hub.on_note_on(&handle, note, e.time_us);
+                                }
                                 let _ = handle.emit("midi", e);
                             }
                             DeviceEvent::Changed => {
@@ -244,6 +263,7 @@ pub fn run() {
             }
 
             app.manage(state);
+            app.manage(hub);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -259,6 +279,10 @@ pub fn run() {
             play_note,
             rescan_devices,
             simulate_midi,
+            trainer::trainer_overview,
+            trainer::trainer_start,
+            trainer::trainer_ready,
+            trainer::trainer_stop,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска приложения");

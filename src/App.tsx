@@ -3,9 +3,10 @@ import { useApp } from "./store";
 import { Header } from "./components/Header";
 import { Home } from "./screens/Home";
 import { Settings } from "./screens/Settings";
+import { Trainer } from "./screens/Trainer";
 import { Wizard } from "./screens/Wizard";
 
-export type Screen = "home" | "settings";
+export type Screen = "home" | "trainer" | "settings";
 
 export function App() {
   const { ready, init, prefs } = useApp();
@@ -23,7 +24,9 @@ export function App() {
   return (
     <div className="app">
       <Header screen={screen} onNavigate={setScreen} />
-      {screen === "home" ? <Home /> : <Settings />}
+      {screen === "home" && <Home onNavigate={setScreen} />}
+      {screen === "trainer" && <Trainer />}
+      {screen === "settings" && <Settings />}
     </div>
   );
 }

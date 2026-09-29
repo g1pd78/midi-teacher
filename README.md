@@ -8,8 +8,9 @@
 - Техническая архитектура: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Чеклисты приёмки: [docs/checklists/](docs/checklists/)
 
-**Текущий этап: 0 (каркас)**: подключение инструментов, маршруты звука,
-встроенный рояль через ASIO/WASAPI, мастер первого запуска.
+**Готово:** этап 0 (подключение инструментов, маршруты звука, встроенный
+рояль через ASIO/WASAPI, мастер первого запуска) и этап 1 (тренажёр чтения
+нот: 9 ступеней, адаптивный подбор нот, прогресс в SQLite).
 
 ## Скачать сборку для Windows
 
@@ -59,16 +60,27 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace                 # тесты ядра (MIDI, маршруты, синтез, настройки)
 ```
 
+Сквозной тест «бот играет»: настоящее приложение проходит серию тренажёра
+через имитацию MIDI-входа (Linux: нужны `webkit2gtk-driver` и
+`cargo install tauri-driver`):
+
+```bash
+npx tauri build --debug --no-bundle
+xvfb-run -a node e2e/run.mjs
+```
+
 CI (GitHub Actions) запускает всё это на Linux и собирает установщик
 для Windows на каждый push.
 
 ## Структура
 
 ```
-crates/mt-core/   ядро на Rust без Tauri: MIDI, маршруты звука, аудио (ASIO/WASAPI), синтезатор
+crates/mt-core/   ядро на Rust без Tauri: MIDI, маршруты звука, аудио (ASIO/WASAPI), синтезатор,
+                  тренажёр (ступени, подбор, оценка), хранилище прогресса (SQLite)
 src-tauri/        приложение Tauri: команды, события, настройки
 src/              интерфейс на React + TypeScript
 scripts/          загрузка SoundFont для сборки
+e2e/              сквозной тест через WebDriver (tauri-driver)
 docs/             план, архитектура, чеклисты
 ```
 

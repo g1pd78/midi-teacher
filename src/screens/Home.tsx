@@ -2,16 +2,17 @@ import { Piano } from "../components/Piano";
 import { Notices } from "../components/Notices";
 import { fullName, keyLabel } from "../lib/notes";
 import { deviceColor, useApp } from "../store";
+import type { Screen } from "../App";
 
-const SECTIONS = [
-  { title: "Тренажёр нот", text: "Учимся узнавать ноты на нотном стане", stage: "Этап 1" },
+const SECTIONS: { title: string; text: string; stage: string; screen?: Screen }[] = [
+  { title: "Тренажёр нот", text: "Учимся узнавать ноты на нотном стане", stage: "Этап 1", screen: "trainer" },
   { title: "Пьесы", text: "Интерактивный нотный стан и разучивание", stage: "Этап 2" },
   { title: "Упражнения", text: "Гаммы, арпеджио, пять пальцев", stage: "Этап 5" },
   { title: "Справочник", text: "Длительности, знаки, ключи", stage: "Этап 5" },
   { title: "Прогресс", text: "Статистика занятий", stage: "Этап 4" },
 ];
 
-export function Home() {
+export function Home({ onNavigate }: { onNavigate: (s: Screen) => void }) {
   const { held, lastNote, devices, prefs, pressScreenKey, sustain } = useApp();
   const naming = prefs.noteNames;
 
@@ -69,13 +70,21 @@ export function Home() {
       </section>
 
       <section className="sections">
-        {SECTIONS.map((s) => (
-          <div key={s.title} className="section-tile disabled" aria-disabled>
-            <div className="section-title">{s.title}</div>
-            <div className="section-text">{s.text}</div>
-            <div className="section-stage">Скоро · {s.stage}</div>
-          </div>
-        ))}
+        {SECTIONS.map((s) =>
+          s.screen ? (
+            <button key={s.title} className="section-tile" onClick={() => onNavigate(s.screen!)}>
+              <div className="section-title">{s.title}</div>
+              <div className="section-text">{s.text}</div>
+              <div className="section-stage go">Открыть →</div>
+            </button>
+          ) : (
+            <div key={s.title} className="section-tile disabled" aria-disabled>
+              <div className="section-title">{s.title}</div>
+              <div className="section-text">{s.text}</div>
+              <div className="section-stage">Скоро · {s.stage}</div>
+            </div>
+          ),
+        )}
       </section>
 
       <section className="home-piano">

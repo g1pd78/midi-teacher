@@ -49,7 +49,11 @@ export const SCREEN_DEVICE = "Экранная клавиатура";
 
 export const useApp = create<AppStore>((set, get) => ({
   ready: false,
-  prefs: { noteNames: "solfege", wizardDone: true },
+  prefs: {
+    noteNames: "solfege",
+    wizardDone: true,
+    trainer: { layout: "single", errorMode: "wait", names: "struggle" },
+  },
   audioConfig: { backend: "auto", device: null, bufferFrames: 128, volume: 0.8 },
   customSoundfont: null,
   devices: { inputs: [], outputs: [], appRoute: { kind: "internal" }, appChannel: 0, internalSoundNeeded: true },
