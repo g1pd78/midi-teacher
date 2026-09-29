@@ -11,33 +11,14 @@ jobs:
   mutopia:
     runs-on: ubuntu-latest
     steps:
-      - name: Minuet in G (BWV Anh. 114) on Mutopia
+      - name: Print LilyPond sources
         run: |
-          set -u
-          base="https://www.mutopiaproject.org"
-          for q in "Anh.+114" "Anh+114" "BWV+Anh.+114" "Minuet+in+G"; do
-            curl -sL "$base/cgibin/make-table.cgi?searchingfor=$q" >> search.html || true
+          for url in \
+            https://www.mutopiaproject.org/ftp/BachJS/BWVAnh114/anna-magdalena-04/anna-magdalena-04.ly \
+            https://www.mutopiaproject.org/ftp/BachJS/BWVAnh114/anna-magdalena-114-115-116/anna-magdalena-114-115-116.ly
+          do
+            echo "##### BEGIN $url"
+            curl -sL "$url" | sed 's/^/| /'
+            echo "##### END $url"
           done
-          grep -oE 'piece-info\.cgi\?id=[0-9]+' search.html | sort -u | tee ids.txt
-          for pid in $(sed 's/.*id=//' ids.txt); do
-            curl -sL "$base/cgibin/piece-info.cgi?id=$pid" > p.html || continue
-            title=$(grep -oE '<h3>[^<]*</h3>' p.html | head -1)
-            instr=$(grep -oiE 'Instrument\(s\):[^|<]*' p.html | head -1)
-            echo "=== id=$pid $title $instr"
-            grep -oE 'href="[^"]+\.(ly|zip)"' p.html | head -5
-          done
-      - name: Download LilyPond sources for piano versions
-        run: |
-          base="https://www.mutopiaproject.org"
-          for pid in $(curl -sL "$base/cgibin/make-table.cgi?searchingfor=Anh.+114" | grep -oE 'piece-info\.cgi\?id=[0-9]+' | sort -u | sed 's/.*id=//'); do
-            p=$(curl -sL "$base/cgibin/piece-info.cgi?id=$pid")
-            if echo "$p" | grep -qiE 'Instrument\(s\):[^|<]*(Piano|Harpsichord|Keyboard)'; then
-              for href in $(echo "$p" | grep -oE 'href="[^"]+\.ly"' | sed 's/href="//; s/"$//'); do
-                url=$(python3 -c "import urllib.parse,sys;print(urllib.parse.urljoin('$base/cgibin/', sys.argv[1]))" "$href")
-                echo "##### BEGIN $url"
-                curl -sL "$url"
-                echo
-                echo "##### END $url"
-              done
-            fi
-          done
+          curl -sL "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=75" | sed -e 's/<[^>]*>/ /g' | grep -iE 'licen|instrument|public|copyright' | head -20
