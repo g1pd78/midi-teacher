@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+members = ["crates/mt-core", "src-tauri"]
+
+[profile.dev.package."*"]
+# Синтезатор и разбор SoundFont должны быть быстрыми даже в debug-сборке.
+opt-level = 3
+
+[profile.release]
+lto = "thin"

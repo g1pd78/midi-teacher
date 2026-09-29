@@ -1,0 +1,29 @@
+[package]
+name = "midi-teacher"
+version = "0.1.0"
+edition = "2021"
+description = "Обучение игре на фортепиано с MIDI-клавиатурой"
+
+[lib]
+name = "midi_teacher_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+crossbeam-channel = "0.5.17"
+log = "0.4.34"
+mt-core = { version = "0.1.0", path = "../crates/mt-core" }
+parking_lot = "0.12.5"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tauri = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-log = "2"
+tauri-plugin-opener = "2"
+
+[build-dependencies]
+tauri-build = "2"
+
+[features]
+default = ["asio"]
+# ASIO-вывод на Windows. Для сборки нужен LLVM (см. README).
+asio = ["mt-core/asio"]

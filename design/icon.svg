@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" rx="220" fill="#1E2128"/>
+  <!-- белые клавиши -->
+  <g fill="#F3EEE4">
+    <rect x="152" y="300" width="170" height="520" rx="24"/>
+    <rect x="342" y="300" width="170" height="520" rx="24"/>
+    <rect x="532" y="300" width="170" height="520" rx="24"/>
+    <rect x="722" y="300" width="150" height="520" rx="24"/>
+  </g>
+  <!-- чёрные клавиши -->
+  <g fill="#15171C">
+    <rect x="270" y="300" width="112" height="310" rx="18"/>
+    <rect x="460" y="300" width="112" height="310" rx="18"/>
+    <rect x="650" y="300" width="112" height="310" rx="18"/>
+  </g>
+  <!-- нота над клавиатурой -->
+  <g fill="#5AA9FF">
+    <ellipse cx="610" cy="228" rx="62" ry="46" transform="rotate(-20 610 228)"/>
+    <rect x="660" y="90" width="18" height="140" rx="9"/>
+  </g>
+  <rect x="152" y="740" width="720" height="10" fill="#4CC38A" opacity="0.9"/>
+</svg>
