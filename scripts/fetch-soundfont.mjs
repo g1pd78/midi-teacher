@@ -20,8 +20,8 @@ import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_URL = "https://freepats.zenvoid.org/Piano/YDP-GrandPiano/YDP-GrandPiano-SF2-20160804.tar.bz2";
-// Закрепляется после первой успешной загрузки в CI (значение печатается в лог).
-const DEFAULT_SHA256 = "";
+// Контрольная сумма архива (проверена в CI 2026-09-29).
+const DEFAULT_SHA256 = "d243dc3e182a60df2a16e92828c1821cf3eb5748b45e2e2bdcfa9cf7af056026";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const destDir = join(root, "src-tauri", "resources", "soundfonts");
