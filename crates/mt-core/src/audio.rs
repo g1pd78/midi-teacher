@@ -106,6 +106,7 @@ enum Control {
     Suspend,
     Resume,
     StreamFailed(String),
+    RefreshDevices(Sender<AudioDevices>),
 }
 
 /// Ручка управления аудиодвижком. Дёшево клонируется.
@@ -116,6 +117,7 @@ pub struct AudioEngine {
     status: Arc<RwLock<AudioStatus>>,
     meters: Arc<Meters>,
     volume: Arc<AtomicU32>,
+    devices: Arc<RwLock<AudioDevices>>,
 }
 
 #[derive(Default)]
@@ -137,6 +139,7 @@ impl AudioEngine {
         }));
         let meters = Arc::new(Meters::default());
         let volume = Arc::new(AtomicU32::new(config.volume.to_bits()));
+        let devices = Arc::new(RwLock::new(AudioDevices::default()));
 
         let worker = Worker {
             config,
@@ -145,6 +148,7 @@ impl AudioEngine {
             status: status.clone(),
             meters: meters.clone(),
             volume: volume.clone(),
+            devices: devices.clone(),
             stream: None,
             synth: Arc::new(Mutex::new(Box::new(FallbackSynth::new(48_000)))),
             soundfont: None,
@@ -162,6 +166,7 @@ impl AudioEngine {
             status,
             meters,
             volume,
+            devices,
         };
         engine.ctl.send(Control::Resume).ok();
         engine
@@ -209,6 +214,27 @@ impl AudioEngine {
         self.ctl.send(Control::Resume).ok();
     }
 
+    /// Последний известный список устройств вывода (без обращения к драйверам).
+    pub fn devices(&self) -> AudioDevices {
+        self.devices.read().clone()
+    }
+
+    /// Обновляет список устройств в аудиопотоке и возвращает его.
+    ///
+    /// ASIO-драйверы при перечислении загружаются по очереди, а ASIO SDK держит
+    /// только один загруженный драйвер. Поэтому перечисление делает только
+    /// управляющий поток и только когда ASIO-поток не открыт; иначе список
+    /// ASIO-драйверов остаётся прежним.
+    pub fn refresh_devices(&self) -> AudioDevices {
+        let (tx, rx) = bounded(1);
+        if self.ctl.send(Control::RefreshDevices(tx)).is_ok() {
+            if let Ok(d) = rx.recv_timeout(std::time::Duration::from_secs(3)) {
+                return d;
+            }
+        }
+        self.devices()
+    }
+
     pub fn status(&self) -> AudioStatus {
         self.status.read().clone()
     }
@@ -227,17 +253,10 @@ pub fn asio_supported() -> bool {
     cfg!(all(target_os = "windows", feature = "asio"))
 }
 
-/// Перечисляет устройства вывода.
-pub fn list_devices() -> AudioDevices {
-    let names = |host: &cpal::Host| -> Vec<String> {
-        host.output_devices()
-            .map(|devs| devs.filter_map(|d| device_name(&d)).collect())
-            .unwrap_or_default()
-    };
-    AudioDevices {
-        asio: asio_host().map(|h| names(&h)).unwrap_or_default(),
-        system: names(&cpal::default_host()),
-    }
+fn output_names(host: &cpal::Host) -> Vec<String> {
+    host.output_devices()
+        .map(|devs| devs.filter_map(|d| device_name(&d)).collect())
+        .unwrap_or_default()
 }
 
 fn device_name(device: &cpal::Device) -> Option<String> {
@@ -261,6 +280,7 @@ struct Worker {
     status: Arc<RwLock<AudioStatus>>,
     meters: Arc<Meters>,
     volume: Arc<AtomicU32>,
+    devices: Arc<RwLock<AudioDevices>>,
     stream: Option<cpal::Stream>,
     synth: Arc<Mutex<Box<dyn Synth>>>,
     /// Загруженный SoundFont: нужен, чтобы пересоздать синтезатор при смене частоты.
@@ -301,6 +321,10 @@ impl Worker {
                     self.soundfont = None;
                     self.install_synth(Box::new(FallbackSynth::new(self.sample_rate.max(1))));
                 }
+                Control::RefreshDevices(reply) => {
+                    self.refresh_devices();
+                    let _ = reply.send(self.devices.read().clone());
+                }
                 Control::StreamFailed(err) => {
                     log::warn!("аудиопоток упал: {err}");
                     self.stream = None;
@@ -313,6 +337,17 @@ impl Worker {
                     }
                 }
             }
+        }
+    }
+
+    /// Обновляет кэш устройств. ASIO-драйверы трогаем, только если ASIO-поток закрыт.
+    fn refresh_devices(&mut self) {
+        let asio_busy = self.stream.is_some() && self.status.read().backend == "ASIO";
+        let system = output_names(&cpal::default_host());
+        let mut devices = self.devices.write();
+        devices.system = system;
+        if !asio_busy {
+            devices.asio = asio_host().map(|h| output_names(&h)).unwrap_or_default();
         }
     }
 
@@ -352,9 +387,11 @@ impl Worker {
     /// Открывает вывод согласно конфигурации, с откатом ASIO → системный.
     fn open(&mut self) {
         self.stream = None;
+        // Поток закрыт — можно безопасно перечислить и ASIO-драйверы.
+        self.refresh_devices();
         let want_asio = match self.config.backend {
             AudioBackend::Asio => true,
-            AudioBackend::Auto => !list_devices().asio.is_empty(),
+            AudioBackend::Auto => !self.devices.read().asio.is_empty(),
             AudioBackend::System => false,
         };
 
@@ -408,6 +445,10 @@ impl Worker {
         let supported = device.default_output_config().map_err(|e| e.to_string())?;
         let format = supported.sample_format();
         let mut config: StreamConfig = supported.config();
+        // Некоторые ASIO-драйверы (Realtek) сообщают 0 Гц, пока поток не запущен.
+        if config.sample_rate == 0 {
+            config.sample_rate = 48_000;
+        }
         let requested = self
             .config
             .buffer_frames

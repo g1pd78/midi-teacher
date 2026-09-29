@@ -4,7 +4,7 @@
 mod settings;
 
 use crossbeam_channel::unbounded;
-use mt_core::audio::{self, AudioConfig, AudioDevices, AudioEngine, AudioMeters, AudioStatus};
+use mt_core::audio::{AudioConfig, AudioDevices, AudioEngine, AudioMeters, AudioStatus};
 use mt_core::devices::{DeviceEvent, DeviceManager, DevicesSnapshot, InputSettings, SoundRoute};
 use mt_core::midi::MidiMessage;
 use parking_lot::Mutex;
@@ -67,7 +67,7 @@ fn get_state(state: State<AppState>) -> FullState {
         custom_soundfont: s.soundfont.clone(),
         devices: state.devices.snapshot(),
         audio: state.audio.status(),
-        audio_devices: audio::list_devices(),
+        audio_devices: state.audio.devices(),
     }
 }
 
@@ -77,8 +77,11 @@ fn get_audio_meters(state: State<AppState>) -> AudioMeters {
 }
 
 #[tauri::command]
-fn list_audio_devices() -> AudioDevices {
-    audio::list_devices()
+async fn list_audio_devices(state: State<'_, AppState>) -> Result<AudioDevices, String> {
+    let audio = state.audio.clone();
+    tauri::async_runtime::spawn_blocking(move || audio.refresh_devices())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
