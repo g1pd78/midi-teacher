@@ -52,6 +52,12 @@ async function waitFor(what, fn, timeoutMs = 20000) {
   throw new Error(`Не дождались: ${what} (последнее: ${last})`);
 }
 
+// Порт драйвера должен быть свободен: иначе тест пошёл бы в чужое приложение.
+if (await fetch(DRIVER + "/status").then((r) => r.ok).catch(() => false)) {
+  console.error("Порт 4444 занят другим tauri-driver — останови его и запусти тест снова.");
+  process.exit(1);
+}
+
 // Чистый профиль: настройки и база прогресса во временном каталоге (Linux).
 const profile = mkdtempSync(join(tmpdir(), "mt-e2e-"));
 const driver = spawn("tauri-driver", [], {
@@ -145,6 +151,41 @@ try {
   if (!overview.levelStats.some((s) => s.level === 1 && s.sessions >= 1)) throw new Error("серия не сохранена");
   if (overview.noteStats.length === 0) throw new Error("статистика нот пуста");
   ok("прогресс сохранён в базе (ступень 2 открыта, статистика нот есть)");
+
+  // --- Пьеса: «Ода к радости» правой рукой в режиме ожидания ---
+  console.log("Сквозной тест: пьеса");
+  await waitFor("вкладка пьес", () => click("Пьесы"));
+  await waitFor("карточка «Оды к радости»", () =>
+    js("const b = [...document.querySelectorAll('.piece-card')].find((b) => b.textContent.includes('Ода к радости')); if (!b) return false; b.click(); return true;"),
+  );
+  await waitFor("ноты пьесы", () => js("return !!document.querySelector('.score-page svg g.note');"), 30000);
+  await waitFor("кнопка «Правая»", () => click("Правая"));
+  ok("пьеса открыта, ноты нарисованы");
+
+  const pitches = () => js("return document.querySelector('.score-scroll')?.dataset.currentPitches ?? '';");
+  const stepNo = () => js("return document.querySelector('.score-scroll')?.dataset.currentStep ?? '';");
+  const finished = () => js("return document.querySelector('.score-scroll')?.dataset.finished === '1';");
+  const firstStep = await waitFor("первый шаг", pitches);
+  if (firstStep !== "64") throw new Error(`первая нота правой руки: ${firstStep}, ожидалась ми (64)`);
+
+  await press(61); // лишняя нота
+  await waitFor("красная клавиша", () => js("return document.querySelector('.key.active') !== null;"));
+  let steps = 0;
+  for (let i = 0; i < 200 && !(await finished()); i++) {
+    const step = await stepNo();
+    const cur = await pitches();
+    if (!cur) {
+      await sleep(100); // шаг другой руки проходит сам
+      continue;
+    }
+    for (const p of cur.split(",")) await press(Number(p));
+    steps++;
+    await waitFor(`переход с шага ${step}`, async () => (await finished()) || (await stepNo()) !== step, 5000);
+  }
+  const pieceSummary = await waitFor("итог пьесы", () => js("return document.querySelector('.summary')?.innerText;"), 10000);
+  if (!/Пьеса сыграна/.test(pieceSummary) || !/\b1\b/.test(pieceSummary)) throw new Error(`итог пьесы:\n${pieceSummary}`);
+  if (steps !== 62) throw new Error(`сыграно шагов ${steps}, ожидалось 62`);
+  ok("«Ода к радости» правой рукой: 62 шага, 1 ошибка в итоге");
 
   console.log("Готово: все проверки пройдены");
 } catch (e) {

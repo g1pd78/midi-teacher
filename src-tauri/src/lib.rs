@@ -1,6 +1,8 @@
 //! Оболочка приложения: связывает ядро `mt-core` с интерфейсом через
 //! команды и события Tauri и хранит настройки.
 
+mod library;
+mod piece;
 mod settings;
 mod trainer;
 
@@ -10,6 +12,7 @@ use mt_core::devices::{DeviceEvent, DeviceManager, DevicesSnapshot, InputSetting
 use mt_core::midi::MidiMessage;
 use mt_core::store::Store;
 use parking_lot::Mutex;
+use piece::PieceHub;
 use serde::Serialize;
 use settings::{AppSettings, UiPrefs};
 use std::path::PathBuf;
@@ -210,6 +213,8 @@ pub fn run() {
             let handle = app.handle().clone();
             let dev = devices.clone();
             let trainer_hub = hub.clone();
+            let piece_hub = Arc::new(PieceHub::new(devices.clone(), app.handle().clone()));
+            let piece_events = piece_hub.clone();
             thread::Builder::new()
                 .name("mt-events".into())
                 .spawn(move || {
@@ -218,6 +223,7 @@ pub fn run() {
                             DeviceEvent::Midi(e) => {
                                 if let MidiMessage::NoteOn { note, .. } = e.msg {
                                     trainer_hub.on_note_on(&handle, note, e.time_us);
+                                    piece_events.on_note_on(note, e.time_us);
                                 }
                                 let _ = handle.emit("midi", e);
                             }
@@ -264,6 +270,7 @@ pub fn run() {
 
             app.manage(state);
             app.manage(hub);
+            app.manage(piece_hub);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -283,6 +290,12 @@ pub fn run() {
             trainer::trainer_start,
             trainer::trainer_ready,
             trainer::trainer_stop,
+            library::library_list,
+            library::library_read,
+            library::library_import,
+            library::library_open_folder,
+            piece::piece_start,
+            piece::piece_stop,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска приложения");

@@ -14,6 +14,7 @@ import type {
   FullState,
   InputSettings,
   MidiEvent,
+  PieceNoteIn,
   SoundRoute,
   TrainerLevel,
   TrainerTarget,
@@ -42,6 +43,7 @@ export function createMock() {
       noteNames: "solfege",
       wizardDone: new URLSearchParams(location.search).has("done"),
       trainer: { layout: "single", errorMode: "wait", names: "struggle" },
+      piece: { layout: "line", hands: "right", accompany: true, names: false, fingering: true, keyHints: true },
     },
     audioConfig: { backend: "auto", device: null, bufferFrames: 128, volume: 0.8 },
     customSoundfont: null,
@@ -82,7 +84,10 @@ export function createMock() {
 
   type Body = { type: "noteOn"; note: number; velocity: number } | { type: "noteOff"; note: number };
   const send = (device: string, ev: Body) => {
-    if (ev.type === "noteOn") judge(ev.note);
+    if (ev.type === "noteOn") {
+      judge(ev.note);
+      judgePiece(ev.note);
+    }
     emitMidi(device, ev);
   };
   const emitMidi = (device: string, ev: Body) =>
@@ -166,7 +171,89 @@ export function createMock() {
     emit("trainer", { feedback, finished });
   }
 
+  // --- Пьеса (упрощённая копия режима ожидания из ядра) ---
+  let piece: {
+    steps: { onset: number; notes: PieceNoteIn[] }[];
+    hands: string;
+    index: number;
+    pressed: Set<number>;
+    errors: number;
+    started: number;
+  } | null = null;
+  const pieceRequired = (i: number) =>
+    piece!.steps[i].notes.filter((n) => piece!.hands === "both" || n.hand === piece!.hands);
+
+  function pieceActivate(i: number) {
+    if (!piece) return;
+    piece.index = i;
+    piece.pressed.clear();
+    if (i >= piece.steps.length) {
+      emit("piece", {
+        kind: "finished",
+        summary: {
+          playedSteps: piece.steps.length,
+          requiredNotes: 0,
+          errors: piece.errors,
+          durationMs: Math.round(performance.now() - piece.started),
+          troubleMeasures: piece.errors ? [{ measure: 1, errors: piece.errors }] : [],
+        },
+      });
+      piece = null;
+      return;
+    }
+    const req = pieceRequired(i);
+    emit("piece", {
+      kind: "step",
+      index: i,
+      noteIds: piece.steps[i].notes.map((n) => n.id),
+      required: req.map((n) => n.pitch),
+      auto: req.length === 0,
+    });
+    if (req.length === 0) setTimeout(() => piece && piece.index === i && pieceActivate(i + 1), 300);
+  }
+
+  function judgePiece(note: number) {
+    if (!piece || piece.index >= piece.steps.length) return;
+    const i = piece.index;
+    const req = pieceRequired(i);
+    const hits = req.filter((n) => n.pitch === note);
+    if (hits.length) {
+      if (piece.pressed.has(note)) return;
+      piece.pressed.add(note);
+      emit("piece", { kind: "hit", index: i, noteIds: hits.map((n) => n.id) });
+      if (req.every((n) => piece!.pressed.has(n.pitch))) pieceActivate(i + 1);
+    } else if (req.length && !piece.steps[i].notes.some((n) => n.pitch === note)) {
+      piece.errors++;
+      emit("piece", { kind: "wrong", index: i, pitch: note });
+    }
+  }
+
+  (window as unknown as { __mockPiece: () => number[] | null }).__mockPiece = () =>
+    piece && piece.index < piece.steps.length ? pieceRequired(piece.index).map((n) => n.pitch) : null;
+
   const handlers: Record<string, (args: Record<string, never>) => unknown> = {
+    library_list: () => ({
+      dir: "C:\\Users\\Ученик\\Documents\\MIDI Teacher",
+      items: [{ id: "Песня.mid", title: "Песня", format: "midi", size: 2048, modified: 0 }],
+    }),
+    library_read: () => Promise.reject(new Error("в демо нет своих файлов")),
+    library_import: () => [],
+    library_open_folder: () => undefined,
+    piece_start: ({ notes, config }) => {
+      const list = [...(notes as unknown as PieceNoteIn[])].sort((a, b) => a.startMs - b.startMs);
+      const steps: { onset: number; notes: PieceNoteIn[] }[] = [];
+      for (const n of list) {
+        const last = steps[steps.length - 1];
+        if (last && n.startMs - last.onset <= 15) last.notes.push(n);
+        else steps.push({ onset: n.startMs, notes: [n] });
+      }
+      piece = { steps, hands: (config as unknown as { hands: string }).hands, index: 0, pressed: new Set(), errors: 0, started: performance.now() };
+      setTimeout(() => pieceActivate(0), 0);
+      return steps.length;
+    },
+    piece_stop: () => {
+      piece = null;
+    },
     trainer_overview: () => ({
       levels,
       unlocked,

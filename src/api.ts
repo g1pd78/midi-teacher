@@ -75,10 +75,64 @@ export interface TrainerPrefs {
   names: "always" | "struggle" | "never";
 }
 
+export type HandMode = "right" | "left" | "both";
+
+export interface PiecePrefs {
+  layout: "line" | "pages";
+  hands: HandMode;
+  accompany: boolean;
+  names: boolean;
+  fingering: boolean;
+  keyHints: boolean;
+}
+
 export interface UiPrefs {
   noteNames: "solfege" | "latin";
   wizardDone: boolean;
   trainer: TrainerPrefs;
+  piece: PiecePrefs;
+}
+
+export interface PieceNoteIn {
+  id: string;
+  pitch: number;
+  startMs: number;
+  durMs: number;
+  hand: "right" | "left";
+  measure: number;
+}
+
+export interface PieceConfig {
+  hands: HandMode;
+  accompany: boolean;
+  tempo: number;
+}
+
+export interface PieceSummary {
+  playedSteps: number;
+  requiredNotes: number;
+  errors: number;
+  durationMs: number;
+  troubleMeasures: { measure: number; errors: number }[];
+}
+
+export type PieceEvent =
+  | { kind: "step"; index: number; noteIds: string[]; required: number[]; auto: boolean }
+  | { kind: "hit"; index: number; noteIds: string[] }
+  | { kind: "wrong"; index: number; pitch: number }
+  | { kind: "finished"; summary: PieceSummary };
+
+export interface LibraryItem {
+  id: string;
+  title: string;
+  format: "musicxml" | "mxl" | "midi";
+  size: number;
+  modified: number;
+}
+
+export interface LibraryListing {
+  dir: string;
+  items: LibraryItem[];
 }
 
 export type Clef = "treble" | "bass";
@@ -174,6 +228,7 @@ export interface Events {
   devices: DevicesSnapshot;
   audio: AudioStatus;
   trainer: TrainerEvent;
+  piece: PieceEvent;
 }
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -207,6 +262,12 @@ export const api = {
     invoke<SessionView>("trainer_start", { level, mode, count }),
   trainerReady: () => invoke<void>("trainer_ready"),
   trainerStop: () => invoke<void>("trainer_stop"),
+  libraryList: () => invoke<LibraryListing>("library_list"),
+  libraryRead: (id: string) => invoke<ArrayBuffer>("library_read", { id }),
+  libraryImport: (paths: string[]) => invoke<string[]>("library_import", { paths }),
+  libraryOpenFolder: () => invoke<void>("library_open_folder"),
+  pieceStart: (notes: PieceNoteIn[], config: PieceConfig) => invoke<number>("piece_start", { notes, config }),
+  pieceStop: () => invoke<void>("piece_stop"),
 };
 
 export async function pickSoundfont(): Promise<string | null> {
@@ -214,6 +275,30 @@ export async function pickSoundfont(): Promise<string | null> {
   const { open } = await import("@tauri-apps/plugin-dialog");
   const res = await open({ multiple: false, filters: [{ name: "SoundFont", extensions: ["sf2"] }] });
   return typeof res === "string" ? res : null;
+}
+
+/** Выбор нотных файлов для добавления в библиотеку. */
+export async function pickScoreFiles(): Promise<string[]> {
+  if (!inTauri) return [];
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const res = await open({
+    multiple: true,
+    filters: [{ name: "Ноты", extensions: ["musicxml", "xml", "mxl", "mid", "midi"] }],
+  });
+  if (!res) return [];
+  return Array.isArray(res) ? res : [res];
+}
+
+/** Перетаскивание файлов в окно приложения. */
+export async function onFileDrop(cb: (event: { type: "over" | "drop" | "leave"; paths: string[] }) => void) {
+  if (!inTauri) return () => {};
+  const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+  return getCurrentWebview().onDragDropEvent((e) => {
+    const p = e.payload;
+    if (p.type === "drop") cb({ type: "drop", paths: p.paths });
+    else if (p.type === "over" || p.type === "enter") cb({ type: "over", paths: [] });
+    else cb({ type: "leave", paths: [] });
+  });
 }
 
 export async function openUrl(url: string): Promise<void> {

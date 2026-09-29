@@ -881,3 +881,177 @@ button.section-tile:hover {
   flex-wrap: wrap;
   margin-top: 12px;
 }
+
+/* Библиотека пьес */
+.pieces {
+  flex: 1;
+  overflow: auto;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+}
+.section-h {
+  margin: 4px 0 10px;
+}
+.section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.piece-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.piece-card {
+  text-align: left;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+button.piece-card:hover {
+  border-color: var(--right-hand);
+  background: var(--panel);
+}
+.piece-card.disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.piece-title {
+  font-weight: 600;
+  font-size: 16px;
+}
+.piece-composer {
+  color: var(--muted);
+  font-size: 13px;
+}
+.piece-desc {
+  font-size: 13px;
+  line-height: 1.45;
+  color: #c9ccd2;
+}
+code {
+  font-size: 12px;
+  background: var(--panel-2);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.drop-overlay {
+  position: fixed;
+  inset: 56px 0 0 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: rgba(21, 23, 28, 0.8);
+  border: 3px dashed var(--right-hand);
+  font-size: 22px;
+}
+
+/* Экран пьесы */
+.piece {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 18px 18px;
+  min-height: 0;
+}
+.piece-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.piece-name {
+  flex: 1;
+  font-weight: 600;
+  font-size: 16px;
+  min-width: 160px;
+}
+.piece-bar .segmented button {
+  padding: 5px 12px;
+  font-size: 13px;
+}
+.piece-toggles {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #c9ccd2;
+}
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.toggle.disabled {
+  opacity: 0.45;
+}
+.piece-progress {
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.piece-paper {
+  display: block;
+  min-height: 160px;
+}
+.score-scroll {
+  position: absolute;
+  inset: 0;
+  scrollbar-width: thin;
+}
+.score-scroll.line {
+  overflow-x: auto;
+  overflow-y: hidden;
+  display: flex;
+  align-items: center;
+}
+.score-scroll.line .score-page {
+  height: 100%;
+  flex: none;
+}
+.score-scroll.line svg {
+  height: 100%;
+  width: auto;
+  display: block;
+}
+.score-scroll.pages {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 10px 24px;
+}
+.score-scroll.pages svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.score-loading {
+  padding: 30px;
+}
+.score-scroll.hide-fing g.fing {
+  display: none;
+}
+.score-scroll g.note.mark-right {
+  fill: #2f7fd8;
+}
+.score-scroll g.note.mark-left {
+  fill: #d9891f;
+}
+.score-scroll g.note.mark-app {
+  fill: #9aa0ab;
+}
+.score-scroll g.note.mark-hit {
+  fill: #2a9d68;
+}
+.score-scroll g.verse {
+  fill: #2a6f4f;
+}

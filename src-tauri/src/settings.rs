@@ -2,6 +2,7 @@
 
 use mt_core::audio::AudioConfig;
 use mt_core::devices::DeviceSettings;
+use mt_core::piece::HandMode;
 use mt_core::trainer::ErrorMode;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -15,6 +16,35 @@ pub struct UiPrefs {
     /// Мастер первого запуска пройден.
     pub wizard_done: bool,
     pub trainer: TrainerPrefs,
+    pub piece: PiecePrefs,
+}
+
+/// Настройки экрана пьесы.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PiecePrefs {
+    /// `line` — одна строка, `pages` — страницы.
+    pub layout: String,
+    pub hands: HandMode,
+    /// Вторая рука звучит (играет приложение).
+    pub accompany: bool,
+    pub names: bool,
+    pub fingering: bool,
+    /// Подсвечивать клавиши текущего шага.
+    pub key_hints: bool,
+}
+
+impl Default for PiecePrefs {
+    fn default() -> Self {
+        Self {
+            layout: "line".into(),
+            hands: HandMode::Right,
+            accompany: true,
+            names: false,
+            fingering: true,
+            key_hints: true,
+        }
+    }
 }
 
 /// Настройки тренажёра чтения нот.
@@ -44,6 +74,7 @@ impl Default for UiPrefs {
             note_names: "solfege".into(),
             wizard_done: false,
             trainer: TrainerPrefs::default(),
+            piece: PiecePrefs::default(),
         }
     }
 }
