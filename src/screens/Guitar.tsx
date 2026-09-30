@@ -243,6 +243,19 @@ export function Guitar() {
           <div className="tuner-readout muted">
             {pitch ? `${pitch.hz.toFixed(1)} Гц · ${pitch.cents > 0 ? "+" : ""}${Math.round(pitch.cents)} центов` : " "}
           </div>
+          <div className="tuner-recent muted" data-recent-notes={st.recentNotes.join(",")}>
+            Распознано:{" "}
+            {st.recentNotes.length ? (
+              st.recentNotes.map((m, k) => (
+                <b key={k} className={k === st.recentNotes.length - 1 ? "last" : ""}>
+                  {pitchName(m, naming)}
+                  <sub>{octaveOf(m)}</sub>
+                </b>
+              ))
+            ) : (
+              <span>сыграй несколько нот</span>
+            )}
+          </div>
           <div className="tuner-strings">
             {tuning.map((m, k) => {
               const active = near?.index === k;

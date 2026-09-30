@@ -498,6 +498,18 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     return { onsets, ids: onsets.map((t) => byStart.get(t)!) };
   }, [notes]);
 
+  // Подсказка распознаванию гитары: какие ноты сейчас ждём (ошибки на октаву).
+  const expectKey = strInst
+    ? rhythmMode
+      ? steps.ids.slice(Math.max(0, rhythmStep), Math.max(0, rhythmStep) + 3).flat().map((id) => noteById.get(id)?.pitch ?? 0).join(",")
+      : (current?.required ?? []).join(",")
+    : "";
+  useEffect(() => {
+    if (!strInst) return;
+    void api.guitarExpect(expectKey ? expectKey.split(",").map(Number).filter(Boolean) : []).catch(() => {});
+  }, [strInst, expectKey]);
+  useEffect(() => () => void api.guitarExpect([]).catch(() => {}), []);
+
   const resetMarks = useCallback(() => {
     noteStates.current = new Map();
     setMarksVersion((v) => v + 1);

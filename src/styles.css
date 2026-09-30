@@ -2143,3 +2143,18 @@ button.link.piece-link:hover {
   transform-origin: center;
   transform: scale(1.7);
 }
+.tuner-recent {
+  text-align: center;
+  min-height: 22px;
+}
+.tuner-recent b {
+  margin: 0 3px;
+  color: var(--text);
+}
+.tuner-recent b sub {
+  font-size: 10px;
+  color: var(--muted);
+}
+.tuner-recent b.last {
+  color: var(--good);
+}

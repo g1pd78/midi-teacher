@@ -434,9 +434,12 @@ try {
   if (conv.measures !== 2 || quarters !== 8) throw new Error(`выравнивание: тактов ${conv.measures}, четвертей ${quarters}`);
   ok("выравнивание по сетке: 2 такта по 4 четверти");
 
+  const svgNow = () => js("return document.querySelector('.score-page svg')?.innerHTML ?? '';");
+  const svgBefore = await svgNow();
   await waitFor("тон +1", () => js("const b = document.querySelector('[data-transpose-up]'); if (!b) return false; b.click(); return true;"));
   await waitFor("тон сохранён", async () => (await setupOf())?.transpose === 1);
-  await waitFor("ноты после транспонирования", () => js("return document.querySelectorAll('.score-page svg g.note').length === 8;"), 20000);
+  // Ждём, пока ноты действительно перерисуются (знаки при ключе другие), а не только сохранится тон.
+  await waitFor("ноты после транспонирования", async () => (await svgNow()) !== svgBefore && (await js("return document.querySelectorAll('.score-page svg g.note').length === 8;")), 20000);
   ok("транспонирование на полутон: настройка сохранена, ноты перестроены");
 
   await waitFor("режим «Руки…»", () => click("Руки…"));
@@ -488,6 +491,41 @@ try {
   ok(gst.running ? `вход открыт: ${gst.device}` : `без устройства записи — сообщение: «${gst.error}»`);
   await js("document.querySelector('[data-enable]').click();");
   await waitFor("вход выключен", async () => !(await invoke("guitar_state")).config.enabled);
+
+  // «Бот играет на гитаре»: «Ода к радости» в табах, каждая нужная нота — синтезированный
+  // щипок, который проходит весь путь распознавания звука (начало, высота) → режим ожидания.
+  await waitFor("вкладка пьес", () => click("Пьесы"));
+  await waitFor("«Ода к радости»", () =>
+    js("const b = [...document.querySelectorAll('.piece-card')].find((b) => b.textContent.includes('Ода к радости')); if (!b) return false; b.click(); return true;"),
+  );
+  await waitFor("ноты пьесы", () => js("return !!document.querySelector('.score-page svg g.note');"), 30000);
+  await waitFor("гитара", () => js("const b = document.querySelector('[data-piece-instrument=\"guitar\"]'); if (!b) return false; b.click(); return true;"));
+  await waitFor("табулатура и гриф", () => js("return !!document.querySelector('.tab-score g.note') && !!document.querySelector('[data-fretboard]');"), 30000);
+  await waitFor("режим «Свободно»", () => click("Свободно"));
+  await waitFor("режим ожидания", () => click("Ожидание"));
+  await waitFor("первый шаг", () => pitches(), 15000);
+  const gFirst = await pitches();
+  if (gFirst !== "64") throw new Error(`первая нота мелодии на гитаре: ${gFirst}, ожидалась ми (64)`);
+  const hzOf = (m) => 440 * 2 ** ((m - 69) / 12);
+  const gDone = () => js("return document.querySelector('.score-scroll')?.dataset.finished === '1';");
+  let plucks = 0;
+  for (let i = 0; i < 120 && !(await gDone()); i++) {
+    const cur = await pitches();
+    if (!cur) {
+      await sleep(100);
+      continue;
+    }
+    const step = await stepNo();
+    for (const p of cur.split(",")) await invoke("guitar_test_signal", { hz: hzOf(Number(p)), secs: 0.3, kind: "pluck" });
+    plucks++;
+    await waitFor(`гитара: переход с шага ${step}`, async () => (await stepNo()) !== step || (await gDone()), 8000);
+  }
+  const gSum = await waitFor("итог пьесы на гитаре", () => js("return document.querySelector('.summary')?.innerText;"), 10000);
+  const gErrors = await js("return document.querySelector('.summary .big')?.textContent;");
+  if (gErrors !== "0") throw new Error(`ошибок на гитаре: ${gErrors}\n${gSum}`);
+  const heard = (await invoke("guitar_state")).status.recentNotes;
+  if (!heard.length) throw new Error("распознанные ноты не показаны");
+  ok(`гитара: «Ода к радости» в табах сыграна щипками через распознавание звука — ${plucks} нот, 0 ошибок`);
 
   console.log("Готово: все проверки пройдены");
 } catch (e) {

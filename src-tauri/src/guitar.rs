@@ -9,6 +9,10 @@ use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, State};
 
+/// Имена «устройств» для нот, распознанных по звуку.
+pub const GUITAR_DEVICE: &str = "Гитара (звук)";
+pub const BASS_DEVICE: &str = "Бас (звук)";
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GuitarState {
@@ -116,4 +120,10 @@ pub fn guitar_test_signal(state: State<AppState>, hz: f32, secs: f32, kind: Stri
         dsp::sine(hz, RATE as f32, secs, 0.3)
     };
     state.audio.guitar().inject(samples, RATE);
+}
+
+/// Ноты, которые сейчас ждёт пьеса: подсказка распознаванию (ошибки на октаву).
+#[tauri::command]
+pub fn guitar_expect(state: State<AppState>, pitches: Vec<u8>) {
+    state.audio.guitar().set_expected(pitches);
 }

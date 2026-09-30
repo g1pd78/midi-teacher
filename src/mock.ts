@@ -428,6 +428,7 @@ export function createMock() {
           clipping: false,
           pitch: hz ? { hz, midi, cents, clarity: 0.97 } : null,
           recording: rec,
+          recentNotes: on ? [64, 64, 65, 67] : [],
         },
         inputs: [
           { name: "Rocksmith Guitar Adapter Mono", channels: 1 },
@@ -435,6 +436,7 @@ export function createMock() {
         ],
       };
     },
+    guitar_expect: () => undefined,
     guitar_inputs: () => [
       { name: "Rocksmith Guitar Adapter Mono", channels: 1 },
       { name: "Микрофон (Realtek High Definition Audio)", channels: 2 },

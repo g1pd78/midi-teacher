@@ -229,6 +229,8 @@ export interface GuitarStatus {
   clipping: boolean;
   pitch: PitchReading | null;
   recording: GuitarRecording | null;
+  /** Последние распознанные ноты (MIDI), новые в конце. */
+  recentNotes: number[];
 }
 
 export interface GuitarState {
@@ -580,6 +582,7 @@ export const api = {
   guitarCalibrate: (bpm: number, count: number) => invoke<Calibration | null>("guitar_calibrate", { bpm, count }),
   guitarRecord: (name: string, secs: number) => invoke<string>("guitar_record", { name, secs }),
   guitarStopRecord: () => invoke<void>("guitar_stop_record"),
+  guitarExpect: (pitches: number[]) => invoke<void>("guitar_expect", { pitches }),
   guitarTestSignal: (hz: number, secs: number, kind: "pluck" | "sine") => invoke<void>("guitar_test_signal", { hz, secs, kind }),
   fingeringGet: (piece: string, notes: FingerNoteIn[]) => invoke<Finger[]>("fingering_get", { piece, notes }),
   fingeringSet: (piece: string, notes: FingerNoteIn[], noteId: string, finger: number | null) =>

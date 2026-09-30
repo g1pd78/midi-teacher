@@ -211,6 +211,29 @@ pub fn run() {
             let (tx, rx) = unbounded::<DeviceEvent>();
             let devices = DeviceManager::start(audio.clone(), tx, settings.devices.clone());
             devices.set_guitar_sound_demand(settings.guitar.enabled);
+            // Ноты, распознанные по звуку гитары/баса, — как ещё одно MIDI-устройство (без звука).
+            let (note_tx, note_rx) = unbounded::<mt_core::guitar::NoteEvent>();
+            audio.guitar().set_note_sink(note_tx);
+            let note_devices = devices.clone();
+            thread::Builder::new()
+                .name("mt-guitar-notes".into())
+                .spawn(move || {
+                    for ev in note_rx {
+                        let name = match ev.instrument {
+                            mt_core::guitar::Instrument::Bass => guitar::BASS_DEVICE,
+                            mt_core::guitar::Instrument::Guitar => guitar::GUITAR_DEVICE,
+                        };
+                        let msg = if ev.on {
+                            MidiMessage::NoteOn {
+                                note: ev.pitch,
+                                velocity: ev.velocity.max(1),
+                            }
+                        } else {
+                            MidiMessage::NoteOff { note: ev.pitch }
+                        };
+                        note_devices.inject_event(name, 0, msg, ev.time_us);
+                    }
+                })?;
 
             let state = AppState {
                 devices: devices.clone(),
@@ -350,6 +373,7 @@ pub fn run() {
             guitar::guitar_record,
             guitar::guitar_stop_record,
             guitar::guitar_test_signal,
+            guitar::guitar_expect,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска приложения");

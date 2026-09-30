@@ -352,6 +352,17 @@ impl DeviceManager {
         self.shared.on_midi(device, bytes);
     }
 
+    /// Событие «устройства» без звука и маршрутов (ноты, распознанные по звуку гитары:
+    /// гитара звучит сама). Время задаёт источник.
+    pub fn inject_event(&self, device: &str, channel: u8, msg: MidiMessage, time_us: u64) {
+        let _ = self.shared.events.try_send(DeviceEvent::Midi(MidiEvent {
+            device: device.to_string(),
+            channel,
+            msg,
+            time_us,
+        }));
+    }
+
     /// Сверяет список портов с подключениями и настройками.
     pub fn rescan(&self) {
         let (in_names, out_names) = scan_ports();

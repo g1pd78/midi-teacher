@@ -100,6 +100,11 @@ fn centered(x: &[f32]) -> Vec<f32> {
     x.iter().map(|v| v - mean).collect()
 }
 
+/// NSDF окна (без постоянной составляющей) на одном сдвиге.
+pub fn nsdf(x: &[f32], tau: usize) -> f32 {
+    nsdf_at(&centered(x), tau)
+}
+
 /// Нормированная разностная функция (NSDF) на одном сдвиге.
 fn nsdf_at(x: &[f32], tau: usize) -> f32 {
     if tau == 0 || tau >= x.len() {
@@ -170,11 +175,14 @@ pub fn mpm(x: &[f32], rate: f32, fmin: f32, fmax: f32) -> Option<Pitch> {
             }
         }
     }
-    let top = peaks.iter().map(|&p| n[p]).fold(0.0f32, f32::max);
+    // Высоты пиков — после уточнения параболой: период редко попадает ровно на целый
+    // сдвиг, и без уточнения удвоенный период иногда выглядит «чище» (ошибка на октаву).
+    let height = |p: usize| parabola(n[p - 1], n[p], n[p + 1]).1;
+    let top = peaks.iter().map(|&p| height(p)).fold(0.0f32, f32::max);
     if top <= 0.0 {
         return None;
     }
-    let p = *peaks.iter().find(|&&p| n[p] >= K * top)?;
+    let p = *peaks.iter().find(|&&p| height(p) >= K * top)?;
     let (off, clarity) = parabola(n[p - 1], n[p], n[p + 1]);
     let lag = p as f32 + off;
     Some(Pitch {

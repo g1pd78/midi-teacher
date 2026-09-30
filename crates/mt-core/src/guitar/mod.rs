@@ -10,11 +10,13 @@
 //!   калибровки и этапа «звук → ноты») и пишет WAV.
 
 pub mod dsp;
+pub mod notes;
 
 use crate::clock;
 use crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Sender};
 use crossbeam_queue::ArrayQueue;
 use dsp::{Decimator, OnsetDetector, ToneKind};
+use notes::{NoteTracker, TrackEvent};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -45,7 +47,7 @@ impl Instrument {
     }
 
     /// Полоса частот для определения высоты.
-    fn range(self) -> (f32, f32) {
+    pub fn range(self) -> (f32, f32) {
         match self {
             Instrument::Bass => (35.0, 450.0),
             Instrument::Guitar => (70.0, dsp::FMAX),
@@ -135,6 +137,18 @@ pub struct GuitarStatus {
     pub clipping: bool,
     pub pitch: Option<PitchReading>,
     pub recording: Option<RecordingState>,
+    /// Последние распознанные ноты (MIDI), новые в конце.
+    pub recent_notes: Vec<u8>,
+}
+
+/// Распознанная нота: нажата/отпущена, время по часам приложения (с поправкой на задержку).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NoteEvent {
+    pub on: bool,
+    pub pitch: u8,
+    pub velocity: u8,
+    pub time_us: u64,
+    pub instrument: Instrument,
 }
 
 /// Отметки времени входа: номер последнего сэмпла и время его получения.
@@ -194,6 +208,10 @@ pub struct GuitarShared {
     bass: AtomicBool,
     frames: AtomicU32,
     onsets: Mutex<VecDeque<u64>>,
+    /// Ноты, которые сейчас ждёт пьеса (подсказка для октавы).
+    expected: Mutex<Vec<u8>>,
+    /// Куда отправлять распознанные ноты.
+    note_sink: Mutex<Option<Sender<NoteEvent>>>,
     /// Прослушивание: читает выходной поток.
     pub monitor: Mutex<Option<MonitorReader>>,
     tx: Sender<Msg>,
@@ -214,6 +232,8 @@ impl GuitarShared {
             bass: AtomicBool::new(false),
             frames: AtomicU32::new(0),
             onsets: Mutex::new(VecDeque::new()),
+            expected: Mutex::new(Vec::new()),
+            note_sink: Mutex::new(None),
             monitor: Mutex::new(None),
             tx,
         });
@@ -340,6 +360,16 @@ impl GuitarShared {
             .copied()
             .filter(|&t| t >= since_us)
             .collect()
+    }
+
+    /// Какие ноты сейчас ждёт пьеса (пусто — без подсказки).
+    pub fn set_expected(&self, pitches: Vec<u8>) {
+        *self.expected.lock() = pitches;
+    }
+
+    /// Получатель распознанных нот (приложение передаёт их как MIDI-устройство).
+    pub fn set_note_sink(&self, tx: Sender<NoteEvent>) {
+        *self.note_sink.lock() = Some(tx);
     }
 
     /// Подать сэмплы как со входа (тесты, режим разработчика).
@@ -501,6 +531,9 @@ struct Analyzer {
     clip_until: u64,
     recording: Option<Recording>,
     buf: Vec<f32>,
+    tracker: NoteTracker,
+    tracker_for: Instrument,
+    track_events: Vec<TrackEvent>,
 }
 
 impl Analyzer {
@@ -523,6 +556,9 @@ impl Analyzer {
             clip_until: 0,
             recording: None,
             buf: Vec::with_capacity(8192),
+            tracker: NoteTracker::new(48_000.0, Instrument::Guitar),
+            tracker_for: Instrument::Guitar,
+            track_events: Vec::new(),
         }
     }
 
@@ -535,6 +571,7 @@ impl Analyzer {
         self.full.clear();
         self.low_since_pitch = 0;
         self.history.clear();
+        self.tracker = NoteTracker::new(rate as f32, self.tracker_for);
     }
 
     fn run(mut self, rx: Receiver<Msg>) {
@@ -643,7 +680,17 @@ impl Analyzer {
             let back = end_index.saturating_sub(i) as f64 * 1e6 / rate;
             end_us.saturating_sub(back as u64)
         };
-        let instrument = shared.config.read().instrument;
+        let (instrument, latency_ms) = {
+            let c = shared.config.read();
+            (c.instrument, c.latency_ms.unwrap_or(0.0).max(0.0))
+        };
+        if instrument != self.tracker_for {
+            self.tracker_for = instrument;
+            self.tracker = NoteTracker::new(self.rate.max(1) as f32, instrument);
+        }
+        let expected = shared.expected.lock().clone();
+        let latency_us = (latency_ms * 1000.0) as u64;
+        let mut notes_out: Vec<NoteEvent> = Vec::new();
         let level_block = (self.rate / 20).max(1) as usize; // 50 мс
         let mut new_onsets = Vec::new();
         let mut reading = None;
@@ -670,6 +717,25 @@ impl Analyzer {
             // Начала нот.
             if let Some(at) = self.onset.push(x, i) {
                 new_onsets.push(time_of(at));
+            }
+            // Ноты.
+            self.tracker.push(x, &expected, &mut self.track_events);
+            for ev in self.track_events.drain(..) {
+                let (on, pitch, velocity, at) = match ev {
+                    TrackEvent::On {
+                        pitch,
+                        velocity,
+                        at,
+                    } => (true, pitch, velocity, at),
+                    TrackEvent::Off { pitch, at } => (false, pitch, 0, at),
+                };
+                notes_out.push(NoteEvent {
+                    on,
+                    pitch,
+                    velocity,
+                    time_us: time_of(at).saturating_sub(latency_us),
+                    instrument,
+                });
             }
             // Высота.
             if self.full.len() == FULL_WINDOW {
@@ -707,6 +773,21 @@ impl Analyzer {
             q.extend(new_onsets);
             while q.len() > 128 {
                 q.pop_front();
+            }
+        }
+        if !notes_out.is_empty() {
+            if let Some(tx) = shared.note_sink.lock().as_ref() {
+                for ev in &notes_out {
+                    let _ = tx.send(*ev);
+                }
+            }
+            let mut st = shared.status.write();
+            for ev in notes_out.iter().filter(|e| e.on) {
+                st.recent_notes.push(ev.pitch);
+            }
+            let n = st.recent_notes.len();
+            if n > 8 {
+                st.recent_notes.drain(..n - 8);
             }
         }
         if level.is_some() || reading.is_some() {
@@ -809,6 +890,38 @@ mod tests {
             Some(shared.onsets_since(t0)).filter(|o| !o.is_empty())
         });
         assert_eq!(onsets.len(), 1);
+    }
+
+    #[test]
+    fn recognized_notes_go_to_sink_with_latency_correction() {
+        let shared = GuitarShared::start(GuitarConfig {
+            latency_ms: Some(30.0),
+            ..Default::default()
+        });
+        let (tx, rx) = unbounded();
+        shared.set_note_sink(tx);
+        let mut sig = vec![0.0f32; 4800];
+        sig.extend(dsp::pluck(dsp::midi_to_hz(57.0), 48_000.0, 0.4, 0.4, 2));
+        sig.extend(vec![0.0f32; 9600]);
+        let before = clock::now_us();
+        shared.inject(sig, 48_000);
+        let ev = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("нота не распознана");
+        assert!(ev.on);
+        assert_eq!(ev.pitch, 57);
+        // Сигнал «пришёл» целиком в момент подачи: начало ноты ~0,6 с раньше, плюс поправка 30 мс.
+        let expect = before.saturating_sub(600_000 + 30_000);
+        assert!(
+            (ev.time_us as i64 - expect as i64).abs() < 60_000,
+            "{} против {}",
+            ev.time_us,
+            expect
+        );
+        let st = wait_for("список нот", || {
+            Some(shared.status()).filter(|s| !s.recent_notes.is_empty())
+        });
+        assert_eq!(st.recent_notes, vec![57]);
     }
 
     #[test]
