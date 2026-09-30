@@ -79,6 +79,7 @@ export function createMock() {
       error: null,
       notice: null,
       asioSupported: true,
+      gm: "SoundFont: GeneralUser-GS.sf2",
     } satisfies AudioStatus,
     audioDevices: { asio: [], system: ["Динамики (демо)", "Наушники (демо)"] },
   };

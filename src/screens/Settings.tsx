@@ -206,6 +206,7 @@ function SynthSection() {
           />
           <Stat label="Прерывания звука" value={meters ? String(meters.xruns) : "—"} />
           <Stat label="Звук рояля" value={audio.synth || "—"} wide />
+          <Stat label="Аккомпанемент (GM)" value={audio.gm ?? "не загружен — аккомпанемент MIDI звучит роялем"} wide />
         </div>
       )}
       {audio?.suspended && (

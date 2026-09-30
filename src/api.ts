@@ -65,6 +65,8 @@ export interface AudioStatus {
   error: string | null;
   notice: string | null;
   asioSupported: boolean;
+  /** GM-банк аккомпанемента, если загружен. */
+  gm: string | null;
 }
 
 export interface AudioMeters {
@@ -170,6 +172,9 @@ export interface AccompNote {
   startMs: number;
   durMs: number;
   measure: number;
+  /** Канал дорожки (0–15, 9 — барабаны) и её инструмент General MIDI. */
+  channel: number;
+  program: number | null;
 }
 
 export interface Converted {
@@ -260,6 +265,9 @@ export interface PieceNoteIn {
   /** `accomp` — аккомпанемент из MIDI-файла: всегда играет приложение. */
   hand: "right" | "left" | "accomp";
   measure: number;
+  /** Аккомпанемент MIDI: канал и инструмент для GM-синтезатора. */
+  channel?: number | null;
+  program?: number | null;
 }
 
 /** Руки ученика в сессии; `none` — приложение играет всё (прослушивание). */

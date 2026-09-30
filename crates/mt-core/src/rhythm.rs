@@ -127,9 +127,34 @@ pub enum RhythmEvent {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     Event(RhythmEvent),
-    AppNoteOn { pitch: u8, velocity: u8 },
-    AppNoteOff { pitch: u8 },
-    Click { accent: bool },
+    AppNoteOn {
+        pitch: u8,
+        velocity: u8,
+    },
+    AppNoteOff {
+        pitch: u8,
+    },
+    /// Нота аккомпанемента на GM-синтезаторе (инструмент своей дорожки).
+    GmNoteOn {
+        channel: u8,
+        program: Option<u8>,
+        pitch: u8,
+        velocity: u8,
+    },
+    GmNoteOff {
+        channel: u8,
+        pitch: u8,
+    },
+    Click {
+        accent: bool,
+    },
+}
+
+fn off_action(pitch: u8, channel: Option<u8>) -> Action {
+    match channel {
+        Some(channel) => Action::GmNoteOff { channel, pitch },
+        None => Action::AppNoteOff { pitch },
+    }
 }
 
 pub struct RhythmSession {
@@ -148,7 +173,8 @@ pub struct RhythmSession {
     missed: Vec<bool>,
     next_beat: usize,
     next_accomp: usize,
-    sounding: Vec<(u8, u32)>,
+    /// Звучащие ноты приложения: (высота, конец, канал GM).
+    sounding: Vec<(u8, u32, Option<u8>)>,
     miss_cursor: usize,
     extras: usize,
     errors_by_measure: BTreeMap<u32, u32>,
@@ -284,16 +310,25 @@ impl RhythmSession {
             if !self.cfg.accompany {
                 continue;
             }
-            let (pitch, end) = (n.pitch, n.start_ms + n.dur_ms);
-            if self.sounding.iter().any(|s| s.0 == pitch) {
-                out.push(Action::AppNoteOff { pitch });
-                self.sounding.retain(|s| s.0 != pitch);
+            let (pitch, end, channel, program) =
+                (n.pitch, n.start_ms + n.dur_ms, n.channel, n.program);
+            if self.sounding.iter().any(|s| s.0 == pitch && s.2 == channel) {
+                out.push(off_action(pitch, channel));
+                self.sounding.retain(|s| !(s.0 == pitch && s.2 == channel));
             }
-            out.push(Action::AppNoteOn {
-                pitch,
-                velocity: APP_VELOCITY,
+            out.push(match channel {
+                Some(channel) => Action::GmNoteOn {
+                    channel,
+                    program,
+                    pitch,
+                    velocity: APP_VELOCITY,
+                },
+                None => Action::AppNoteOn {
+                    pitch,
+                    velocity: APP_VELOCITY,
+                },
             });
-            self.sounding.push((pitch, end));
+            self.sounding.push((pitch, end, channel));
         }
 
         // Нота пропущена, когда окно после неё закрылось без нажатия.
@@ -396,11 +431,11 @@ impl RhythmSession {
 
     fn release_until(&mut self, pos: f64, out: &mut Vec<Action>) {
         let mut keep = Vec::new();
-        for (pitch, end) in self.sounding.drain(..) {
+        for (pitch, end, channel) in self.sounding.drain(..) {
             if end as f64 <= pos {
-                out.push(Action::AppNoteOff { pitch });
+                out.push(off_action(pitch, channel));
             } else {
-                keep.push((pitch, end));
+                keep.push((pitch, end, channel));
             }
         }
         self.sounding = keep;
@@ -551,6 +586,8 @@ mod tests {
             dur_ms: dur,
             hand,
             measure,
+            channel: None,
+            program: None,
         }
     }
 

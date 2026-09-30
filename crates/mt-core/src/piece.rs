@@ -55,6 +55,12 @@ pub struct PieceNote {
     pub dur_ms: u32,
     pub hand: Hand,
     pub measure: u32,
+    /// Канал GM (0–15) для аккомпанемента из MIDI: звучит встроенным GM-синтезатором
+    /// своим инструментом (`program`), канал 9 — барабаны. `None` — «звук приложения».
+    #[serde(default)]
+    pub channel: Option<u8>,
+    #[serde(default)]
+    pub program: Option<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -62,6 +68,13 @@ pub struct Step {
     pub onset_ms: u32,
     /// Индексы нот в `notes`.
     pub notes: Vec<usize>,
+}
+
+fn off_action(pitch: u8, channel: Option<u8>) -> Action {
+    match channel {
+        Some(channel) => Action::GmNoteOff { channel, pitch },
+        None => Action::AppNoteOff { pitch },
+    }
 }
 
 /// Ноты с началом ближе этого считаются одновременными.
@@ -171,6 +184,17 @@ pub enum Action {
     AppNoteOff {
         pitch: u8,
     },
+    /// Нота аккомпанемента на GM-синтезаторе (инструмент своей дорожки).
+    GmNoteOn {
+        channel: u8,
+        program: Option<u8>,
+        pitch: u8,
+        velocity: u8,
+    },
+    GmNoteOff {
+        channel: u8,
+        pitch: u8,
+    },
     /// Вызвать `on_timer(token)` через `delay_ms`.
     Schedule {
         token: u64,
@@ -189,7 +213,8 @@ pub struct PieceSession {
     pressed: HashSet<u8>,
     accompanied: bool,
     /// Ноты приложения, которые сейчас звучат: (высота, конец в мс пьесы).
-    sounding: Vec<(u8, u32)>,
+    /// Звучащие ноты приложения: (высота, конец, канал GM).
+    sounding: Vec<(u8, u32, Option<u8>)>,
     token: u64,
     errors: u32,
     errors_by_measure: BTreeMap<u32, u32>,
@@ -301,31 +326,39 @@ impl PieceSession {
             return;
         }
         self.accompanied = true;
-        let notes: Vec<(u8, u32)> = self
+        let notes: Vec<(u8, u32, Option<u8>, Option<u8>)> = self
             .others(self.index)
-            .map(|n| (n.pitch, n.start_ms + n.dur_ms))
+            .map(|n| (n.pitch, n.start_ms + n.dur_ms, n.channel, n.program))
             .collect();
-        for (pitch, end) in notes {
+        for (pitch, end, channel, program) in notes {
             // Та же высота уже звучит — сначала снять, чтобы нота прозвучала заново.
-            if self.sounding.iter().any(|s| s.0 == pitch) {
-                out.push(Action::AppNoteOff { pitch });
-                self.sounding.retain(|s| s.0 != pitch);
+            if self.sounding.iter().any(|s| s.0 == pitch && s.2 == channel) {
+                out.push(off_action(pitch, channel));
+                self.sounding.retain(|s| !(s.0 == pitch && s.2 == channel));
             }
-            out.push(Action::AppNoteOn {
-                pitch,
-                velocity: APP_VELOCITY,
+            out.push(match channel {
+                Some(channel) => Action::GmNoteOn {
+                    channel,
+                    program,
+                    pitch,
+                    velocity: APP_VELOCITY,
+                },
+                None => Action::AppNoteOn {
+                    pitch,
+                    velocity: APP_VELOCITY,
+                },
             });
-            self.sounding.push((pitch, end));
+            self.sounding.push((pitch, end, channel));
         }
     }
 
     fn release_until(&mut self, t_ms: u32, out: &mut Vec<Action>) {
         let mut keep = Vec::new();
-        for (pitch, end) in self.sounding.drain(..) {
+        for (pitch, end, channel) in self.sounding.drain(..) {
             if end <= t_ms {
-                out.push(Action::AppNoteOff { pitch });
+                out.push(off_action(pitch, channel));
             } else {
-                keep.push((pitch, end));
+                keep.push((pitch, end, channel));
             }
         }
         self.sounding = keep;
@@ -447,6 +480,8 @@ mod tests {
             dur_ms: dur,
             hand,
             measure,
+            channel: None,
+            program: None,
         }
     }
 
@@ -483,6 +518,48 @@ mod tests {
             2,
             "ми и соль с разницей 5 мс — один аккорд"
         );
+    }
+
+    #[test]
+    fn midi_accompaniment_plays_on_gm_with_its_instrument() {
+        let mut notes = piece();
+        let mut drum = note("d1", 36, 0, 200, Hand::Accomp, 1);
+        drum.channel = Some(9);
+        let mut strings = note("s1", 55, 0, 2000, Hand::Accomp, 1);
+        strings.channel = Some(2);
+        strings.program = Some(48);
+        notes.push(drum);
+        notes.push(strings);
+        let mut s = PieceSession::new(
+            notes,
+            PieceConfig {
+                hands: HandMode::Right,
+                ..Default::default()
+            },
+        );
+        s.start(0);
+        let a = s.on_note_on(60, 10);
+        assert!(a.contains(&Action::GmNoteOn {
+            channel: 9,
+            program: None,
+            pitch: 36,
+            velocity: APP_VELOCITY
+        }));
+        assert!(a.contains(&Action::GmNoteOn {
+            channel: 2,
+            program: Some(48),
+            pitch: 55,
+            velocity: APP_VELOCITY
+        }));
+        // Бас левой руки — по-прежнему «звук приложения».
+        assert!(a
+            .iter()
+            .any(|x| matches!(x, Action::AppNoteOn { pitch: 48, .. })));
+        let stop = s.stop();
+        assert!(stop.contains(&Action::GmNoteOff {
+            channel: 2,
+            pitch: 55
+        }));
     }
 
     #[test]

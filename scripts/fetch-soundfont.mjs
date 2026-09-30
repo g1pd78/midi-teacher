@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// Скачивает SoundFont рояля в src-tauri/resources/soundfonts/ для сборки установщика.
+// Скачивает SoundFont рояля в src-tauri/resources/soundfonts/ и GM-банк аккомпанемента
+// (GeneralUser GS, © S. Christian Collins, свободная лицензия) в src-tauri/resources/gm/
+// для сборки установщика.
 //
 // YDP Grand Piano (Yamaha Disklavier Pro), © Roberto Gordo Saez, CC BY 3.0,
 // проект FreePats: https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html
@@ -73,13 +75,44 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  const msg = `SoundFont не загружен: ${e.message}`;
-  if (optional) {
-    console.log(`::warning::${msg}. Установщик будет со встроенным простым синтезом.`);
-    process.exit(0);
+// GM-банк: версия закреплена коммитом репозитория автора, файл проверяется по SHA-256.
+const GM_URL = "https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/684543d5e5efaef08d02be50dcda8d552478fa60/GeneralUser-GS.sf2";
+const GM_SHA256 = "9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe";
+const gmFile = join(root, "src-tauri", "resources", "gm", "GeneralUser-GS.sf2");
+
+async function fetchGm() {
+  if (existsSync(gmFile) && statSync(gmFile).size > 1_000_000) {
+    console.log(`GM-банк уже на месте: ${gmFile}`);
+    return;
   }
-  console.error(msg);
-  process.exit(1);
-});
+  console.log(`Скачиваю ${GM_URL}`);
+  const res = await fetch(GM_URL, { redirect: "follow" });
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+  const data = Buffer.from(await res.arrayBuffer());
+  const sha = createHash("sha256").update(data).digest("hex");
+  if (sha !== GM_SHA256) throw new Error(`контрольная сумма GM-банка не совпала: ${sha}`);
+  writeFileSync(gmFile, data);
+  console.log(`Готово: ${gmFile} (${(data.length / 1e6).toFixed(1)} МБ)`);
+}
+
+main()
+  .catch((e) => {
+    const msg = `SoundFont не загружен: ${e.message}`;
+    if (optional) {
+      console.log(`::warning::${msg}. Установщик будет со встроенным простым синтезом.`);
+      return;
+    }
+    console.error(msg);
+    process.exit(1);
+  })
+  .then(() => fetchGm())
+  .catch((e) => {
+    const msg = `GM-банк не загружен: ${e.message}`;
+    if (optional) {
+      console.log(`::warning::${msg}. Аккомпанемент MIDI будет звучать роялем.`);
+      return;
+    }
+    console.error(msg);
+    process.exit(1);
+  });
 

@@ -146,6 +146,8 @@ export function accompNotes(acc: AccompNote[]): PieceNoteIn[] {
     durMs: a.durMs,
     hand: "accomp",
     measure: a.measure,
+    channel: a.channel,
+    program: a.program,
   }));
 }
 

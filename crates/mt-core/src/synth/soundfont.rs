@@ -50,6 +50,12 @@ impl SoundFontSynth {
     pub fn path(&self) -> &Path {
         &self.path
     }
+
+    /// Смена инструмента на канале (General MIDI; канал 9 — барабаны).
+    pub fn program_change(&mut self, channel: u8, program: u8) {
+        self.synth
+            .process_midi_message(channel as i32, 0xC0, program as i32, 0);
+    }
 }
 
 impl Synth for SoundFontSynth {
@@ -82,5 +88,36 @@ impl Synth for SoundFontSynth {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         format!("SoundFont: {file}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// GM-банк звучит: струнные (программа 48) и барабаны (канал 9).
+    /// Банк не хранится в репозитории — тест проверяет его, если он скачан.
+    #[test]
+    fn gm_bank_plays_instruments_and_drums() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../src-tauri/resources/gm/GeneralUser-GS.sf2");
+        if !path.exists() {
+            eprintln!("GM-банк не скачан — пропуск");
+            return;
+        }
+        let mut s = SoundFontSynth::load(&path, 48_000).unwrap();
+        let energy = |s: &mut SoundFontSynth| {
+            let (mut l, mut r) = (vec![0.0f32; 4800], vec![0.0f32; 4800]);
+            s.render(&mut l, &mut r);
+            l.iter().chain(&r).map(|x| x * x).sum::<f32>()
+        };
+        assert_eq!(energy(&mut s), 0.0);
+        s.program_change(2, 48);
+        s.note_on(2, 55, 100);
+        assert!(energy(&mut s) > 1e-3);
+        s.all_notes_off();
+        let _ = energy(&mut s);
+        s.note_on(9, 36, 110);
+        assert!(energy(&mut s) > 1e-3, "бочка на канале 10 не звучит");
     }
 }

@@ -1,5 +1,6 @@
 //! Разучивание пьесы: запуск сессии, подача нажатий, звук второй руки, таймеры.
 
+use mt_core::audio::AudioEngine;
 use mt_core::clock;
 use mt_core::devices::DeviceManager;
 use mt_core::midi::MidiMessage;
@@ -13,14 +14,16 @@ use tauri::{AppHandle, Emitter, State};
 pub struct PieceHub {
     session: Mutex<Option<PieceSession>>,
     devices: Arc<DeviceManager>,
+    audio: AudioEngine,
     app: AppHandle,
 }
 
 impl PieceHub {
-    pub fn new(devices: Arc<DeviceManager>, app: AppHandle) -> Self {
+    pub fn new(devices: Arc<DeviceManager>, audio: AudioEngine, app: AppHandle) -> Self {
         Self {
             session: Mutex::new(None),
             devices,
+            audio,
             app,
         }
     }
@@ -56,6 +59,31 @@ impl PieceHub {
                 Action::AppNoteOff { pitch } => {
                     self.devices.play_app(MidiMessage::NoteOff { note: pitch });
                 }
+                // Без GM-банка аккомпанемент звучит как «звук приложения».
+                Action::GmNoteOn {
+                    channel,
+                    program,
+                    pitch,
+                    velocity,
+                } => {
+                    let msg = MidiMessage::NoteOn {
+                        note: pitch,
+                        velocity,
+                    };
+                    if self.audio.status().gm.is_some() {
+                        self.audio.gm_send(channel, program, msg)
+                    } else if channel != 9 {
+                        self.devices.play_app(msg)
+                    }
+                }
+                Action::GmNoteOff { channel, pitch } => {
+                    let msg = MidiMessage::NoteOff { note: pitch };
+                    if self.audio.status().gm.is_some() {
+                        self.audio.gm_send(channel, None, msg)
+                    } else if channel != 9 {
+                        self.devices.play_app(msg)
+                    }
+                }
                 Action::Schedule { token, delay_ms } => {
                     let hub = self.clone();
                     thread::spawn(move || {
@@ -87,6 +115,9 @@ pub fn piece_start(
 ) -> usize {
     rhythm.stop();
     hub.stop();
+    // Аккомпанемент GM звучит встроенным синтезатором — держим вывод открытым.
+    hub.devices
+        .set_extra_sound_demand(notes.iter().any(|n| n.channel.is_some()));
     let mut session = PieceSession::new(notes, config);
     let steps = session.steps().len();
     let actions = session.start(clock::now_us());
@@ -98,4 +129,5 @@ pub fn piece_start(
 #[tauri::command]
 pub fn piece_stop(hub: State<Arc<PieceHub>>) {
     hub.stop();
+    hub.devices.set_extra_sound_demand(false);
 }

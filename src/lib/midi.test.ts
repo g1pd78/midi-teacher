@@ -37,8 +37,8 @@ describe("импорт MIDI в интерфейсе", () => {
   });
 
   it("аккомпанемент — ноты приложения", () => {
-    const [n] = accompNotes([{ pitch: 55, startMs: 100, durMs: 400, measure: 2 }]);
-    expect(n).toEqual({ id: "acc0", pitch: 55, startMs: 100, durMs: 400, hand: "accomp", measure: 2 });
+    const [n] = accompNotes([{ pitch: 55, startMs: 100, durMs: 400, measure: 2, channel: 9, program: null }]);
+    expect(n).toEqual({ id: "acc0", pitch: 55, startMs: 100, durMs: 400, hand: "accomp", measure: 2, channel: 9, program: null });
   });
 
   it("имя файла записи", () => {

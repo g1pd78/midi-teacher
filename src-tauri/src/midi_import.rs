@@ -115,7 +115,10 @@ pub fn midi_preview(
     id: String,
     track: usize,
 ) -> Result<(), String> {
-    let notes = midifile::track_preview(&load(&app, &id)?, track, PREVIEW_SECS);
+    let data = load(&app, &id)?;
+    let notes = midifile::track_preview(&data, track, PREVIEW_SECS);
+    // Если GM-банк загружен — дорожка звучит своим инструментом (барабаны — барабанами).
+    let voice = midifile::track_voice(&data, track).filter(|_| hub.audio.status().gm.is_some());
     hub.stop_preview();
     let gen = hub.preview_gen.load(Ordering::SeqCst);
     let hub = Arc::clone(&hub);
@@ -130,6 +133,13 @@ pub fn midi_preview(
             events.sort_by_key(|e| (e.0, e.1));
             let t0 = clock::now_us();
             let mut sounding: Vec<u8> = Vec::new();
+            let play = |msg: MidiMessage| match voice {
+                Some((channel, program)) => hub.audio.gm_send(channel, program, msg),
+                None => hub.devices.play_app(msg),
+            };
+            if voice.is_some() {
+                hub.devices.set_extra_sound_demand(true);
+            }
             for (ms, on, pitch, velocity) in events {
                 loop {
                     if hub.preview_gen.load(Ordering::SeqCst) != gen {
@@ -146,18 +156,21 @@ pub fn midi_preview(
                     break;
                 }
                 if on {
-                    hub.devices.play_app(MidiMessage::NoteOn {
+                    play(MidiMessage::NoteOn {
                         note: pitch,
                         velocity,
                     });
                     sounding.push(pitch);
                 } else if let Some(i) = sounding.iter().position(|&p| p == pitch) {
                     sounding.swap_remove(i);
-                    hub.devices.play_app(MidiMessage::NoteOff { note: pitch });
+                    play(MidiMessage::NoteOff { note: pitch });
                 }
             }
             for pitch in sounding {
-                hub.devices.play_app(MidiMessage::NoteOff { note: pitch });
+                play(MidiMessage::NoteOff { note: pitch });
+            }
+            if voice.is_some() {
+                hub.devices.set_extra_sound_demand(false);
             }
         })
         .map_err(|e| e.to_string())?;

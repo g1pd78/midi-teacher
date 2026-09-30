@@ -47,6 +47,15 @@ impl AppState {
         }
     }
 
+    /// GM-банк аккомпанемента, поставляемый вместе с приложением.
+    fn bundled_gm(&self) -> Option<PathBuf> {
+        let dir = self.resource_dir.as_ref()?.join("gm");
+        std::fs::read_dir(dir)
+            .ok()?
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .find(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("sf2")))
+    }
+
     /// SoundFont, поставляемый вместе с приложением.
     fn bundled_soundfont(&self) -> Option<PathBuf> {
         let dir = self.resource_dir.as_ref()?.join("soundfonts");
@@ -247,7 +256,11 @@ pub fn run() {
             let handle = app.handle().clone();
             let dev = devices.clone();
             let trainer_hub = hub.clone();
-            let piece_hub = Arc::new(PieceHub::new(devices.clone(), app.handle().clone()));
+            let piece_hub = Arc::new(PieceHub::new(
+                devices.clone(),
+                audio.clone(),
+                app.handle().clone(),
+            ));
             let piece_events = piece_hub.clone();
             let rhythm_hub = Arc::new(RhythmHub::new(
                 devices.clone(),
@@ -305,11 +318,23 @@ pub fn run() {
                 .clone()
                 .filter(|p| p.exists())
                 .or_else(|| state.bundled_soundfont());
-            if let Some(path) = sf {
+            let gm = state.bundled_gm();
+            {
                 let audio = audio.clone();
-                thread::spawn(move || match audio.load_soundfont(path.clone()) {
-                    Ok(name) => log::info!("{name} загружен"),
-                    Err(e) => log::warn!("SoundFont {}: {e}", path.display()),
+                thread::spawn(move || {
+                    if let Some(path) = sf {
+                        match audio.load_soundfont(path.clone()) {
+                            Ok(name) => log::info!("{name} загружен"),
+                            Err(e) => log::warn!("SoundFont {}: {e}", path.display()),
+                        }
+                    }
+                    // GM-банк аккомпанемента (барабаны, инструменты MIDI-дорожек) — после рояля.
+                    if let Some(path) = gm {
+                        match audio.load_gm(path.clone()) {
+                            Ok(name) => log::info!("GM-банк: {name}"),
+                            Err(e) => log::warn!("GM-банк {}: {e}", path.display()),
+                        }
+                    }
                 });
             }
 

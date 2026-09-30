@@ -343,6 +343,11 @@ fn detect_key<'a>(notes: impl Iterator<Item = &'a RawNote>) -> (i8, bool) {
     (best.1, best.2)
 }
 
+/// Канал (0–15) и инструмент General MIDI дорожки.
+pub fn track_voice(data: &MidiData, track: usize) -> Option<(u8, Option<u8>)> {
+    data.tracks.get(track).map(|t| (t.channel, t.program))
+}
+
 /// Ноты дорожки для прослушивания: первые `secs` секунд от её первой ноты,
 /// как (начало мс, длительность мс, высота, сила).
 pub fn track_preview(data: &MidiData, track: usize, secs: f64) -> Vec<(u32, u32, u8, u8)> {
@@ -630,6 +635,9 @@ pub struct AccompNote {
     pub start_ms: u32,
     pub dur_ms: u32,
     pub measure: u32,
+    /// Канал дорожки (0–15; 9 — барабаны) и её инструмент General MIDI.
+    pub channel: u8,
+    pub program: Option<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1026,6 +1034,8 @@ pub fn convert(data: &MidiData, opts: &ConvertOptions) -> Result<Converted> {
     let mut right: Vec<QNote> = Vec::new();
     let mut left: Vec<QNote> = Vec::new();
     let mut accomp: Vec<QNote> = Vec::new();
+    // Канал и инструмент дорожки для каждой ноты аккомпанемента (в том же порядке).
+    let mut accomp_src: Vec<(u8, Option<u8>)> = Vec::new();
     for (t, role) in data.tracks.iter().zip(&roles) {
         let q = quantize(&t.notes, ppq, &grids);
         match role {
@@ -1045,7 +1055,10 @@ pub fn convert(data: &MidiData, opts: &ConvertOptions) -> Result<Converted> {
                     }
                 }
             }
-            TrackRole::Accompany => accomp.extend(q),
+            TrackRole::Accompany => {
+                accomp_src.extend(std::iter::repeat_n((t.channel, t.program), q.len()));
+                accomp.extend(q);
+            }
             TrackRole::Off => {}
         }
     }
@@ -1161,11 +1174,14 @@ pub fn convert(data: &MidiData, opts: &ConvertOptions) -> Result<Converted> {
     let ms_per_div = 60_000.0 / bpm / DIV as f64;
     let accompaniment = accomp
         .iter()
-        .map(|n| AccompNote {
+        .zip(&accomp_src)
+        .map(|(n, &(channel, program))| AccompNote {
             pitch: n.pitch,
             start_ms: (n.start as f64 * ms_per_div).round() as u32,
             dur_ms: ((n.end - n.start) as f64 * ms_per_div).round() as u32,
             measure: (n.start / ml + 1) as u32,
+            channel,
+            program,
         })
         .collect();
     Ok(Converted {
@@ -1443,6 +1459,10 @@ mod tests {
         assert_eq!(c.measures, 2);
         assert_eq!(c.accompaniment.len(), 1);
         assert_eq!(c.accompaniment[0].dur_ms, 4000);
+        assert_eq!(
+            (c.accompaniment[0].channel, c.accompaniment[0].program),
+            (2, Some(48))
+        );
         check_measures(&c.musicxml, 48);
         assert!(c.musicxml.contains("<step>C</step><octave>4</octave>"));
         assert!(c.musicxml.contains("<staff>2</staff>"));

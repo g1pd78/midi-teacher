@@ -77,6 +77,8 @@ pub struct AudioStatus {
     /// Сообщение для пользователя, например «ASIO недоступен, включён WASAPI».
     pub notice: Option<String>,
     pub asio_supported: bool,
+    /// GM-банк для аккомпанемента (барабаны, инструменты MIDI-дорожек), если загружен.
+    pub gm: Option<String>,
 }
 
 /// Живые показатели, которые обновляет аудиопоток.
@@ -100,9 +102,20 @@ pub struct AudioDevices {
 }
 
 enum SynthEvent {
-    Midi { channel: u8, msg: MidiMessage },
+    Midi {
+        channel: u8,
+        msg: MidiMessage,
+    },
     AllNotesOff,
-    Click { accent: bool },
+    Click {
+        accent: bool,
+    },
+    /// Нота/контроллер на GM-синтезаторе; `program` — инструмент канала.
+    Gm {
+        channel: u8,
+        program: Option<u8>,
+        msg: MidiMessage,
+    },
 }
 
 /// Щелчок метронома: короткий затухающий тон, сильная доля выше и громче.
@@ -159,6 +172,7 @@ enum Control {
     Resume,
     StreamFailed(String),
     RefreshDevices(Sender<AudioDevices>),
+    LoadGm(PathBuf, Sender<Result<String, String>>),
     /// Переоткрыть вход гитары (сменились устройство, канал, вкл/выкл).
     GuitarInput,
     InputFailed(String),
@@ -207,6 +221,8 @@ impl AudioEngine {
             volume: volume.clone(),
             devices: devices.clone(),
             guitar: guitar.clone(),
+            gm: Arc::new(Mutex::new(None)),
+            gm_font: None,
             out_device: None,
             in_stream: None,
             stream: None,
@@ -240,6 +256,25 @@ impl AudioEngine {
 
     pub fn all_notes_off(&self) {
         let _ = self.events.try_send(SynthEvent::AllNotesOff);
+    }
+
+    /// Нота аккомпанемента на GM-синтезаторе (инструмент `program` на канале `channel`).
+    pub fn gm_send(&self, channel: u8, program: Option<u8>, msg: MidiMessage) {
+        let _ = self.events.try_send(SynthEvent::Gm {
+            channel,
+            program,
+            msg,
+        });
+    }
+
+    /// Загрузить GM-банк (блокирует до конца загрузки).
+    pub fn load_gm(&self, path: PathBuf) -> Result<String, String> {
+        let (tx, rx) = bounded(1);
+        self.ctl
+            .send(Control::LoadGm(path, tx))
+            .map_err(|_| "аудиодвижок остановлен".to_string())?;
+        rx.recv()
+            .map_err(|_| "аудиодвижок остановлен".to_string())?
     }
 
     /// Щелчок метронома (звучит через встроенный вывод, даже если ноты идут на пианино).
@@ -360,6 +395,9 @@ struct Worker {
     volume: Arc<AtomicU32>,
     devices: Arc<RwLock<AudioDevices>>,
     guitar: Arc<GuitarShared>,
+    /// GM-синтезатор аккомпанемента (живой) и загруженный банк (для смены частоты).
+    gm: Arc<Mutex<Option<SoundFontSynth>>>,
+    gm_font: Option<SoundFontSynth>,
     /// Устройство вывода: при ASIO вход гитары открывается на нём же.
     out_device: Option<cpal::Device>,
     in_stream: Option<cpal::Stream>,
@@ -403,6 +441,28 @@ impl Worker {
                 Control::UseFallbackSynth => {
                     self.soundfont = None;
                     self.install_synth(Box::new(FallbackSynth::new(self.sample_rate.max(1))));
+                }
+                Control::LoadGm(path, reply) => {
+                    let rate = if self.sample_rate > 0 {
+                        self.sample_rate
+                    } else {
+                        48_000
+                    };
+                    let result = SoundFontSynth::load(&path, rate)
+                        .and_then(|sf| {
+                            let live = sf.with_sample_rate(rate)?;
+                            Ok((sf, live))
+                        })
+                        .map(|(sf, live)| {
+                            let name = sf.name();
+                            self.gm_font = Some(sf);
+                            let old = self.gm.lock().replace(live);
+                            drop(old);
+                            self.status.write().gm = Some(name.clone());
+                            name
+                        })
+                        .map_err(|e| format!("{e:#}"));
+                    let _ = reply.send(result);
                 }
                 Control::RefreshDevices(reply) => {
                     self.refresh_devices();
@@ -781,6 +841,14 @@ impl Worker {
                 let synth = self.synth_for_rate(config.sample_rate);
                 self.sample_rate = config.sample_rate;
                 self.install_synth(synth);
+                if let Some(gm) = self
+                    .gm_font
+                    .as_ref()
+                    .and_then(|f| f.with_sample_rate(config.sample_rate).ok())
+                {
+                    let old = self.gm.lock().replace(gm);
+                    drop(old);
+                }
             }
             match self.build(&device, &config, format) {
                 Ok(stream) => {
@@ -850,6 +918,10 @@ impl Worker {
         let ctl = self.ctl_tx.clone();
         let guitar = self.guitar.clone();
         let out_rate = config.sample_rate as f32;
+        let gm = self.gm.clone();
+        let mut gm_programs = [u8::MAX; 16];
+        let mut gm_left = vec![0.0f32; 1024];
+        let mut gm_right = vec![0.0f32; 1024];
 
         // Буферы выделяются один раз; большие буферы драйвера обрабатываются частями.
         const CHUNK: usize = 1024;
@@ -873,11 +945,33 @@ impl Worker {
                 data.fill(T::from_sample(0.0));
                 return;
             };
+            let mut gm_synth = gm.try_lock();
             while let Ok(ev) = events.try_recv() {
                 match ev {
                     SynthEvent::Midi { channel, msg } => synth.handle(channel, msg),
-                    SynthEvent::AllNotesOff => synth.all_notes_off(),
+                    SynthEvent::AllNotesOff => {
+                        synth.all_notes_off();
+                        if let Some(g) = gm_synth.as_mut().and_then(|g| g.as_mut()) {
+                            g.all_notes_off();
+                        }
+                    }
                     SynthEvent::Click { accent } => click.trigger(accent),
+                    SynthEvent::Gm {
+                        channel,
+                        program,
+                        msg,
+                    } => {
+                        if let Some(g) = gm_synth.as_mut().and_then(|g| g.as_mut()) {
+                            let ch = (channel & 0x0F) as usize;
+                            if let Some(p) = program {
+                                if gm_programs[ch] != p {
+                                    g.program_change(channel, p);
+                                    gm_programs[ch] = p;
+                                }
+                            }
+                            g.handle(channel, msg);
+                        }
+                    }
                 }
             }
             let gain = f32::from_bits(volume.load(Ordering::Relaxed));
@@ -886,6 +980,15 @@ impl Worker {
                 let n = block.len() / channels.max(1);
                 let (l, r) = (&mut left[..n], &mut right[..n]);
                 synth.render(l, r);
+                // Аккомпанемент GM подмешивается к роялю.
+                if let Some(g) = gm_synth.as_mut().and_then(|g| g.as_mut()) {
+                    let (gl, gr) = (&mut gm_left[..n], &mut gm_right[..n]);
+                    g.render(gl, gr);
+                    for i in 0..n {
+                        l[i] += gl[i];
+                        r[i] += gr[i];
+                    }
+                }
                 // Прослушивание гитары (без блокировок: занято — этот буфер без него).
                 let mon_gain = if guitar.monitor_on() {
                     match guitar.monitor.try_lock() {

@@ -61,6 +61,31 @@ impl RhythmHub {
                 Action::AppNoteOff { pitch } => {
                     self.devices.play_app(MidiMessage::NoteOff { note: pitch })
                 }
+                // Без GM-банка аккомпанемент звучит как «звук приложения».
+                Action::GmNoteOn {
+                    channel,
+                    program,
+                    pitch,
+                    velocity,
+                } => {
+                    let msg = MidiMessage::NoteOn {
+                        note: pitch,
+                        velocity,
+                    };
+                    if self.audio.status().gm.is_some() {
+                        self.audio.gm_send(channel, program, msg)
+                    } else if channel != 9 {
+                        self.devices.play_app(msg)
+                    }
+                }
+                Action::GmNoteOff { channel, pitch } => {
+                    let msg = MidiMessage::NoteOff { note: pitch };
+                    if self.audio.status().gm.is_some() {
+                        self.audio.gm_send(channel, None, msg)
+                    } else if channel != 9 {
+                        self.devices.play_app(msg)
+                    }
+                }
                 Action::Click { accent } => self.audio.click(accent),
             }
         }
@@ -118,8 +143,9 @@ pub fn rhythm_start(
     pieces.stop();
     hub.stop();
     // Щелчки звучат через встроенный вывод — держим его открытым.
-    hub.devices
-        .set_extra_sound_demand(config.metronome || config.count_in);
+    hub.devices.set_extra_sound_demand(
+        config.metronome || config.count_in || notes.iter().any(|n| n.channel.is_some()),
+    );
     let mut session = RhythmSession::new(notes, beats, config);
     let actions = session.start(clock::now_us());
     *hub.session.lock() = Some(session);

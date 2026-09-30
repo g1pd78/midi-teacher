@@ -5,3 +5,4 @@ src-tauri/gen/
 src-tauri/resources/soundfonts/*.sf2
 *.log
 .DS_Store
+src-tauri/resources/gm/*.sf2

@@ -36,7 +36,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "resources/soundfonts/*": "soundfonts/"
+      "resources/soundfonts/*": "soundfonts/",
+      "resources/gm/*": "gm/"
     },
     "shortDescription": "Обучение игре на фортепиано",
     "longDescription": "Интерактивный нотный стан, тренажёр чтения нот и разучивание пьес с MIDI-клавиатурой.",
