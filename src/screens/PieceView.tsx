@@ -388,9 +388,15 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
 
   // Гитара/бас: остальные партии пьесы звучат аккомпанементом (ноты того же MEI).
   const [otherNotes, setOtherNotes] = useState<PieceNoteIn[]>([]);
+  // Сессия стартует, когда аккомпанемент готов, — иначе она перезапустилась бы на первой ноте.
+  const [otherReady, setOtherReady] = useState(true);
   useEffect(() => {
     setOtherNotes([]);
-    if (!tab || !mei || fileTab) return;
+    if (!tab || !mei || fileTab) {
+      setOtherReady(true);
+      return;
+    }
+    setOtherReady(false);
     let alive = true;
     renderScore(mei, verovioLayout("line", 1200))
       .then((r) => {
@@ -399,7 +405,8 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         const staffOf = parseMei(mei).staffOf;
         setOtherNotes(all.filter((n) => staffOf.get(n.id) !== partStaff).map((n) => ({ ...toIn(n), id: `o-${n.id}`, hand: "accomp" })));
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => alive && setOtherReady(true));
     return () => {
       alive = false;
     };
@@ -518,7 +525,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   // --- Режим ожидания ---
   useEffect(() => {
     const sc = scoreRef.current;
-    if (!sc || !sc.notes.length || rhythmMode || !ready) return;
+    if (!sc || !sc.notes.length || rhythmMode || !ready || !otherReady) return;
     setWaitSummary(null);
     setHits(new Set());
     setCurrent(null);
@@ -526,7 +533,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     const inRange = (n: { measure: number }) => !rangeFrom || (n.measure >= rangeFrom && n.measure <= rangeTo);
     const selected = [...sc.notes.filter(inRange).map(toIn), ...(accompany ? accompAll.filter(inRange) : [])];
     void api.pieceStart(selected, { hands, accompany, tempo, looping: !!rangeFrom });
-  }, [notesKey, hands, accompany, tempo, rangeFrom, rangeTo, rhythmMode, ready, run, resetMarks, accompAll]);
+  }, [notesKey, hands, accompany, tempo, rangeFrom, rangeTo, rhythmMode, ready, otherReady, run, resetMarks, accompAll]);
 
   // При переходе в режим ритма — остановить ожидание; при выходе — остановить ритм.
   useEffect(() => {

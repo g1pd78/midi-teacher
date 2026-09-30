@@ -503,9 +503,13 @@ try {
   await waitFor("табулатура и гриф", () => js("return !!document.querySelector('.tab-score g.note') && !!document.querySelector('[data-fretboard]');"), 30000);
   await waitFor("режим «Свободно»", () => click("Свободно"));
   await waitFor("режим ожидания", () => click("Ожидание"));
-  await waitFor("первый шаг", () => pitches(), 15000);
-  const gFirst = await pitches();
-  if (gFirst !== "64") throw new Error(`первая нота мелодии на гитаре: ${gFirst}, ожидалась ми (64)`);
+  // Сессия один раз перезапускается, когда догрузится аккомпанемент (вторая партия пьесы) —
+  // ждём, пока первый шаг устойчиво покажет ми.
+  await waitFor("первая нота мелодии на гитаре — ми (64)", async () => {
+    if ((await pitches()) !== "64") return false;
+    await sleep(700);
+    return (await pitches()) === "64";
+  }, 20000);
   const hzOf = (m) => 440 * 2 ** ((m - 69) / 12);
   const gDone = () => js("return document.querySelector('.score-scroll')?.dataset.finished === '1';");
   let plucks = 0;
