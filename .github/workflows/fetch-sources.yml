@@ -1,0 +1,87 @@
+# Разовый поиск нотных исходников для встроенной библиотеки (общественное достояние):
+# нотные вставки <score> из статей Википедии о песнях и LilyPond-файлы Mutopia Project.
+# Результат печатается в лог. Удалить после использования.
+name: Fetch sources
+
+on:
+  push:
+    paths: [".github/workflows/fetch-sources.yml"]
+  workflow_dispatch:
+
+jobs:
+  wikipedia:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Score snippets from Wikipedia
+        run: |
+          cat > pages.txt <<'EOF'
+          ru|Во поле берёза стояла
+          ru|В саду ли, в огороде
+          ru|Ах вы, сени мои, сени
+          ru|Калинка (песня)
+          ru|Сурок (песня)
+          en|Frère Jacques
+          en|Twinkle, Twinkle, Little Star
+          en|Au clair de la lune
+          en|Jingle Bells
+          en|Brahms' Lullaby
+          en|Kalinka (song)
+          en|Vo pole beryoza stoyala
+          en|Ah vous dirai-je, maman
+          de|Guten Abend, gut’ Nacht
+          de|Marmotte (Beethoven)
+          de|Bruder Jakob
+          fr|Au clair de la lune
+          EOF
+          while IFS='|' read -r lang title; do
+            title=$(echo "$title" | sed 's/^ *//')
+            enc=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$title")
+            curl -sL "https://$lang.wikipedia.org/w/api.php?action=parse&page=$enc&prop=wikitext&format=json&redirects=1&formatversion=2" -o page.json || continue
+            python3 - "$lang" "$title" <<'PY'
+          import json, re, sys
+          lang, title = sys.argv[1], sys.argv[2]
+          try:
+              d = json.load(open("page.json"))
+          except Exception:
+              print(f"##### {lang}:{title} — нет ответа"); sys.exit()
+          if "error" in d:
+              print(f"##### {lang}:{title} — {d['error'].get('info')}"); sys.exit()
+          text = d["parse"]["wikitext"]
+          blocks = re.findall(r"<score[^>]*>.*?</score>", text, re.S)
+          print(f"##### {lang}:{d['parse']['title']} — блоков score: {len(blocks)}")
+          for b in blocks:
+              print(b)
+              print("#####")
+          PY
+          done < pages.txt
+
+  mutopia:
+    runs-on: ubuntu-latest
+    steps:
+      - name: LilyPond sources from Mutopia
+        run: |
+          set -u
+          base="https://www.mutopiaproject.org"
+          ids=""
+          for q in "Anh.+115" "Anh+115" "Old+French+Song" "Wiegenlied" "Marmotte" "Ah+vous+dirai" "K.+265" "Jingle+Bells" "Twinkle"; do
+            found=$(curl -sL "$base/cgibin/make-table.cgi?searchingfor=$q" | grep -oE 'piece-info\.cgi\?id=[0-9]+' | sed 's/.*id=//' | sort -u)
+            echo "search $q: $found"
+            ids="$ids $found"
+          done
+          ids="$ids 2080"
+          for pid in $(echo $ids | tr ' ' '\n' | sort -u); do
+            p=$(curl -sL "$base/cgibin/piece-info.cgi?id=$pid")
+            title=$(echo "$p" | grep -oE '<h3>[^<]*</h3>' | head -1)
+            instr=$(echo "$p" | grep -oiE 'Instrument\(s\):[^|<]*' | head -1)
+            echo "=== id=$pid $title $instr"
+            if echo "$p" | grep -qiE 'Instrument\(s\):[^|<]*(Piano|Harpsichord|Keyboard|Voice)'; then
+              for href in $(echo "$p" | grep -oE 'href="[^"]+\.ly"' | sed 's/href="//; s/"$//' | head -3); do
+                url=$(python3 -c "import urllib.parse,sys;print(urllib.parse.urljoin('$base/cgibin/', sys.argv[1]))" "$href")
+                size=$(curl -sL "$url" | wc -c)
+                echo "##### BEGIN $url ($size bytes)"
+                if [ "$size" -lt 60000 ]; then curl -sL "$url"; fi
+                echo
+                echo "##### END $url"
+              done
+            fi
+          done
