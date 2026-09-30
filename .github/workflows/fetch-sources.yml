@@ -1,6 +1,5 @@
 # Разовый поиск нотных исходников для встроенной библиотеки (общественное достояние):
-# нотные вставки <score> из Википедии/Викитеки и LilyPond-файлы Mutopia Project.
-# Результат печатается в лог. Удалить после использования.
+# ABC-записи мелодий через поиск abcnotation.com. Результат печатается в лог. Удалить после использования.
 name: Fetch sources
 
 on:
@@ -9,87 +8,39 @@ on:
   workflow_dispatch:
 
 jobs:
-  wiki:
+  abc:
     runs-on: ubuntu-latest
     steps:
-      - name: Score snippets from Wikipedia and Wikisource
+      - name: ABC tunes
         run: |
           cat > fetch.py <<'PY'
-          import json, re, time, urllib.parse, urllib.request
-          UA = {"User-Agent": "midi-teacher-sources/1.0 (educational app; github.com/g1pd78/midi-teacher)"}
-          def api(host, **params):
-              params.update(format="json", formatversion="2")
-              url = f"https://{host}/w/api.php?" + urllib.parse.urlencode(params)
-              for attempt in range(3):
+          import html, re, time, urllib.parse, urllib.request
+          UA = {"User-Agent": "Mozilla/5.0 (educational app midi-teacher)"}
+          def get(url):
+              for _ in range(3):
                   try:
                       with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30) as r:
-                          return json.load(r)
+                          return r.read().decode("utf-8", "replace")
                   except Exception as e:
                       print("  retry", e); time.sleep(3)
-              return {}
-          def scores(host, title):
+              return ""
+          for q in ["Kalinka", "Vo pole", "Vo polye", "berezka", "birch tree russian", "Ach vy seni", "Akh vy seni",
+                    "V sadu li", "Marmotte", "Jingle Bells", "Ah vous dirai-je", "Wiegenlied Brahms"]:
               time.sleep(1)
-              d = api(host, action="parse", page=title, prop="wikitext", redirects=1)
-              if "parse" not in d:
-                  print(f"##### {host}:{title} — {d.get('error', {}).get('info', 'нет ответа')}"); return
-              text = d["parse"]["wikitext"]
-              blocks = re.findall(r"<score[^>]*>.*?</score>", text, re.S)
-              print(f"##### {host}:{d['parse']['title']} — score: {len(blocks)}")
-              for b in blocks:
-                  print(b); print("#####")
-          def search(host, query, n=4):
-              time.sleep(1)
-              d = api(host, action="query", list="search", srsearch=query, srlimit=n)
-              titles = [x["title"] for x in d.get("query", {}).get("search", [])]
-              print(f"=== search {host} «{query}»: {titles}")
-              return titles
-          for host, title in [
-              ("en.wikipedia.org", "Au clair de la lune"),
-              ("en.wikipedia.org", "Jingle Bells"),
-              ("en.wikipedia.org", "Kalinka (song)"),
-              ("fr.wikipedia.org", "Au clair de la lune"),
-              ("fr.wikisource.org", "Chansons et rondes enfantines/Au clair de la lune"),
-              ("fr.wikisource.org", "Chansons et rondes enfantines/Frère Jacques"),
-              ("de.wikipedia.org", "Bruder Jakob"),
-          ]:
-              scores(host, title)
-          for host, query in [
-              ("en.wikipedia.org", "Vo pole beryoza stoyala folk song"),
-              ("en.wikipedia.org", "Beethoven Marmotte song"),
-              ("de.wikipedia.org", "Marmotte Beethoven Lied"),
-              ("ru.wikipedia.org", "Калинка песня Ларионов"),
-              ("ru.wikipedia.org", "Ах вы, сени мои, сени песня"),
-              ("ru.wikipedia.org", "В саду ли, в огороде песня"),
-              ("ru.wikipedia.org", "Во поле берёза стояла"),
-              ("ru.wikisource.org", "Во поле берёза стояла ноты"),
-              ("fr.wikisource.org", "Chansons et rondes enfantines"),
-          ]:
-              for t in search(host, query)[:3]:
-                  scores(host, t)
+              page = get("https://abcnotation.com/searchTunes?q=" + urllib.parse.quote(q) + "&f=c&o=a&s=0")
+              links = re.findall(r'href="(/tunePage\?a=[^"]+)"[^>]*>([^<]*)<', page)
+              print(f"=== «{q}»: {len(links)}")
+              seen = set()
+              for href, title in links[:12]:
+                  print("   ", html.unescape(title).strip(), href)
+              for href, title in links[:3]:
+                  if href in seen: continue
+                  seen.add(href)
+                  time.sleep(1)
+                  p = get("https://abcnotation.com" + html.unescape(href))
+                  m = re.search(r"<textarea[^>]*>(.*?)</textarea>", p, re.S) or re.search(r"<pre[^>]*>(.*?)</pre>", p, re.S)
+                  print(f"##### BEGIN {html.unescape(title).strip()} {href}")
+                  print(html.unescape(m.group(1)) if m else "(нет ABC в странице)")
+                  print("##### END")
           PY
           python3 fetch.py
-
-  mutopia:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Mutopia piece pages and LilyPond files
-        run: |
-          base="https://www.mutopiaproject.org"
-          for pid in 2080 1619 76 2236 2238 1037 1040 1710 632 887 265 1265; do
-            p=$(curl -sL -A "Mozilla/5.0" "$base/cgibin/piece-info.cgi?id=$pid")
-            echo "=== id=$pid"
-            echo "$p" | sed -e 's/<[^>]*>/ /g' | tr -s ' \n' | grep -iE 'Title|Composer|Opus|Instrument|Source|License|Public' | head -8
-            echo "$p" | grep -oE 'href="[^"]*\.(ly|zip)"' | head -4
-          done
-          echo "##### BEGIN anna-magdalena-114-115-116.ly"
-          curl -sL "$base/ftp/BachJS/BWVAnh114/anna-magdalena-114-115-116/anna-magdalena-114-115-116.ly" | sed 's/^/| /'
-          echo "##### END"
-          for pid in 2080 2236; do
-            p=$(curl -sL -A "Mozilla/5.0" "$base/cgibin/piece-info.cgi?id=$pid")
-            for href in $(echo "$p" | grep -oE 'href="[^"]*\.ly"' | sed 's/href="//; s/"$//' | head -2); do
-              url=$(python3 -c "import urllib.parse,sys;print(urllib.parse.urljoin('$base/cgibin/', sys.argv[1]))" "$href")
-              echo "##### BEGIN $url"
-              curl -sL "$url" | head -c 50000 | sed 's/^/| /'
-              echo "##### END $url"
-            done
-          done
