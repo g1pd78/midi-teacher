@@ -7,6 +7,7 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createMock } from "./mock";
+import type { PieceMetaIn } from "./lib/practice";
 
 export type SoundRoute = { kind: "internal" } | { kind: "silent" } | { kind: "output"; port: string };
 
@@ -78,6 +79,8 @@ export interface TrainerPrefs {
 export type HandMode = "right" | "left" | "both";
 
 export interface PiecePrefs {
+  guided: boolean;
+  heat: boolean;
   layout: "line" | "pages";
   hands: HandMode;
   accompany: boolean;
@@ -107,15 +110,18 @@ export interface PieceNoteIn {
   measure: number;
 }
 
+/** Руки ученика в сессии; `none` — приложение играет всё (прослушивание). */
+export type PlayHands = HandMode | "none";
+
 export interface PieceConfig {
-  hands: HandMode;
+  hands: PlayHands;
   accompany: boolean;
   tempo: number;
   looping: boolean;
 }
 
 export interface RhythmConfig {
-  hands: HandMode;
+  hands: PlayHands;
   accompany: boolean;
   tempo: number;
   countIn: boolean;
@@ -163,6 +169,80 @@ export type PieceEvent =
   | { kind: "wrong"; index: number; pitch: number }
   | { kind: "finished"; summary: PieceSummary }
   | { kind: "loopPass"; pass: number; summary: PieceSummary };
+
+export interface MeasureErrors {
+  measure: number;
+  errors: number;
+}
+
+export interface UnitState {
+  level: number;
+  streak: number;
+  fails: number;
+  rightStreak: number;
+  leftStreak: number;
+  tempo: number;
+  learned: boolean;
+  passes: number;
+}
+
+export interface UnitView {
+  frags: [number, number];
+  from: number;
+  to: number;
+  state: UnitState;
+  hand: PlayHands;
+  hands: { right: boolean; left: boolean };
+  started: boolean;
+}
+
+export interface PracticeView {
+  piece: string;
+  measures: number;
+  fragments: [number, number][];
+  custom: boolean;
+  units: UnitView[];
+  current: number;
+  heat: MeasureErrors[];
+}
+
+export type Suggestion = { kind: "levelUp"; to: number } | { kind: "levelDown"; to: number } | { kind: "learned" };
+
+export interface Outcome {
+  good: boolean;
+  suggestion: Suggestion | null;
+  tempo: number | null;
+  learnedNow: boolean;
+}
+
+export interface AttemptRecord {
+  from: number;
+  to: number;
+  level: number | null;
+  mode: "wait" | "rhythm";
+  hands: PlayHands;
+  tempo: number;
+  accuracy: number;
+  durationMs: number;
+  trouble: MeasureErrors[];
+}
+
+export interface PieceProgress {
+  id: string;
+  title: string;
+  measures: number;
+  fragments: { from: number; to: number; level: number; learned: boolean; started: boolean }[];
+  learned: boolean;
+  heat: MeasureErrors[];
+  activity: { attempts: number; lastAt: number | null; minutes: number };
+  openedAt: number;
+}
+
+export interface Progress {
+  play: [number, number][];
+  bucketSecs: number;
+  pieces: PieceProgress[];
+}
 
 export interface LibraryItem {
   id: string;
@@ -322,6 +402,14 @@ export const api = {
     invoke<void>("rhythm_start", { notes, beats, config }),
   rhythmStop: () => invoke<void>("rhythm_stop"),
   clockNow: () => invoke<number>("clock_now"),
+  practiceOpen: (meta: PieceMetaIn) => invoke<PracticeView>("practice_open", { meta }),
+  practiceSetFragments: (piece: string, starts: number[] | null) =>
+    invoke<PracticeView>("practice_set_fragments", { piece, starts }),
+  practiceSetLevel: (piece: string, from: number, to: number, level: number) =>
+    invoke<PracticeView>("practice_set_level", { piece, from, to, level }),
+  practiceRecord: (piece: string, attempt: AttemptRecord) =>
+    invoke<{ outcome: Outcome | null; view: PracticeView }>("practice_record", { piece, attempt }),
+  progressOverview: () => invoke<Progress>("progress_overview"),
 };
 
 export async function pickSoundfont(): Promise<string | null> {

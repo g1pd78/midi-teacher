@@ -41,6 +41,10 @@ pub struct PiecePrefs {
     pub metronome: bool,
     /// Показывать падающие ноты.
     pub waterfall: bool,
+    /// Ведущий режим «Разучить» (иначе свободная игра).
+    pub guided: bool,
+    /// Тепловая карта трудных тактов на нотах.
+    pub heat: bool,
 }
 
 impl Default for PiecePrefs {
@@ -57,6 +61,8 @@ impl Default for PiecePrefs {
             count_in: true,
             metronome: false,
             waterfall: true,
+            guided: true,
+            heat: false,
         }
     }
 }

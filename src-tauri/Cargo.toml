@@ -9,6 +9,7 @@ name = "midi_teacher_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
+anyhow = "1.0.104"
 crossbeam-channel = "0.5.17"
 log = "0.4.34"
 mt-core = { version = "0.1.0", path = "../crates/mt-core" }

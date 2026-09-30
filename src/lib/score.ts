@@ -42,6 +42,8 @@ export interface MeiStructure {
   measureIds: string[];
   /** Размер: долей в такте и длительность доли (4 — четверть, 8 — восьмая). */
   meter: { count: number; unit: number };
+  /** Такты, после которых стоит двойная, финальная или репризная черта. */
+  sectionEnds: number[];
 }
 
 const TAG = /<(\/?)(measure|staff|note|fing|tie|staffDef|clef|meterSig|scoreDef)\b([^>]*?)(\/?)>/g;
@@ -58,6 +60,7 @@ export function parseMei(mei: string): MeiStructure {
   const tieEndToStart = new Map<string, string>();
   const clefOf = new Map<number, string>();
   const measureIds: string[] = [];
+  const sectionEnds: number[] = [];
   let meter = { count: 4, unit: 4 };
   let meterFound = false;
   let staffDefN = 0;
@@ -105,6 +108,8 @@ export function parseMei(mei: string): MeiStructure {
         measure += 1;
         const id = attr(attrs, "xml:id");
         if (id) measureIds.push(id);
+        const right = attr(attrs, "right");
+        if (right && /^(dbl|end|rptend|rptboth|dbldashed|dbldotted)$/.test(right)) sectionEnds.push(measure);
         break;
       }
       case "staff":
@@ -135,7 +140,7 @@ export function parseMei(mei: string): MeiStructure {
       }
     }
   }
-  return { staffOf, measureOf, fingerOf, tieEndToStart, staves, clefOf, measures: measure, measureIds, meter };
+  return { staffOf, measureOf, fingerOf, tieEndToStart, staves, clefOf, measures: measure, measureIds, meter, sectionEnds };
 }
 
 /** Рука по стану: первый (верхний) — правая, второй — левая. Один стан в басовом ключе — левая. */

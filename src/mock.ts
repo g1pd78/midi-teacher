@@ -19,6 +19,7 @@ import type {
   TrainerLevel,
   TrainerTarget,
 } from "./api";
+import { createPracticeMock } from "./mockPractice";
 
 type Listener = (payload: never) => void;
 
@@ -31,6 +32,7 @@ export function createMock() {
     listeners.get(event)?.forEach((cb) => (cb as (p: Events[K]) => void)(payload));
 
   const start = performance.now();
+  const practice = createPracticeMock();
   const inputs: Record<string, InputSettings> = {
     "Демо-пианино": { enabled: true, route: { kind: "internal" }, range: null },
     "Демо-клавиатура": { enabled: true, route: { kind: "internal" }, range: null },
@@ -43,7 +45,7 @@ export function createMock() {
       noteNames: "solfege",
       wizardDone: new URLSearchParams(location.search).has("done"),
       trainer: { layout: "single", errorMode: "wait", names: "struggle" },
-      piece: { layout: "line", hands: "right", accompany: true, names: false, fingering: true, keyHints: true, mode: "wait", tempo: 0.8, countIn: true, metronome: false, waterfall: true },
+      piece: { guided: true, heat: false, layout: "line", hands: "right", accompany: true, names: false, fingering: true, keyHints: true, mode: "wait", tempo: 0.8, countIn: true, metronome: false, waterfall: true },
     },
     audioConfig: { backend: "auto", device: null, bufferFrames: 128, volume: 0.8 },
     customSoundfont: null,
@@ -88,6 +90,7 @@ export function createMock() {
       judge(ev.note);
       judgePiece(ev.note);
       judgeRhythm(ev.note);
+      practice.onNote();
     }
     emitMidi(device, ev);
   };
@@ -176,6 +179,8 @@ export function createMock() {
   let piece: {
     steps: { onset: number; notes: PieceNoteIn[] }[];
     hands: string;
+    looping: boolean;
+    pass: number;
     index: number;
     pressed: Set<number>;
     errors: number;
@@ -183,22 +188,30 @@ export function createMock() {
   } | null = null;
   const pieceRequired = (i: number) =>
     piece!.steps[i].notes.filter((n) => piece!.hands === "both" || n.hand === piece!.hands);
+  // Руки ученика в имитации ритма: `none` — слушаем.
+  const mineOf = (hands: string, n: PieceNoteIn) => hands === "both" || n.hand === hands;
 
   function pieceActivate(i: number) {
     if (!piece) return;
     piece.index = i;
     piece.pressed.clear();
     if (i >= piece.steps.length) {
-      emit("piece", {
-        kind: "finished",
-        summary: {
-          playedSteps: piece.steps.length,
-          requiredNotes: 0,
-          errors: piece.errors,
-          durationMs: Math.round(performance.now() - piece.started),
-          troubleMeasures: piece.errors ? [{ measure: 1, errors: piece.errors }] : [],
-        },
-      });
+      const summary = {
+        playedSteps: piece.steps.length,
+        requiredNotes: piece.steps.reduce((s, _, k) => s + pieceRequired(k).length, 0),
+        errors: piece.errors,
+        durationMs: Math.round(performance.now() - piece.started),
+        troubleMeasures: piece.errors ? [{ measure: piece.steps[0].notes[0].measure, errors: piece.errors }] : [],
+      };
+      if (piece.looping) {
+        piece.pass++;
+        emit("piece", { kind: "loopPass", pass: piece.pass, summary });
+        piece.errors = 0;
+        piece.started = performance.now();
+        pieceActivate(0);
+        return;
+      }
+      emit("piece", { kind: "finished", summary });
       piece = null;
       return;
     }
@@ -229,12 +242,17 @@ export function createMock() {
     }
   }
 
+  // Для скриптов скриншотов: нажать любую ноту (не только из раскладки клавиш).
+  (window as unknown as { __mockNote: (n: number) => void }).__mockNote = (n: number) => {
+    send("Демо-пианино", { type: "noteOn", note: n, velocity: 90 });
+    send("Демо-пианино", { type: "noteOff", note: n });
+  };
   (window as unknown as { __mockPiece: () => number[] | null }).__mockPiece = () =>
     piece && piece.index < piece.steps.length ? pieceRequired(piece.index).map((n) => n.pitch) : null;
 
   // --- Ритм (упрощённо: попадания ±200 мс, пропуски, итог) ---
   type RNote = PieceNoteIn & { done?: boolean };
-  let rhythm: { notes: RNote[]; origin: number; pos0: number; end: number; tempo: number; timer: number; hits: number; misses: number; extras: number; deltas: number[] } | null = null;
+  let rhythm: { notes: RNote[]; origin: number; pos0: number; end: number; tempo: number; timer: number; hits: number; misses: number; extras: number; deltas: number[]; loop: boolean; pass: number } | null = null;
   const nowUs = () => performance.now() * 1000;
   const rPos = () => (rhythm ? rhythm.pos0 + ((nowUs() - rhythm.origin) / 1000) * rhythm.tempo : 0);
   function rhythmSummary() {
@@ -281,17 +299,18 @@ export function createMock() {
     rhythm ? { pos: rPos(), next: rhythm.notes.filter((n) => !n.done).slice(0, 4).map((n) => ({ pitch: n.pitch, startMs: n.startMs })) } : null;
 
   const handlers: Record<string, (args: Record<string, never>) => unknown> = {
+    ...(practice.handlers as unknown as Record<string, (args: Record<string, never>) => unknown>),
     clock_now: () => nowUs(),
     rhythm_start: ({ notes, config }) => {
       stopRhythmMock();
       const cfg = config as unknown as { hands: string; tempo: number; loopRange: [number, number] | null; countIn: boolean; beatMs: number; beatsPerMeasure: number };
       const [a, b] = cfg.loopRange ?? [0, Infinity];
       const all = (notes as unknown as PieceNoteIn[]).filter((n) => n.startMs >= a && n.startMs < b);
-      const mine = all.filter((n) => cfg.hands === "both" || n.hand === cfg.hands).sort((x, y) => x.startMs - y.startMs);
+      const mine = all.filter((n) => mineOf(cfg.hands, n)).sort((x, y) => x.startMs - y.startMs);
       const pos0 = cfg.loopRange ? a : Math.min(...all.map((n) => n.startMs));
       const lead = Math.max(1200, cfg.countIn ? (cfg.beatsPerMeasure * cfg.beatMs) / cfg.tempo : 0);
-      const end = Math.max(...all.map((n) => n.startMs + n.durMs));
-      rhythm = { notes: mine, origin: nowUs() + lead * 1000, pos0, end, tempo: cfg.tempo, timer: 0, hits: 0, misses: 0, extras: 0, deltas: [] };
+      const end = cfg.loopRange ? b : Math.max(...all.map((n) => n.startMs + n.durMs));
+      rhythm = { notes: mine, origin: nowUs() + lead * 1000, pos0, end, tempo: cfg.tempo, timer: 0, hits: 0, misses: 0, extras: 0, deltas: [], loop: !!cfg.loopRange, pass: 0 };
       emit("rhythm", { kind: "clock", originUs: rhythm.origin, pos0, tempo: cfg.tempo });
       rhythm.timer = window.setInterval(() => {
         if (!rhythm) return;
@@ -303,7 +322,14 @@ export function createMock() {
             emit("rhythm", { kind: "miss", id: n.id });
           }
         }
-        if (pos > rhythm.end + 200) {
+        if (rhythm.loop && pos >= rhythm.end) {
+          rhythm.pass++;
+          emit("rhythm", { kind: "loopPass", pass: rhythm.pass, summary: rhythmSummary() });
+          rhythm.origin += ((rhythm.end - rhythm.pos0) / rhythm.tempo) * 1000;
+          Object.assign(rhythm, { hits: 0, misses: 0, extras: 0, deltas: [] });
+          rhythm.notes.forEach((n) => (n.done = false));
+          emit("rhythm", { kind: "clock", originUs: rhythm.origin, pos0: rhythm.pos0, tempo: rhythm.tempo });
+        } else if (!rhythm.loop && pos > rhythm.end + 200) {
           emit("rhythm", { kind: "finished", summary: rhythmSummary() });
           stopRhythmMock();
         }
@@ -326,7 +352,8 @@ export function createMock() {
         if (last && n.startMs - last.onset <= 15) last.notes.push(n);
         else steps.push({ onset: n.startMs, notes: [n] });
       }
-      piece = { steps, hands: (config as unknown as { hands: string }).hands, index: 0, pressed: new Set(), errors: 0, started: performance.now() };
+      const cfg = config as unknown as { hands: string; looping: boolean };
+      piece = { steps, hands: cfg.hands, looping: cfg.looping, pass: 0, index: 0, pressed: new Set(), errors: 0, started: performance.now() };
       setTimeout(() => pieceActivate(0), 0);
       return steps.length;
     },

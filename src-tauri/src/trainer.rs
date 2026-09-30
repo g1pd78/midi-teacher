@@ -3,8 +3,9 @@
 //! Оценка нажатий идёт здесь, в Rust, по временным меткам из потока MIDI;
 //! интерфейс только показывает результат.
 
+use crate::practice::SharedStore;
 use mt_core::clock;
-use mt_core::store::{LevelStat, Store};
+use mt_core::store::LevelStat;
 use mt_core::trainer::{
     self, Clef, ErrorMode, Feedback, Level, Rng, Session, Summary, Target, PASS_ACCURACY,
     PASS_REACTION_MS,
@@ -16,14 +17,14 @@ use tauri::{AppHandle, Emitter, State};
 
 pub struct TrainerHub {
     session: Mutex<Option<Session>>,
-    store: Mutex<Option<Store>>,
+    store: SharedStore,
 }
 
 impl TrainerHub {
-    pub fn new(store: Option<Store>) -> Self {
+    pub fn new(store: SharedStore) -> Self {
         Self {
             session: Mutex::new(None),
-            store: Mutex::new(store),
+            store,
         }
     }
 
@@ -42,10 +43,7 @@ impl TrainerHub {
             let mut summary = session.summary();
             if let Some(store) = self.store.lock().as_mut() {
                 let max = trainer::levels().len() as u32;
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs() as i64)
-                    .unwrap_or(0);
+                let now = clock::unix_secs();
                 match store.record_session(session.mode, session.results(), &summary, max, now) {
                     Ok(unlocked) => summary.unlocked_level = unlocked,
                     Err(e) => log::warn!("прогресс не сохранён: {e:#}"),

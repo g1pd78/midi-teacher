@@ -1,9 +1,12 @@
 //! Хранилище прогресса (SQLite в каталоге данных приложения).
 
+use crate::piece::MeasureErrors;
+use crate::practice::{self, UnitState};
 use crate::trainer::{Clef, ErrorMode, NoteResult, NoteStat, Stats, Summary};
 use anyhow::Result;
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::Path;
 
 /// После скольких попыток статистика ноты начинает «забывать» старое:
@@ -34,7 +37,114 @@ CREATE TABLE IF NOT EXISTS kv (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS pieces (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    measures INTEGER NOT NULL,
+    phrase_ends TEXT NOT NULL,
+    hands TEXT NOT NULL,
+    custom_starts TEXT,
+    opened_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS practice_units (
+    piece TEXT NOT NULL,
+    from_m INTEGER NOT NULL,
+    to_m INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (piece, from_m, to_m)
+);
+CREATE TABLE IF NOT EXISTS practice_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    piece TEXT NOT NULL,
+    from_m INTEGER NOT NULL,
+    to_m INTEGER NOT NULL,
+    level INTEGER,
+    mode TEXT NOT NULL,
+    hands TEXT NOT NULL,
+    tempo REAL NOT NULL,
+    accuracy REAL NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    finished_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS practice_attempts_piece ON practice_attempts (piece, finished_at);
+CREATE TABLE IF NOT EXISTS attempt_measures (
+    attempt INTEGER NOT NULL,
+    measure INTEGER NOT NULL,
+    errors INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS attempt_measures_attempt ON attempt_measures (attempt);
+CREATE TABLE IF NOT EXISTS play_time (
+    bucket INTEGER PRIMARY KEY,
+    seconds REAL NOT NULL
+);
 ";
+
+/// Корзина учёта времени игры — 15 минут: так интерфейс может разложить
+/// время по дням в любом часовом поясе (смещения кратны 15 минутам).
+pub const PLAY_BUCKET_SECS: i64 = 900;
+
+/// Описание пьесы от интерфейса: сколько тактов, где кончаются фразы, какие руки в каждом такте.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PieceMeta {
+    pub id: String,
+    pub title: String,
+    pub measures: u32,
+    pub phrase_ends: Vec<u32>,
+    /// Маска рук по тактам: бит 1 — правая, бит 2 — левая.
+    pub measure_hands: Vec<u8>,
+}
+
+/// Пьеса в базе.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PieceRecord {
+    pub meta: PieceMeta,
+    pub custom_starts: Option<Vec<u32>>,
+    pub opened_at: i64,
+}
+
+impl PieceRecord {
+    pub fn fragments(&self) -> Vec<(u32, u32)> {
+        match &self.custom_starts {
+            Some(starts) => practice::fragments_from_starts(self.meta.measures, starts),
+            None => practice::split_fragments(self.meta.measures, &self.meta.phrase_ends),
+        }
+    }
+}
+
+/// Проход, записанный в историю.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttemptRecord {
+    pub from: u32,
+    pub to: u32,
+    /// Уровень ведущего режима; `None` — свободная игра.
+    pub level: Option<u8>,
+    /// `wait` или `rhythm`.
+    pub mode: String,
+    pub hands: String,
+    pub tempo: f64,
+    pub accuracy: f64,
+    pub duration_ms: u32,
+    #[serde(default)]
+    pub trouble: Vec<MeasureErrorsIn>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeasureErrorsIn {
+    pub measure: u32,
+    pub errors: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PieceActivity {
+    pub attempts: u32,
+    pub last_at: Option<i64>,
+    pub minutes: f64,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -183,6 +293,203 @@ impl Store {
         Ok(newly)
     }
 
+    // --- Пьесы и практика ---
+
+    /// Отметить открытие пьесы и обновить её описание (файл мог измениться).
+    /// Ручные границы фрагментов сбрасываются, если число тактов изменилось.
+    pub fn open_piece(&mut self, meta: &PieceMeta, now_secs: i64) -> Result<PieceRecord> {
+        let old = self.piece(&meta.id)?;
+        let custom = old
+            .filter(|o| o.meta.measures == meta.measures)
+            .and_then(|o| o.custom_starts);
+        self.conn.execute(
+            "INSERT INTO pieces (id, title, measures, phrase_ends, hands, custom_starts, opened_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(id) DO UPDATE SET title = excluded.title, measures = excluded.measures,
+               phrase_ends = excluded.phrase_ends, hands = excluded.hands,
+               custom_starts = excluded.custom_starts, opened_at = excluded.opened_at",
+            params![
+                meta.id,
+                meta.title,
+                meta.measures,
+                serde_json::to_string(&meta.phrase_ends)?,
+                serde_json::to_string(&meta.measure_hands)?,
+                custom.as_ref().map(serde_json::to_string).transpose()?,
+                now_secs
+            ],
+        )?;
+        Ok(PieceRecord {
+            meta: meta.clone(),
+            custom_starts: custom,
+            opened_at: now_secs,
+        })
+    }
+
+    pub fn piece(&self, id: &str) -> Result<Option<PieceRecord>> {
+        self.conn
+            .query_row(
+                "SELECT id, title, measures, phrase_ends, hands, custom_starts, opened_at
+                 FROM pieces WHERE id = ?1",
+                params![id],
+                row_to_piece,
+            )
+            .optional()?
+            .transpose()
+    }
+
+    /// Пьесы, которые открывали, — последние сверху.
+    pub fn pieces(&self) -> Result<Vec<PieceRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, measures, phrase_ends, hands, custom_starts, opened_at
+             FROM pieces ORDER BY opened_at DESC",
+        )?;
+        let rows = stmt.query_map([], row_to_piece)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r??);
+        }
+        Ok(out)
+    }
+
+    /// Ручные границы (номера первых тактов фрагментов) или `None` — автоматически.
+    pub fn set_custom_starts(&mut self, piece: &str, starts: Option<&[u32]>) -> Result<()> {
+        self.conn.execute(
+            "UPDATE pieces SET custom_starts = ?2 WHERE id = ?1",
+            params![piece, starts.map(serde_json::to_string).transpose()?],
+        )?;
+        Ok(())
+    }
+
+    pub fn units(&self, piece: &str) -> Result<HashMap<(u32, u32), UnitState>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT from_m, to_m, state FROM practice_units WHERE piece = ?1")?;
+        let rows = stmt.query_map(params![piece], |r| {
+            Ok((
+                r.get::<_, u32>(0)?,
+                r.get::<_, u32>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })?;
+        let mut out = HashMap::new();
+        for r in rows {
+            let (a, b, json) = r?;
+            if let Ok(st) = serde_json::from_str(&json) {
+                out.insert((a, b), st);
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn save_unit(
+        &mut self,
+        piece: &str,
+        range: (u32, u32),
+        state: &UnitState,
+        now_secs: i64,
+    ) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO practice_units (piece, from_m, to_m, state, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(piece, from_m, to_m) DO UPDATE SET
+               state = excluded.state, updated_at = excluded.updated_at",
+            params![
+                piece,
+                range.0,
+                range.1,
+                serde_json::to_string(state)?,
+                now_secs
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn record_attempt(&mut self, piece: &str, a: &AttemptRecord, now_secs: i64) -> Result<i64> {
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "INSERT INTO practice_attempts
+               (piece, from_m, to_m, level, mode, hands, tempo, accuracy, duration_ms, finished_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                piece,
+                a.from,
+                a.to,
+                a.level,
+                a.mode,
+                a.hands,
+                a.tempo,
+                a.accuracy,
+                a.duration_ms,
+                now_secs
+            ],
+        )?;
+        let id = tx.last_insert_rowid();
+        for m in a.trouble.iter().filter(|m| m.errors > 0) {
+            tx.execute(
+                "INSERT INTO attempt_measures (attempt, measure, errors) VALUES (?1, ?2, ?3)",
+                params![id, m.measure, m.errors],
+            )?;
+        }
+        tx.commit()?;
+        Ok(id)
+    }
+
+    /// Ошибки по тактам пьесы с момента `since_secs`, по номеру такта.
+    pub fn measure_heat(&self, piece: &str, since_secs: i64) -> Result<Vec<MeasureErrors>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT m.measure, SUM(m.errors) FROM attempt_measures m
+             JOIN practice_attempts a ON a.id = m.attempt
+             WHERE a.piece = ?1 AND a.finished_at >= ?2
+             GROUP BY m.measure ORDER BY m.measure",
+        )?;
+        let rows = stmt.query_map(params![piece, since_secs], |r| {
+            Ok(MeasureErrors {
+                measure: r.get(0)?,
+                errors: r.get(1)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Сколько проходов, когда последний и сколько минут в проходах.
+    pub fn piece_activity(&self, piece: &str) -> Result<PieceActivity> {
+        Ok(self.conn.query_row(
+            "SELECT COUNT(*), MAX(finished_at), COALESCE(SUM(duration_ms), 0)
+             FROM practice_attempts WHERE piece = ?1",
+            params![piece],
+            |r| {
+                Ok(PieceActivity {
+                    attempts: r.get(0)?,
+                    last_at: r.get(1)?,
+                    minutes: r.get::<_, f64>(2)? / 60_000.0,
+                })
+            },
+        )?)
+    }
+
+    /// Добавить время игры: (начало корзины в секундах Unix, секунды).
+    pub fn add_play_time(&mut self, buckets: &[(i64, f64)]) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        for &(bucket, secs) in buckets {
+            tx.execute(
+                "INSERT INTO play_time (bucket, seconds) VALUES (?1, ?2)
+                 ON CONFLICT(bucket) DO UPDATE SET seconds = seconds + excluded.seconds",
+                params![bucket, secs],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Время игры по 15-минутным корзинам начиная с `since_secs`.
+    pub fn play_time(&self, since_secs: i64) -> Result<Vec<(i64, f64)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT bucket, seconds FROM play_time WHERE bucket >= ?1 ORDER BY bucket")?;
+        let rows = stmt.query_map(params![since_secs], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     pub fn level_stats(&self) -> Result<Vec<LevelStat>> {
         let mut stmt = self.conn.prepare(
             "SELECT level, COUNT(*),
@@ -212,6 +519,28 @@ impl Store {
         }
         Ok(out)
     }
+}
+
+type PieceRow = Result<PieceRecord>;
+
+fn row_to_piece(r: &rusqlite::Row) -> rusqlite::Result<PieceRow> {
+    let phrase: String = r.get(3)?;
+    let hands: String = r.get(4)?;
+    let custom: Option<String> = r.get(5)?;
+    let build = || -> Result<PieceRecord> {
+        Ok(PieceRecord {
+            meta: PieceMeta {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                measures: r.get(2)?,
+                phrase_ends: serde_json::from_str(&phrase)?,
+                measure_hands: serde_json::from_str(&hands)?,
+            },
+            custom_starts: custom.map(|c| serde_json::from_str(&c)).transpose()?,
+            opened_at: r.get(6)?,
+        })
+    };
+    Ok(build())
 }
 
 #[cfg(test)]
@@ -314,6 +643,94 @@ mod tests {
         assert!(st.attempts <= STAT_WINDOW + 1e-9, "{}", st.attempts);
         assert!((st.accuracy() - 1.0).abs() < 1e-9);
         assert!((st.avg_reaction_ms() - 500.0).abs() < 1e-6);
+    }
+
+    fn meta(measures: u32) -> PieceMeta {
+        PieceMeta {
+            id: "builtin:ode".into(),
+            title: "Ода".into(),
+            measures,
+            phrase_ends: vec![4, 8],
+            measure_hands: vec![1; measures as usize],
+        }
+    }
+
+    #[test]
+    fn pieces_fragments_and_units() {
+        let mut store = Store::open_in_memory().unwrap();
+        let rec = store.open_piece(&meta(8), 10).unwrap();
+        assert_eq!(rec.fragments(), vec![(1, 4), (5, 8)]);
+        store
+            .set_custom_starts("builtin:ode", Some(&[3, 6]))
+            .unwrap();
+        let rec = store.piece("builtin:ode").unwrap().unwrap();
+        assert_eq!(rec.fragments(), vec![(1, 2), (3, 5), (6, 8)]);
+        // Повторное открытие сохраняет ручные границы…
+        let rec = store.open_piece(&meta(8), 20).unwrap();
+        assert_eq!(rec.custom_starts, Some(vec![3, 6]));
+        // …но не если в пьесе стало другое число тактов.
+        let rec = store.open_piece(&meta(12), 30).unwrap();
+        assert_eq!(rec.custom_starts, None);
+        assert_eq!(store.pieces().unwrap().len(), 1);
+
+        let mut st = UnitState::new(2);
+        st.streak = 2;
+        store.save_unit("builtin:ode", (1, 4), &st, 40).unwrap();
+        st.streak = 3;
+        store.save_unit("builtin:ode", (1, 4), &st, 41).unwrap();
+        let units = store.units("builtin:ode").unwrap();
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[&(1, 4)].streak, 3);
+    }
+
+    #[test]
+    fn attempts_heat_and_play_time() {
+        let mut store = Store::open_in_memory().unwrap();
+        store.open_piece(&meta(8), 1).unwrap();
+        let attempt = |trouble: Vec<(u32, u32)>| AttemptRecord {
+            from: 1,
+            to: 4,
+            level: Some(2),
+            mode: "wait".into(),
+            hands: "both".into(),
+            tempo: 0.8,
+            accuracy: 0.9,
+            duration_ms: 30_000,
+            trouble: trouble
+                .into_iter()
+                .map(|(measure, errors)| MeasureErrorsIn { measure, errors })
+                .collect(),
+        };
+        store
+            .record_attempt("builtin:ode", &attempt(vec![(2, 1), (3, 2)]), 100)
+            .unwrap();
+        store
+            .record_attempt("builtin:ode", &attempt(vec![(3, 1), (4, 0)]), 200)
+            .unwrap();
+        let heat = store.measure_heat("builtin:ode", 0).unwrap();
+        assert_eq!(
+            heat,
+            vec![
+                MeasureErrors {
+                    measure: 2,
+                    errors: 1
+                },
+                MeasureErrors {
+                    measure: 3,
+                    errors: 3
+                }
+            ]
+        );
+        // Старые проходы не учитываются.
+        assert_eq!(store.measure_heat("builtin:ode", 150).unwrap().len(), 1);
+        let act = store.piece_activity("builtin:ode").unwrap();
+        assert_eq!((act.attempts, act.last_at), (2, Some(200)));
+        assert!((act.minutes - 1.0).abs() < 1e-9);
+
+        store.add_play_time(&[(900, 30.0), (1800, 10.0)]).unwrap();
+        store.add_play_time(&[(900, 15.0)]).unwrap();
+        assert_eq!(store.play_time(0).unwrap(), vec![(900, 45.0), (1800, 10.0)]);
+        assert_eq!(store.play_time(1000).unwrap(), vec![(1800, 10.0)]);
     }
 
     #[test]

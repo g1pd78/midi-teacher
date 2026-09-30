@@ -3,6 +3,7 @@
 
 mod library;
 mod piece;
+mod practice;
 mod rhythm;
 mod settings;
 mod trainer;
@@ -14,6 +15,7 @@ use mt_core::midi::MidiMessage;
 use mt_core::store::Store;
 use parking_lot::Mutex;
 use piece::PieceHub;
+use practice::PracticeHub;
 use rhythm::RhythmHub;
 use serde::Serialize;
 use settings::{AppSettings, UiPrefs};
@@ -198,7 +200,10 @@ pub fn run() {
                     None
                 }
             };
-            let hub = Arc::new(TrainerHub::new(store));
+            let store = Arc::new(Mutex::new(store));
+            let hub = Arc::new(TrainerHub::new(store.clone()));
+            let practice_hub = Arc::new(PracticeHub::new(store));
+            let practice_events = practice_hub.clone();
 
             let (tx, rx) = unbounded::<DeviceEvent>();
             let devices = DeviceManager::start(audio.clone(), tx, settings.devices.clone());
@@ -233,6 +238,7 @@ pub fn run() {
                                     trainer_hub.on_note_on(&handle, note, e.time_us);
                                     piece_events.on_note_on(note, e.time_us);
                                     rhythm_events.on_note_on(note, e.time_us);
+                                    practice_events.on_note_on(e.time_us);
                                 }
                                 let _ = handle.emit("midi", e);
                             }
@@ -281,6 +287,7 @@ pub fn run() {
             app.manage(hub);
             app.manage(piece_hub);
             app.manage(rhythm_hub);
+            app.manage(practice_hub);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -309,6 +316,11 @@ pub fn run() {
             rhythm::rhythm_start,
             rhythm::rhythm_stop,
             rhythm::clock_now,
+            practice::practice_open,
+            practice::practice_set_fragments,
+            practice::practice_set_level,
+            practice::practice_record,
+            practice::progress_overview,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска приложения");

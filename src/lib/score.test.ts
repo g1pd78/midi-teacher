@@ -14,6 +14,7 @@ import {
   type MidiValues,
   type TimemapEntry,
 } from "./score";
+import { phraseEnds } from "./practice";
 
 // Тесты используют тулкит напрямую (в приложении то же делает воркер).
 type Tk = VerovioToolkit & {
@@ -99,6 +100,19 @@ describe("встроенные пьесы", () => {
     ]);
     expect(loopRangeMs(starts, end, 2, 3)).toEqual([1800, 5400]);
     expect(loopRangeMs(starts, end, 31, 32)).toEqual([54000, end]);
+  });
+
+  it("концы фраз для фрагментов: «Ода» по 4 такта, Менуэт по 8", () => {
+    const ode = load("src/pieces/ode-to-joy.musicxml");
+    const odeEnd = Math.max(...ode.notes.map((n) => n.startMs + n.durMs));
+    const odeEnds = phraseEnds(ode.notes, ode.structure, measureStarts(ode.timemap, ode.structure), odeEnd);
+    for (const m of [4, 8, 12, 16]) expect(odeEnds).toContain(m);
+    const min = load("src/pieces/minuet-g-anh114.musicxml");
+    expect(min.structure.sectionEnds).toContain(32);
+    const minEnd = Math.max(...min.notes.map((n) => n.startMs + n.durMs));
+    const minEnds = phraseEnds(min.notes, min.structure, measureStarts(min.timemap, min.structure), minEnd);
+    // Долгие ноты мелодии в тактах 8, 16, 24 и финальная черта.
+    expect(minEnds).toEqual([8, 16, 24, 32]);
   });
 
   it("подписи нот добавляются в MEI и отображаются", () => {

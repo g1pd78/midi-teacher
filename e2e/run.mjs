@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Сквозной тест «бот играет»: настоящее приложение (Rust + WebView) проходит
-// серию тренажёра через имитацию MIDI-входа.
+// серию тренажёра, пьесу, цикл, режим ритма и ведущий режим «Разучить»
+// через имитацию MIDI-входа.
 //
 // Нужны: собранное приложение (`npx tauri build --debug --no-bundle`),
 // tauri-driver (`cargo install tauri-driver`) и WebKitWebDriver (Linux).
@@ -159,6 +160,9 @@ try {
     js("const b = [...document.querySelectorAll('.piece-card')].find((b) => b.textContent.includes('Ода к радости')); if (!b) return false; b.click(); return true;"),
   );
   await waitFor("ноты пьесы", () => js("return !!document.querySelector('.score-page svg g.note');"), 30000);
+  // По умолчанию открывается ведущий режим «Разучить»; этапы 2–3 проверяем в свободной игре.
+  await waitFor("режим «Разучить» по умолчанию", () => js("return !!document.querySelector('.guide');"), 10000);
+  await waitFor("режим «Свободно»", () => click("Свободно"));
   await waitFor("кнопка «Правая»", () => click("Правая"));
   ok("пьеса открыта, ноты нарисованы");
 
@@ -235,6 +239,64 @@ try {
   await waitFor("кнопка «Стоп»", () => click("■ Стоп"));
   await waitFor("остановлено", () => js("return document.querySelector('.score-scroll')?.dataset.playing === '0';"));
   ok("режим ритма: транспорт идёт, пропуски отмечены, цикл повторяется, остановка работает");
+
+  // --- Этап 4: ведущий режим «Разучить» ---
+  console.log("Сквозной тест: движок практики");
+  const data = (key) => js("return document.querySelector('.score-scroll')?.dataset[arguments[0]] ?? '';", [key]);
+  await waitFor("режим «Разучить»", () => click("Разучить"));
+  await waitFor("первый фрагмент, знакомство", async () => (await data("unit")) === "1-4" && (await data("level")) === "0", 10000);
+  ok("«Ода к радости» разбита на фрагменты, первый — такты 1–4, уровень «Знакомство»");
+
+  const clickLevel = (l) =>
+    js("const b = document.querySelector(`.guide button[data-level='${arguments[0]}']`); if (!b) return false; b.click(); return true;", [l]);
+  const suggestion = () => js("return document.querySelector('[data-suggestion]')?.dataset.suggestion ?? '';");
+  // Бот играет всё, что ждёт курсор, пока не выполнится условие.
+  const playUntil = async (what, cond, timeoutMs) => {
+    const start = Date.now();
+    while (!(await cond())) {
+      if (Date.now() - start > timeoutMs) throw new Error(`Не дождались: ${what}`);
+      const step = await stepNo();
+      const cur = await pitches();
+      if (!cur) {
+        await sleep(100); // шаг другой руки проходит сам
+        continue;
+      }
+      for (const p of cur.split(",")) await press(Number(p));
+      await waitFor(`переход с шага ${step}`, async () => (await stepNo()) !== step || (await cond()), 8000);
+    }
+  };
+
+  await waitFor("уровень 1", () => clickLevel(1));
+  await waitFor("правая рука на уровне 1", async () => (await data("level")) === "1" && (await data("hands")) === "right", 10000);
+  await playUntil("переход к левой руке", async () => (await data("hands")) === "left", 60000);
+  ok("уровень 1: три прохода правой рукой — дальше левая");
+  await playUntil("предложение перейти дальше", async () => (await suggestion()) === "levelUp", 120000);
+  ok("три прохода левой рукой — приложение предлагает уровень 2");
+  await waitFor("принять предложение", () =>
+    js("const b = document.querySelector('[data-suggestion] button.primary'); if (!b) return false; b.click(); return true;"),
+  );
+  await waitFor("уровень 2, обе руки", async () => (await data("level")) === "2" && (await data("hands")) === "both", 10000);
+  ok("предложение принято: уровень 2, обе руки");
+
+  await waitFor("уровень 4", () => clickLevel(4));
+  await waitFor("ноты фрагмента скрыты", () => js("return document.querySelectorAll('.memory-cover').length === 4;"), 10000);
+  ok("уровень «По памяти»: такты 1–4 закрыты");
+
+  const progress = await invoke("progress_overview");
+  const ode = progress.pieces.find((p) => p.title.includes("Ода"));
+  if (!ode) throw new Error(`нет «Оды» в прогрессе: ${JSON.stringify(progress.pieces)}`);
+  if (ode.fragments.length !== 4 || ode.fragments[0].level !== 4) throw new Error(`фрагменты: ${JSON.stringify(ode.fragments)}`);
+  if (ode.activity.attempts < 6) throw new Error(`проходов: ${ode.activity.attempts}`);
+  const playedSecs = progress.play.reduce((s, [, secs]) => s + secs, 0);
+  if (playedSecs < 5) throw new Error(`время игры: ${playedSecs} с`);
+  ok(`прогресс сохранён: 4 фрагмента, проходов ${ode.activity.attempts}, игры ${Math.round(playedSecs)} с`);
+
+  await waitFor("к списку пьес", () => click("← Пьесы"));
+  await waitFor("вкладка «Прогресс»", () => click("Прогресс"));
+  await waitFor("пьеса на экране прогресса", () =>
+    js("return [...document.querySelectorAll('.progress-piece')].some((e) => e.textContent.includes('Ода к радости'));"),
+  );
+  ok("экран «Прогресс» показывает пьесу и её фрагменты");
 
   console.log("Готово: все проверки пройдены");
 } catch (e) {

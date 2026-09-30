@@ -8,6 +8,7 @@ pub mod clock;
 pub mod devices;
 pub mod midi;
 pub mod piece;
+pub mod practice;
 pub mod rhythm;
 pub mod store;
 pub mod synth;

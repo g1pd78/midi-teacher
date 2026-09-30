@@ -610,6 +610,45 @@ mod tests {
     }
 
     #[test]
+    fn listening_plays_everything_and_loops() {
+        // Уровень «Знакомство»: руки ученика — никакие, приложение играет всё по кругу.
+        let mut s = RhythmSession::new(
+            notes(),
+            beats(),
+            RhythmConfig {
+                hands: HandMode::None,
+                loop_range: Some((0, 2000)),
+                ..cfg()
+            },
+        );
+        s.start(0);
+        let out = run(&mut s, &[], (LEAD_IN_MS + 4_100) * 1000);
+        let played: Vec<u8> = out
+            .iter()
+            .filter_map(|a| match a {
+                Action::AppNoteOn { pitch, .. } => Some(*pitch),
+                _ => None,
+            })
+            .collect();
+        // Два полных круга по 5 нот (третий начинается ровно на 4-й секунде).
+        assert!(played.len() >= 10, "{played:?}");
+        assert_eq!(played[..5], played[5..10]);
+        assert_eq!(played[..5].len(), 5);
+        let passes: Vec<RhythmSummary> = events(&out)
+            .into_iter()
+            .filter_map(|e| match e {
+                RhythmEvent::LoopPass { summary, .. } => Some(summary),
+                _ => None,
+            })
+            .collect();
+        assert!(passes.len() >= 2);
+        assert_eq!(passes[0].required_notes, 0);
+        assert!(!events(&out)
+            .iter()
+            .any(|e| matches!(e, RhythmEvent::Miss { .. })));
+    }
+
+    #[test]
     fn grades_by_timing() {
         assert_eq!(grade(0), Grade::Perfect);
         assert_eq!(grade(-50), Grade::Perfect);

@@ -27,6 +27,8 @@ pub enum HandMode {
     Left,
     #[default]
     Both,
+    /// Ни одной: приложение играет всё само (прослушивание).
+    None,
 }
 
 impl HandMode {
@@ -35,6 +37,7 @@ impl HandMode {
             HandMode::Both => true,
             HandMode::Right => hand == Hand::Right,
             HandMode::Left => hand == Hand::Left,
+            HandMode::None => false,
         }
     }
 }
