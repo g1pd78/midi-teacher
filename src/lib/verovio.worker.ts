@@ -2,7 +2,7 @@
 //
 // Запросы:
 //   render     — MEI → SVG одной страницы (тренажёр);
-//   load       — MusicXML/MXL → MEI с постоянными xml:id у нот;
+//   load       — MusicXML/MXL → MEI с постоянными xml:id у нот (и с транспонированием);
 //   renderDoc  — MEI → все страницы SVG + временная карта + MIDI-значения нот.
 
 import createVerovioModule from "verovio/wasm";
@@ -10,7 +10,7 @@ import { VerovioToolkit } from "verovio/esm";
 
 type Request =
   | { id: number; type?: "render"; mei: string; options: Record<string, unknown> }
-  | { id: number; type: "load"; data: string | ArrayBuffer; zip: boolean }
+  | { id: number; type: "load"; data: string | ArrayBuffer; zip: boolean; transpose?: number }
   | { id: number; type: "renderDoc"; mei: string; options: Record<string, unknown> };
 
 type Tk = VerovioToolkit & {
@@ -29,8 +29,11 @@ self.onmessage = async (e: MessageEvent<Request>) => {
     const tk = await ready;
     if (req.type === "load") {
       tk.resetXmlIdSeed(1);
-      tk.setOptions({ breaks: "none" });
+      // Сдвиг в полутонах: Verovio меняет ноты и знаки при ключе, id остаются прежними.
+      const t = req.transpose ?? 0;
+      tk.setOptions({ breaks: "none", transpose: t ? (t > 0 ? `+${t}` : String(t)) : "" });
       const ok = req.zip ? tk.loadZipDataBuffer(req.data as ArrayBuffer) : tk.loadData(req.data as string);
+      tk.setOptions({ transpose: "" });
       if (!ok) throw new Error(tk.getLog() || "файл не распознан как ноты");
       self.postMessage({ id: req.id, result: { mei: tk.getMEI({}) } });
       return;

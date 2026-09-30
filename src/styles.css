@@ -1815,3 +1815,106 @@ button.link.piece-link:hover {
 .reference-detail {
   overflow: auto;
 }
+
+/* --- Этап 6: MIDI, тон, запись --- */
+.transpose {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.transpose b {
+  min-width: 26px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.fing-legend.hand-right {
+  color: #2f6fc0;
+}
+.fing-legend.hand-left {
+  color: #c07a10;
+}
+.track-dialog {
+  width: min(860px, 94vw);
+  max-height: 88vh;
+  overflow: auto;
+}
+.track-dialog h2 {
+  margin: 2px 0 6px;
+}
+.track-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+}
+.track-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.track-row.off .track-info {
+  opacity: 0.5;
+}
+.track-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.track-info b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.track-info .muted {
+  font-size: 13px;
+}
+.track-play {
+  width: 34px;
+  flex: none;
+}
+.track-play.on {
+  background: var(--good);
+  color: #111;
+}
+.track-roles {
+  flex: none;
+}
+.record-panel {
+  margin: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.record-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.record-row input[type="number"] {
+  width: 64px;
+  margin: 0 6px;
+}
+.record-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--bad);
+  animation: record-blink 1s infinite;
+}
+@keyframes record-blink {
+  50% {
+    opacity: 0.3;
+  }
+}
+@media (max-width: 700px) {
+  .track-row {
+    flex-wrap: wrap;
+  }
+}

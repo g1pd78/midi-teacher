@@ -54,6 +54,7 @@ export const useApp = create<AppStore>((set, get) => ({
     wizardDone: true,
     trainer: { layout: "single", errorMode: "wait", names: "struggle" },
     theorySeen: [],
+    pieceSetup: {},
     piece: { guided: true, heat: false, layout: "line", hands: "right", accompany: true, names: false, fingering: true, keyHints: true, mode: "wait", tempo: 0.8, countIn: true, metronome: false, waterfall: true },
   },
   audioConfig: { backend: "auto", device: null, bufferFrames: 128, volume: 0.8 },

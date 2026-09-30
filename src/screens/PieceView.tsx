@@ -3,6 +3,10 @@ import {
   api,
   listen,
   type AttemptRecord,
+  type Converted,
+  type MidiInfo,
+  type PieceSetup,
+  saveTextAs,
   type HandMode,
   type MeasureErrors,
   type PieceNoteIn,
@@ -15,6 +19,8 @@ import {
   type UnitView,
 } from "../api";
 import { Piano } from "../components/Piano";
+import { TrackDialog } from "../components/TrackDialog";
+import { accompNotes, overrideFor, toggleOverride } from "../lib/midi";
 import { TheoryPlaque } from "../components/Theory";
 import { detectFeatures } from "../lib/theory";
 import { Waterfall, type NoteState } from "../components/Waterfall";
@@ -52,7 +58,12 @@ export interface PieceSource {
   id: string;
   title: string;
   load: () => Promise<{ data: string | ArrayBuffer; zip: boolean }>;
+  /** MIDI-файл библиотеки: ноты строятся из него с выбранными дорожками. */
+  midi?: string;
 }
+
+const NO_SETUP: PieceSetup = { transpose: 0, roles: null, handOverrides: [] };
+const TRANSPOSE_MAX = 12;
 
 const HAND_COLOR = { right: "#5AA9FF", left: "#FFB454" } as const;
 /** Видимая высота падающих нот в секундах реального времени. */
@@ -147,6 +158,18 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const [exMetronome, setExMetronome] = useState(true);
   const [exResult, setExResult] = useState<Evaluation | null>(null);
   const hitLog = useRef<HitRecord[]>([]);
+  // Настройки этой пьесы: тон, дорожки MIDI, правка рук.
+  const setup: PieceSetup = { ...NO_SETUP, ...prefs.pieceSetup?.[source.id] };
+  const setSetup = (patch: Partial<PieceSetup>) =>
+    setPrefs({ pieceSetup: { ...prefs.pieceSetup, [source.id]: { ...setup, ...patch } } });
+  const transpose = exercise ? 0 : setup.transpose;
+  // Аппликатура своя для каждого тона: в другой тональности другие пальцы.
+  const fingerKey = transpose ? `${source.id}@${transpose > 0 ? "+" : ""}${transpose}` : source.id;
+  // MIDI: окно дорожек, результат перевода в ноты, правка рук.
+  const [midiInfo, setMidiInfo] = useState<MidiInfo | null>(null);
+  const [trackDialog, setTrackDialog] = useState(false);
+  const [converted, setConverted] = useState<Converted | null>(null);
+  const [editHands, setEditHands] = useState(false);
 
   const [mei, setMei] = useState<string | null>(null);
   const [pages, setPages] = useState<string[]>([]);
@@ -193,7 +216,8 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const [boxes, setBoxes] = useState<(Rect | null)[]>([]);
 
   const notes = useMemo(() => score?.notes ?? [], [score]);
-  const notesKey = useMemo(() => notes.map((n) => n.id).join(","), [notes]);
+  // Высота и рука входят в ключ: при смене тона id нот не меняются, а ноты — да.
+  const notesKey = useMemo(() => notes.map((n) => `${n.id}:${n.pitch}:${n.hand}`).join(","), [notes]);
   const measures = score?.structure.measures ?? 0;
   const hasLeft = notes.some((n) => n.hand === "left");
   const hasRight = notes.some((n) => n.hand === "right");
@@ -234,21 +258,59 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const scoreRef = useRef(score);
   scoreRef.current = score;
 
-  // Загрузка файла → MEI.
+  // Загрузка файла → MEI. MIDI сначала переводится в MusicXML с выбранными дорожками;
+  // если дорожки ещё не выбраны — сначала окно дорожек.
+  const rolesKey = setup.roles?.join(",") ?? "";
+  const overridesKey = JSON.stringify(setup.handOverrides);
   useEffect(() => {
     warmUpVerovio();
     let alive = true;
-    source
-      .load()
-      .then(({ data, zip }) => loadScore(data, zip))
-      .then((m) => alive && setMei(m))
-      .catch((e) => alive && setError(`Не удалось открыть ноты: ${e.message ?? e}`));
+    const fail = (e: unknown) => alive && setError(`Не удалось открыть ноты: ${(e as Error)?.message ?? e}`);
+    if (source.midi) {
+      const file = source.midi;
+      if (!setup.roles) {
+        api
+          .midiInspect(file)
+          .then((info) => {
+            if (!alive) return;
+            setMidiInfo(info);
+            setTrackDialog(true);
+          })
+          .catch(fail);
+      } else {
+        api
+          .midiConvert(file, { roles: setup.roles, handOverrides: setup.handOverrides, transpose, title: source.title })
+          .then((c) => {
+            if (!alive) return null;
+            setConverted(c);
+            return loadScore(c.musicxml, false);
+          })
+          .then((m) => alive && m && setMei(m))
+          .catch(fail);
+      }
+    } else {
+      source
+        .load()
+        .then(({ data, zip }) => loadScore(data, zip, transpose))
+        .then((m) => alive && setMei(m))
+        .catch(fail);
+    }
     return () => {
       alive = false;
+    };
+    // setup.roles и setup.handOverrides входят в rolesKey и overridesKey
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, transpose, rolesKey, overridesKey]);
+  useEffect(
+    () => () => {
       void api.pieceStop();
       void api.rhythmStop();
-    };
-  }, [source]);
+      void api.midiPreviewStop();
+    },
+    [source],
+  );
+  // Аккомпанемент из MIDI: звучит вместе с учеником, на нотах не показывается.
+  const accomp = useMemo(() => (converted ? accompNotes(converted.accompaniment) : []), [converted]);
 
   // Размер области нот: ширина — для раскладки страниц, полный размер — для рамок тактов.
   const [boxSize, setBoxSize] = useState("");
@@ -312,10 +374,10 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   useEffect(() => {
     if (!fingerInput.length) return;
     api
-      .fingeringGet(source.id, fingerInput)
+      .fingeringGet(fingerKey, fingerInput)
       .then(setFingers)
       .catch(() => setFingers(null));
-  }, [fingerInput, source]);
+  }, [fingerInput, fingerKey]);
   const fingerOf = useMemo(() => new Map((fingers ?? []).map((f) => [f.id, f])), [fingers]);
   // Элементы нотной записи в пьесе — для плашек теории «Новое».
   const theoryFeatures = useMemo(
@@ -330,7 +392,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
 
   const setFinger = (id: string, finger: number | null) =>
     api
-      .fingeringSet(source.id, fingerInput, id, finger)
+      .fingeringSet(fingerKey, fingerInput, id, finger)
       .then(setFingers)
       .catch((e) => setToast(`Палец не сохранён: ${e}`));
 
@@ -391,9 +453,10 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     setHits(new Set());
     setCurrent(null);
     resetMarks();
-    const selected = rangeFrom ? sc.notes.filter((n) => n.measure >= rangeFrom && n.measure <= rangeTo) : sc.notes;
-    void api.pieceStart(selected.map(toIn), { hands, accompany, tempo, looping: !!rangeFrom });
-  }, [notesKey, hands, accompany, tempo, rangeFrom, rangeTo, rhythmMode, ready, run, resetMarks]);
+    const inRange = (n: { measure: number }) => !rangeFrom || (n.measure >= rangeFrom && n.measure <= rangeTo);
+    const selected = [...sc.notes.filter(inRange).map(toIn), ...(accompany ? accomp.filter(inRange) : [])];
+    void api.pieceStart(selected, { hands, accompany, tempo, looping: !!rangeFrom });
+  }, [notesKey, hands, accompany, tempo, rangeFrom, rangeTo, rhythmMode, ready, run, resetMarks, accomp]);
 
   // При переходе в режим ритма — остановить ожидание; при выходе — остановить ритм.
   useEffect(() => {
@@ -415,7 +478,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     setExResult(null);
     setToast(null);
     const beats = buildBeats(sc.starts, sc.endMs, sc.structure.meter, sc.tempoBpm);
-    await api.rhythmStart(sc.notes.map(toIn), beats, {
+    await api.rhythmStart([...sc.notes.map(toIn), ...(accompany ? accomp : [])], beats, {
       hands,
       accompany,
       tempo,
@@ -426,7 +489,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
       beatMs: Math.round(beatDuration(sc.structure.meter, sc.tempoBpm)),
     });
     setPlaying(true);
-  }, [hands, accompany, tempo, countIn, metronome, loopMs, resetMarks]);
+  }, [hands, accompany, tempo, countIn, metronome, loopMs, resetMarks, accomp]);
   const startRhythmRef = useRef(startRhythm);
   startRhythmRef.current = startRhythm;
 
@@ -437,7 +500,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
 
   // Смена настроек во время игры в темпе: в свободной игре — остановка,
   // в ведущем режиме (темп вырос, другой отрезок) — сразу заново.
-  const rhythmKey = `${hands}|${tempo}|${accompany}|${countIn}|${metronome}|${rangeFrom}-${rangeTo}|${notesKey}`;
+  const rhythmKey = `${hands}|${tempo}|${accompany}|${countIn}|${metronome}|${rangeFrom}-${rangeTo}|${notesKey}|${accomp.length}`;
   const prevRhythmKey = useRef(rhythmKey);
   useEffect(() => {
     if (prevRhythmKey.current === rhythmKey) return;
@@ -655,6 +718,11 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
       el.classList.add(cls);
       marked.current.push(el);
     };
+    // Правка рук: все ноты окрашены по рукам, без курсора и отметок игры.
+    if (editHands) {
+      for (const n of notes) mark(n.id, `mark-${n.hand}`);
+      return;
+    }
     for (const [id, st] of noteStates.current) {
       if (st === "hit") mark(id, "mark-hit");
       else if (st === "poor") mark(id, "mark-poor");
@@ -721,6 +789,18 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
 
   const onScoreClick = (e: React.MouseEvent) => {
     if (!score) return;
+    if (editHands && converted) {
+      // Клик по ноте переносит её в другую руку; продолжение лиги — всю лигу.
+      let id = (e.target as Element).closest?.("g.note")?.id;
+      while (id && score.structure.tieEndToStart.has(id)) id = score.structure.tieEndToStart.get(id);
+      const n = id ? noteById.get(id) : undefined;
+      if (!n) return;
+      const o = overrideFor(n, converted.bpm, converted.trim, transpose);
+      const next = toggleOverride(setup.handOverrides, o);
+      setSetup({ handOverrides: next });
+      setToast(next.length < setup.handOverrides.length ? "Нота возвращена" : o.hand === "left" ? "Нота → левая рука" : "Нота → правая рука");
+      return;
+    }
     if (editFingers) {
       // Клик по ноте выбирает её; продолжение лиги — первую ноту лиги.
       let id = (e.target as Element).closest?.("g.note")?.id;
@@ -806,7 +886,11 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   {
     keyHandler.current = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT") return;
+      if (tag === "INPUT" || trackDialog) return;
+      if (editHands) {
+        if (e.key === "Escape") setEditHands(false);
+        return;
+      }
       if (editFingers) {
         if (e.key === "Escape") setEditFingers(false);
         else if (selNote && /^[1-5]$/.test(e.key)) void setFinger(selNote, Number(e.key));
@@ -916,6 +1000,68 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         : "";
 
   const startLabel = hands === "none" ? "▶ Слушать" : "▶ Старт";
+
+  // --- Тон, дорожки MIDI, правка рук, сохранение в MusicXML ---
+  const openTracks = () => {
+    if (!source.midi) return;
+    const show = (info: MidiInfo) => {
+      setMidiInfo(info);
+      setTrackDialog(true);
+    };
+    if (midiInfo) show(midiInfo);
+    else api.midiInspect(source.midi).then(show).catch((e) => setToast(String(e)));
+  };
+  const saveMusicXml = async () => {
+    if (!converted) return;
+    const name = `${source.title.replace(/[\\/:*?"<>|]/g, "-")}${transpose ? ` (${transpose > 0 ? "+" : ""}${transpose})` : ""}.musicxml`;
+    try {
+      const path = await saveTextAs(name, converted.musicxml, "musicxml", "MusicXML");
+      if (path) setToast(`Сохранено: ${path}`);
+    } catch (e) {
+      setToast(`Не сохранено: ${e}`);
+    }
+  };
+  const setTranspose = (t: number) => setSetup({ transpose: Math.max(-TRANSPOSE_MAX, Math.min(TRANSPOSE_MAX, t)) });
+  const pieceTools = exercise ? null : (
+    <>
+      <span className="transpose" title="Транспонирование: сдвиг всей пьесы на полутоны">
+        Тон
+        <button className="small" onClick={() => setTranspose(transpose - 1)} disabled={transpose <= -TRANSPOSE_MAX} data-transpose-down>
+          −
+        </button>
+        <b data-transpose={transpose}>{transpose > 0 ? `+${transpose}` : transpose}</b>
+        <button className="small" onClick={() => setTranspose(transpose + 1)} disabled={transpose >= TRANSPOSE_MAX} data-transpose-up>
+          +
+        </button>
+        {transpose !== 0 && (
+          <button className="link" onClick={() => setTranspose(0)}>
+            как в файле
+          </button>
+        )}
+      </span>
+      {source.midi && (
+        <>
+          <button className="small" onClick={openTracks} data-tracks>
+            Дорожки…
+          </button>
+          <button
+            className={`small${editHands ? " primary" : ""}`}
+            disabled={!converted}
+            onClick={() => {
+              setEditFingers(false);
+              setEditBounds(false);
+              setEditHands((v) => !v);
+            }}
+          >
+            Руки…
+          </button>
+          <button className="small" disabled={!converted} onClick={() => void saveMusicXml()} data-save-xml>
+            Сохранить MusicXML…
+          </button>
+        </>
+      )}
+    </>
+  );
 
   return (
     <main className={`piece${showWaterfall ? " with-waterfall" : ""}`}>
@@ -1031,11 +1177,13 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
           onLevel={setLevel}
           onEditBounds={() => {
             setEditFingers(false);
+            setEditHands(false);
             setEditBounds((v) => !v);
           }}
           editFingers={editFingers}
           onEditFingers={() => {
             setEditBounds(false);
+            setEditHands(false);
             setEditFingers((v) => !v);
           }}
           status={
@@ -1051,6 +1199,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
               {rhythmMode && <Toggle label="Отсчёт" on={p.countIn} onChange={(v) => setPiece({ countIn: v })} />}
               {rhythmMode && <Toggle label="Метроном" on={p.metronome} onChange={(v) => setPiece({ metronome: v })} />}
               <Toggle label="Трудные такты" on={p.heat} onChange={(v) => setPiece({ heat: v })} />
+              {pieceTools}
             </>
           }
         />
@@ -1108,11 +1257,18 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
             <Toggle label="Падающие ноты" on={p.waterfall} onChange={(v) => setPiece({ waterfall: v })} />
             <Toggle label="Названия нот" on={p.names} onChange={(v) => setPiece({ names: v })} />
             <Toggle label="Аппликатура" on={p.fingering} onChange={(v) => setPiece({ fingering: v })} />
-            <button className={`small${editFingers ? " primary" : ""}`} onClick={() => setEditFingers((v) => !v)}>
+            <button
+              className={`small${editFingers ? " primary" : ""}`}
+              onClick={() => {
+                setEditHands(false);
+                setEditFingers((v) => !v);
+              }}
+            >
               Пальцы…
             </button>
             <Toggle label="Подсветка клавиш" on={p.keyHints} onChange={(v) => setPiece({ keyHints: v })} />
             <Toggle label="Трудные такты" on={p.heat} onChange={(v) => setPiece({ heat: v })} />
+            {pieceTools}
           </div>
         </>
       )}
@@ -1161,6 +1317,22 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
           <button className="primary" onClick={() => setEditFingers(false)}>
             Готово
           </button>
+        </div>
+      )}
+      {editHands && (
+        <div className="notice info guide-edit">
+          <span>
+            Кликни по ноте — она перейдёт в другую руку (верхний стан ↔ нижний). Повторный клик возвращает. Ноты
+            окрашены по рукам: <span className="fing-legend hand-right">правая</span>,{" "}
+            <span className="fing-legend hand-left">левая</span>.
+            {setup.handOverrides.length > 0 && ` Перенесено нот: ${setup.handOverrides.length}.`}
+          </span>
+          <span className="buttons">
+            {setup.handOverrides.length > 0 && <button onClick={() => setSetup({ handOverrides: [] })}>Сбросить правки</button>}
+            <button className="primary" onClick={() => setEditHands(false)}>
+              Готово
+            </button>
+          </span>
         </div>
       )}
       {suggestion && unit && (
@@ -1230,6 +1402,21 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         <Piano low={low} high={high} naming={naming} highlight={highlight} labels="c" />
       </section>
       <TheoryPlaque features={theoryFeatures} />
+      {trackDialog && midiInfo && source.midi && (
+        <TrackDialog
+          fileId={source.midi}
+          info={midiInfo}
+          initial={setup.roles}
+          onApply={(roles) => {
+            setTrackDialog(false);
+            setSetup({ roles });
+          }}
+          onCancel={() => {
+            setTrackDialog(false);
+            if (!setup.roles) onBack();
+          }}
+        />
+      )}
       {/* Итоги — поверх всего экрана игры, чтобы помещались при любой высоте нот. */}
         {waitSummary && !rhythmMode && <WaitSummary summary={waitSummary} onAgain={restart} onBack={onBack} />}
       {rhythmSummary && rhythmMode && (

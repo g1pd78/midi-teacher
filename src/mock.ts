@@ -20,6 +20,7 @@ import type {
   TrainerTarget,
 } from "./api";
 import { createPracticeMock } from "./mockPractice";
+import odeToJoy from "./pieces/ode-to-joy.musicxml?raw";
 
 type Listener = (payload: never) => void;
 
@@ -38,6 +39,7 @@ export function createMock() {
     "Демо-клавиатура": { enabled: true, route: { kind: "internal" }, range: null },
   };
   let appRoute: SoundRoute = { kind: "internal" };
+  let recording: { start: number; notes: number } | null = null;
   let appChannel = 0;
 
   const state: Omit<FullState, "devices"> = {
@@ -46,6 +48,7 @@ export function createMock() {
       wizardDone: new URLSearchParams(location.search).has("done"),
       trainer: { layout: "single", errorMode: "wait", names: "struggle" },
       theorySeen: [],
+      pieceSetup: {},
       piece: { guided: true, heat: false, layout: "line", hands: "right", accompany: true, names: false, fingering: true, keyHints: true, mode: "wait", tempo: 0.8, countIn: true, metronome: false, waterfall: true },
     },
     audioConfig: { backend: "auto", device: null, bufferFrames: 128, volume: 0.8 },
@@ -92,6 +95,7 @@ export function createMock() {
       judgePiece(ev.note);
       judgeRhythm(ev.note, ev.velocity);
       practice.onNote();
+      if (recording) recording.notes++;
     }
     emitMidi(device, ev);
   };
@@ -188,9 +192,9 @@ export function createMock() {
     started: number;
   } | null = null;
   const pieceRequired = (i: number) =>
-    piece!.steps[i].notes.filter((n) => piece!.hands === "both" || n.hand === piece!.hands);
+    piece!.steps[i].notes.filter((n) => n.hand !== "accomp" && (piece!.hands === "both" || n.hand === piece!.hands));
   // Руки ученика в имитации ритма: `none` — слушаем.
-  const mineOf = (hands: string, n: PieceNoteIn) => hands === "both" || n.hand === hands;
+  const mineOf = (hands: string, n: PieceNoteIn) => n.hand !== "accomp" && (hands === "both" || n.hand === hands);
 
   function pieceActivate(i: number) {
     if (!piece) return;
@@ -343,6 +347,46 @@ export function createMock() {
       items: [{ id: "Песня.mid", title: "Песня", format: "midi", size: 2048, modified: 0 }],
     }),
     library_read: () => Promise.reject(new Error("в демо нет своих файлов")),
+    // MIDI в демо: дорожки выдуманы, ноты — «Ода к радости» (настоящий перевод делает ядро).
+    midi_inspect: () => ({
+      tracks: [
+        { index: 0, name: "Piano RH", channel: 1, program: 0, drums: false, notes: 62, low: 60, high: 67, role: "right" },
+        { index: 1, name: "Piano LH", channel: 2, program: 0, drums: false, notes: 16, low: 43, high: 55, role: "left" },
+        { index: 2, name: "Strings", channel: 3, program: 48, drums: false, notes: 8, low: 55, high: 72, role: "accompany" },
+        { index: 3, name: "Drums", channel: 10, program: null, drums: true, notes: 64, low: 36, high: 42, role: "off" },
+      ],
+      bpm: 100,
+      meter: [4, 4],
+      keyFifths: 0,
+      keyMinor: false,
+      keyFromFile: false,
+      durationSec: 38,
+    }),
+    midi_convert: () => ({
+      musicxml: odeToJoy,
+      accompaniment: [0, 1, 2, 3].map((m) => ({ pitch: 72, startMs: m * 2400, durMs: 2400, measure: m + 1 })),
+      bpm: 100,
+      measures: 16,
+      trim: 0,
+      keyFifths: 0,
+      tripletQuarters: 0,
+    }),
+    midi_preview: () => undefined,
+    midi_preview_stop: () => undefined,
+    record_start: ({ bpm, beatsPerBar, countIn }) => {
+      recording = { start: performance.now() + (countIn ? (Number(beatsPerBar) * 60000) / Number(bpm) : 0), notes: 0 };
+      return undefined;
+    },
+    record_status: () =>
+      recording
+        ? { recording: true, elapsedMs: Math.round(performance.now() - recording.start), notes: recording.notes }
+        : { recording: false, elapsedMs: 0, notes: 0 },
+    record_stop: ({ name, save }) => {
+      const r = recording;
+      recording = null;
+      return save && r && r.notes > 0 ? `${name}.mid` : null;
+    },
+    save_text_file: () => undefined,
     library_import: () => [],
     library_open_folder: () => undefined,
     piece_start: ({ notes, config }) => {

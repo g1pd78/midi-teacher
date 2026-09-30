@@ -33,9 +33,9 @@ export function renderSvg(mei: string, options: Record<string, unknown>): Promis
   return call<string>({ type: "render", mei, options });
 }
 
-/** MusicXML (текст) или MXL (архив) → MEI с постоянными id нот. */
-export async function loadScore(data: string | ArrayBuffer, zip: boolean): Promise<string> {
-  const r = await call<{ mei: string }>({ type: "load", data, zip }, data instanceof ArrayBuffer ? [data] : []);
+/** MusicXML (текст) или MXL (архив) → MEI с постоянными id нот; `transpose` — сдвиг в полутонах. */
+export async function loadScore(data: string | ArrayBuffer, zip: boolean, transpose = 0): Promise<string> {
+  const r = await call<{ mei: string }>({ type: "load", data, zip, transpose }, data instanceof ArrayBuffer ? [data] : []);
   return r.mei;
 }
 

@@ -174,3 +174,25 @@ describe("встроенные пьесы", () => {
     expect((named.match(/<verse n="9">/g) ?? []).length).toBeGreaterThan(70);
   });
 });
+
+describe("транспонирование MusicXML (опция Verovio transpose)", () => {
+  const read = (t: string) => {
+    tk.resetXmlIdSeed(1);
+    tk.setOptions({ breaks: "none", transpose: t });
+    expect(tk.loadData(readFileSync("src/pieces/ode-to-joy.musicxml", "utf8"))).toBeTruthy();
+    const mei = tk.getMEI({});
+    tk.setOptions({ transpose: "" });
+    return mei;
+  };
+  const ids = (m: string) => [...m.matchAll(/<note [^>]*xml:id="([^"]+)"/g)].map((x) => x[1]);
+
+  it("сохраняет id нот и меняет тональность", () => {
+    const plain = read("");
+    const up = read("+2");
+    expect(ids(up)).toEqual(ids(plain));
+    expect(up).toContain('sig="2s"');
+    expect(plain.match(/<note [^>]*>/)![0]).toContain('pname="e"');
+    expect(up.match(/<note [^>]*>/)![0]).toContain('pname="f"');
+    expect(read("")).toBe(plain);
+  });
+});

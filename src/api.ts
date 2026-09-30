@@ -104,12 +104,82 @@ export interface PiecePrefs {
   waterfall: boolean;
 }
 
+export type TrackRole = "right" | "left" | "both" | "accompany" | "off";
+
+export interface HandOverride {
+  /** Начало в долях сетки импорта (12 на четверть) до обрезки пустого начала. */
+  start: number;
+  /** Высота до транспонирования. */
+  pitch: number;
+  hand: "right" | "left";
+}
+
+/** Настройки одной пьесы. */
+export interface PieceSetup {
+  transpose: number;
+  roles: TrackRole[] | null;
+  handOverrides: HandOverride[];
+}
+
 export interface UiPrefs {
   noteNames: "solfege" | "latin";
   wizardDone: boolean;
   trainer: TrainerPrefs;
   piece: PiecePrefs;
   theorySeen: string[];
+  pieceSetup: Record<string, PieceSetup>;
+}
+
+export interface TrackInfo {
+  index: number;
+  name: string;
+  channel: number;
+  program: number | null;
+  drums: boolean;
+  notes: number;
+  low: number;
+  high: number;
+  role: TrackRole;
+}
+
+export interface MidiInfo {
+  tracks: TrackInfo[];
+  bpm: number;
+  meter: [number, number];
+  keyFifths: number;
+  keyMinor: boolean;
+  keyFromFile: boolean;
+  durationSec: number;
+}
+
+export interface ConvertOptions {
+  roles: TrackRole[];
+  handOverrides: HandOverride[];
+  transpose: number;
+  title: string;
+}
+
+export interface AccompNote {
+  pitch: number;
+  startMs: number;
+  durMs: number;
+  measure: number;
+}
+
+export interface Converted {
+  musicxml: string;
+  accompaniment: AccompNote[];
+  bpm: number;
+  measures: number;
+  trim: number;
+  keyFifths: number;
+  tripletQuarters: number;
+}
+
+export interface RecordStatus {
+  recording: boolean;
+  elapsedMs: number;
+  notes: number;
 }
 
 export interface PieceNoteIn {
@@ -117,7 +187,8 @@ export interface PieceNoteIn {
   pitch: number;
   startMs: number;
   durMs: number;
-  hand: "right" | "left";
+  /** `accomp` — аккомпанемент из MIDI-файла: всегда играет приложение. */
+  hand: "right" | "left" | "accomp";
   measure: number;
 }
 
@@ -426,6 +497,15 @@ export const api = {
     invoke<ExerciseStatView[]>("exercise_record", { result }),
   warmupDone: () => invoke<void>("warmup_done"),
   todayStatus: (dayStart: number) => invoke<TodayStatus>("today_status", { dayStart }),
+  midiInspect: (id: string) => invoke<MidiInfo>("midi_inspect", { id }),
+  midiConvert: (id: string, options: ConvertOptions) => invoke<Converted>("midi_convert", { id, options }),
+  midiPreview: (id: string, track: number) => invoke<void>("midi_preview", { id, track }),
+  midiPreviewStop: () => invoke<void>("midi_preview_stop"),
+  recordStart: (bpm: number, beatsPerBar: number, metronome: boolean, countIn: boolean) =>
+    invoke<void>("record_start", { bpm, beatsPerBar, metronome, countIn }),
+  recordStatus: () => invoke<RecordStatus>("record_status"),
+  recordStop: (name: string, save: boolean) => invoke<string | null>("record_stop", { name, save }),
+  saveTextFile: (path: string, content: string) => invoke<void>("save_text_file", { path, content }),
   fingeringGet: (piece: string, notes: FingerNoteIn[]) => invoke<Finger[]>("fingering_get", { piece, notes }),
   fingeringSet: (piece: string, notes: FingerNoteIn[], noteId: string, finger: number | null) =>
     invoke<Finger[]>("fingering_set", { piece, notes, noteId, finger }),
@@ -448,6 +528,26 @@ export async function pickScoreFiles(): Promise<string[]> {
   });
   if (!res) return [];
   return Array.isArray(res) ? res : [res];
+}
+
+/**
+ * «Сохранить как…»: в приложении — системный диалог, в браузере — скачивание.
+ * Возвращает путь (или имя файла) либо `null`, если отменили.
+ */
+export async function saveTextAs(name: string, content: string, ext: string, label: string): Promise<string | null> {
+  if (!inTauri) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([content], { type: "application/xml" }));
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    return name;
+  }
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const path = await save({ defaultPath: name, filters: [{ name: label, extensions: [ext] }] });
+  if (!path) return null;
+  await api.saveTextFile(path, content);
+  return path;
 }
 
 /** Перетаскивание файлов в окно приложения. */
