@@ -321,6 +321,8 @@ pub fn run() {
             practice::practice_set_level,
             practice::practice_record,
             practice::progress_overview,
+            practice::fingering_get,
+            practice::fingering_set,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска приложения");

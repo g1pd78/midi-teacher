@@ -17,6 +17,7 @@ import {
 import { Piano } from "../components/Piano";
 import { Waterfall, type NoteState } from "../components/Waterfall";
 import { keyLabel } from "../lib/notes";
+import { fingerNotes, injectFingering, type Finger } from "../lib/fingering";
 import {
   LEVELS,
   STREAK_TO_ADVANCE,
@@ -72,7 +73,7 @@ function verovioLayout(layout: "line" | "pages", width: number): Record<string, 
     pageMarginBottom: 60,
     pageMarginLeft: 40,
     pageMarginRight: 40,
-    lyricSize: 3,
+    lyricSize: 2.5,
   };
   return layout === "line"
     ? { ...common, breaks: "none", pageWidth: 60000, pageHeight: 60000, adjustPageWidth: true }
@@ -143,6 +144,10 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
   const [suggestion, setSuggestion] = useState<{ s: Suggestion; key: string } | null>(null);
   const dismissed = useRef(new Set<string>());
   const [editBounds, setEditBounds] = useState(false);
+  // Аппликатура
+  const [fingers, setFingers] = useState<Finger[] | null>(null);
+  const [editFingers, setEditFingers] = useState(false);
+  const [selNote, setSelNote] = useState<string | null>(null);
 
   // Режим ожидания
   const [current, setCurrent] = useState<Current | null>(null);
@@ -188,6 +193,8 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
   const keyHints = preset ? preset.keyHints : p.keyHints;
   const showWaterfall = preset ? preset.waterfall : p.waterfall;
   const hideRange = preset?.hide ?? false;
+  // Аппликатура в ведущем режиме — на уровнях 0–2, в свободной игре — по переключателю.
+  const showFingers = editFingers || (unit ? level <= 2 : p.fingering);
   const range: Loop | null = unit ? { from: unit.from, to: unit.to } : loop;
   const rangeFrom = range?.from ?? 0;
   const rangeTo = range?.to ?? 0;
@@ -203,6 +210,9 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
     () => (score && rangeFrom ? loopRangeMs(score.starts, score.endMs, rangeFrom, rangeTo) : null),
     [score, rangeFrom, rangeTo],
   );
+
+  const scoreRef = useRef(score);
+  scoreRef.current = score;
 
   // Загрузка файла → MEI.
   useEffect(() => {
@@ -235,15 +245,22 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
 
   // Рендер нот и разбор пьесы.
   const layoutKey = p.layout === "pages" ? `pages-${width}` : "line";
+  // Названия нот — только у рук, которые играет ученик: так строка нот ниже и крупнее.
+  const staves = useMemo(() => (mei ? parseMei(mei).staves : 0), [mei]);
+  const nameStaves = staves < 2 || hands === "both" || hands === "none" ? "all" : hands === "right" ? "1" : "2";
+  const fingersKey = useMemo(() => fingers?.map((f) => `${f.id}:${f.finger}:${f.source[0]}`).join(",") ?? "", [fingers]);
   useEffect(() => {
     if (!mei) return;
     let alive = true;
-    const text = showNames
+    let text = showNames
       ? addNoteNames(mei, (pname, accid) => {
           const base = naming === "solfege" ? SOLFEGE[pname] : pname.toUpperCase();
           return base + (accid ? (ACCID[accid] ?? "") : "");
-        })
+        }, nameStaves === "all" ? undefined : new Set([Number(nameStaves)]))
       : mei;
+    // Цифры пальцев (файл + правки + подбор) заменяют аппликатуру из файла.
+    const sc = scoreRef.current;
+    if (fingers && sc) text = injectFingering(text, fingers, sc.notes);
     renderScore(text, verovioLayout(p.layout, width))
       .then((r) => {
         if (!alive) return;
@@ -262,12 +279,43 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
     return () => {
       alive = false;
     };
-    // width входит в layoutKey
+    // width входит в layoutKey, fingers — в fingersKey
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mei, showNames, naming, layoutKey]);
+  }, [mei, showNames, naming, layoutKey, fingersKey, nameStaves]);
 
-  const scoreRef = useRef(score);
-  scoreRef.current = score;
+  // Аппликатура пьесы от ядра: ручные правки → файл → автоматический подбор.
+  const fingerInput = useMemo(
+    () => (scoreRef.current ? fingerNotes(scoreRef.current.notes, scoreRef.current.structure) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [notesKey],
+  );
+  useEffect(() => {
+    if (!fingerInput.length) return;
+    api
+      .fingeringGet(source.id, fingerInput)
+      .then(setFingers)
+      .catch(() => setFingers(null));
+  }, [fingerInput, source]);
+  const fingerOf = useMemo(() => new Map((fingers ?? []).map((f) => [f.id, f])), [fingers]);
+  const waterfallFingers = useMemo(
+    () => (showFingers ? new Map((fingers ?? []).map((f) => [f.id, { finger: f.finger, auto: f.source === "auto" }])) : null),
+    [fingers, showFingers],
+  );
+
+  const setFinger = (id: string, finger: number | null) =>
+    api
+      .fingeringSet(source.id, fingerInput, id, finger)
+      .then(setFingers)
+      .catch((e) => setToast(`Палец не сохранён: ${e}`));
+
+  // Ноты по порядку — для стрелок в режиме «Пальцы…».
+  const noteOrder = useMemo(
+    () =>
+      [...notes]
+        .sort((a, b) => a.startMs - b.startMs || (a.hand === b.hand ? b.pitch - a.pitch : a.hand === "right" ? -1 : 1))
+        .map((n) => n.id),
+    [notes],
+  );
 
   // Пьеса в базе практики: фрагменты, уровни, трудные такты.
   useEffect(() => {
@@ -539,7 +587,8 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
   useLayoutEffect(() => {
     const root = scrollRef.current;
     if (!root) return;
-    for (const el of marked.current) el.classList.remove("mark-right", "mark-left", "mark-app", "mark-hit", "mark-poor", "mark-miss");
+    for (const el of marked.current)
+      el.classList.remove("mark-right", "mark-left", "mark-app", "mark-hit", "mark-poor", "mark-miss", "mark-select");
     marked.current = [];
     const mark = (id: string, cls: string) => {
       const el = root.querySelector(`g[id="${id}"]`);
@@ -557,6 +606,7 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
       if (!n || noteStates.current.has(id)) continue;
       mark(id, shows(n.hand) ? `mark-${n.hand}` : "mark-app");
     }
+    if (editFingers && selNote) mark(selNote, "mark-select");
   });
 
   // Прокрутка к текущему месту.
@@ -612,6 +662,13 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
 
   const onScoreClick = (e: React.MouseEvent) => {
     if (!score) return;
+    if (editFingers) {
+      // Клик по ноте выбирает её; продолжение лиги — первую ноту лиги.
+      let id = (e.target as Element).closest?.("g.note")?.id;
+      while (id && score.structure.tieEndToStart.has(id)) id = score.structure.tieEndToStart.get(id);
+      if (id && noteById.has(id)) setSelNote(id);
+      return;
+    }
     const m = measureAt(e.clientX, e.clientY, e.target as Element, score.structure.measureIds, contentRef.current);
     if (m < 1) return;
     if (guided && practice) {
@@ -679,10 +736,30 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
     setUnitSel(i === practice.current ? null : i);
   };
 
+  // Обработчик клавиш регистрируется один раз и вызывает свежую версию функции:
+  // иначе перерисовка посреди нажатия (нажатие одновременно играет ноту) снимала бы его.
+  const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {});
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+    const onKey = (e: KeyboardEvent) => keyHandler.current(e);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  {
+    keyHandler.current = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT") return;
+      if (editFingers) {
+        if (e.key === "Escape") setEditFingers(false);
+        else if (selNote && /^[1-5]$/.test(e.key)) void setFinger(selNote, Number(e.key));
+        else if (selNote && (e.key === "0" || e.key === "Delete" || e.key === "Backspace")) void setFinger(selNote, null);
+        else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          e.preventDefault();
+          const i = selNote ? noteOrder.indexOf(selNote) : -1;
+          const next = noteOrder[Math.min(noteOrder.length - 1, Math.max(0, i + (e.key === "ArrowLeft" ? -1 : 1)))];
+          if (next) setSelNote(next);
+        }
+        return;
+      }
       if (e.key === "Escape") {
         if (editBounds) setEditBounds(false);
         else if (suggestion) dismissSuggestion();
@@ -707,9 +784,7 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
       else if (e.key === "2") setPiece({ hands: "left" });
       else if (e.key === "3") setPiece({ hands: "both" });
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
+  }
 
   // Клавиатура: диапазон пьесы, подсветка нужных клавиш и нажатий.
   const [low, high] = useMemo(() => {
@@ -722,7 +797,11 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
     for (const id of cursorIds) {
       const n = noteById.get(id);
       if (n && shows(n.hand) && !hits.has(id) && !noteStates.current.has(id))
-        highlight[n.pitch] = { color: HAND_COLOR[n.hand], strength: 0.45 };
+        highlight[n.pitch] = {
+          color: HAND_COLOR[n.hand],
+          strength: 0.45,
+          ...(showFingers && fingerOf.get(id) ? { finger: fingerOf.get(id)!.finger, auto: fingerOf.get(id)!.source === "auto" } : {}),
+        };
     }
   }
   for (const [n, h] of Object.entries(held)) highlight[Number(n)] = { color: deviceColor(h.device, devices), strength: 0.85 };
@@ -830,7 +909,15 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
           editBounds={editBounds}
           onSelect={selectUnit}
           onLevel={setLevel}
-          onEditBounds={() => setEditBounds((v) => !v)}
+          onEditBounds={() => {
+            setEditFingers(false);
+            setEditBounds((v) => !v);
+          }}
+          editFingers={editFingers}
+          onEditFingers={() => {
+            setEditBounds(false);
+            setEditFingers((v) => !v);
+          }}
           status={
             <>
               {HAND_NAME[hands]}
@@ -901,6 +988,9 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
             <Toggle label="Падающие ноты" on={p.waterfall} onChange={(v) => setPiece({ waterfall: v })} />
             <Toggle label="Названия нот" on={p.names} onChange={(v) => setPiece({ names: v })} />
             <Toggle label="Аппликатура" on={p.fingering} onChange={(v) => setPiece({ fingering: v })} />
+            <button className={`small${editFingers ? " primary" : ""}`} onClick={() => setEditFingers((v) => !v)}>
+              Пальцы…
+            </button>
             <Toggle label="Подсветка клавиш" on={p.keyHints} onChange={(v) => setPiece({ keyHints: v })} />
             <Toggle label="Трудные такты" on={p.heat} onChange={(v) => setPiece({ heat: v })} />
           </div>
@@ -935,6 +1025,24 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
           </span>
         </div>
       )}
+      {editFingers && (
+        <div className="notice info guide-edit">
+          <span>
+            Кликни по ноте, затем нажми <b>1–5</b> — палец. <b>0</b> или Delete — вернуть подобранный, ← / → — соседняя нота.
+            Цифры: <span className="fing-legend file">из файла</span>, <span className="fing-legend manual">твои</span>,{" "}
+            <span className="fing-legend auto">подобраны автоматически</span>.
+            {selNote && fingerOf.get(selNote) && (
+              <>
+                {" "}
+                Выбрана нота: палец {fingerOf.get(selNote)!.finger}.
+              </>
+            )}
+          </span>
+          <button className="primary" onClick={() => setEditFingers(false)}>
+            Готово
+          </button>
+        </div>
+      )}
       {suggestion && unit && (
         <SuggestionBar suggestion={suggestion.s} unit={unit} practice={practice} onAccept={acceptSuggestion} onDismiss={dismissSuggestion} />
       )}
@@ -942,7 +1050,7 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
       <section className="paper piece-paper">
         <div
           ref={scrollRef}
-          className={`score-scroll ${p.layout}${p.fingering ? "" : " hide-fing"}`}
+          className={`score-scroll ${p.layout}${showFingers ? "" : " hide-fing"}${editFingers ? " edit-fing" : ""}`}
           // Для сквозных тестов: текущий шаг, какие клавиши он ждёт, уровень и отрезок.
           data-current-step={current ? current.index : ""}
           data-current-pitches={current ? current.required.join(",") : ""}
@@ -996,6 +1104,7 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
             states={noteStates}
             bars={score?.starts ?? []}
             loop={loopMs}
+            fingers={waterfallFingers}
           />
         </section>
       )}
@@ -1015,6 +1124,8 @@ function GuidePanel({
   onSelect,
   onLevel,
   onEditBounds,
+  editFingers,
+  onEditFingers,
   status,
   toggles,
 }: {
@@ -1024,6 +1135,8 @@ function GuidePanel({
   onSelect: (i: number) => void;
   onLevel: (l: number) => void;
   onEditBounds: () => void;
+  editFingers: boolean;
+  onEditFingers: () => void;
   status: React.ReactNode;
   toggles: React.ReactNode;
 }) {
@@ -1052,6 +1165,9 @@ function GuidePanel({
         </span>
         <button className={`small${editBounds ? " primary" : ""}`} onClick={onEditBounds}>
           Границы…
+        </button>
+        <button className={`small${editFingers ? " primary" : ""}`} onClick={onEditFingers} title="Поправить аппликатуру">
+          Пальцы…
         </button>
       </div>
       <div className="guide-level">

@@ -15,6 +15,7 @@ import {
   type TimemapEntry,
 } from "./score";
 import { phraseEnds } from "./practice";
+import { fingerNotes, injectFingering, parseFinger } from "./fingering";
 
 // Тесты используют тулкит напрямую (в приложении то же делает воркер).
 type Tk = VerovioToolkit & {
@@ -113,6 +114,32 @@ describe("встроенные пьесы", () => {
     const minEnds = phraseEnds(min.notes, min.structure, measureStarts(min.timemap, min.structure), minEnd);
     // Долгие ноты мелодии в тактах 8, 16, 24 и финальная черта.
     expect(minEnds).toEqual([8, 16, 24, 32]);
+  });
+
+  it("аппликатура вставляется в MEI: у каждой ноты цифра, подобранные — серые", () => {
+    const { mei, notes, structure } = load("src/pieces/ode-to-joy.musicxml");
+    const input = fingerNotes(notes, structure);
+    const first = notes.find((n) => n.hand === "right")!;
+    expect(input.find((n) => n.id === first.id)!.file).toBe(3);
+    // Условная аппликатура: у первой ноты — из файла, у второй — ручная, остальные — подбор.
+    const fingers = notes.map((n, i) => ({
+      id: n.id,
+      finger: (i % 5) + 1,
+      source: n.id === first.id ? ("file" as const) : i === 1 ? ("manual" as const) : ("auto" as const),
+    }));
+    const out = injectFingering(mei, fingers, notes);
+    expect((out.match(/<fing\b/g) ?? []).length).toBe(notes.length);
+    tk.setOptions({ breaks: "none" });
+    expect(tk.loadData(out)).toBeTruthy();
+    const svg = tk.renderToSVG(1);
+    const all = svg.match(/class="fing[^"]*"/g) ?? [];
+    expect(all.length).toBe(notes.length);
+    expect(all.filter((c) => c.includes("auto")).length).toBe(notes.length - 2);
+    expect(all.filter((c) => c.includes("manual")).length).toBe(1);
+    // Структура пьесы после вставки не меняется.
+    expect(parseMei(out).measures).toBe(16);
+    expect(parseFinger("3-4")).toBe(3);
+    expect(parseFinger("")).toBeNull();
   });
 
   it("подписи нот добавляются в MEI и отображаются", () => {

@@ -4,8 +4,8 @@ import { keyboardLayout, keyLabel, type NoteNaming } from "../lib/notes";
 export interface PianoProps {
   low?: number;
   high?: number;
-  /** Подсветка: нота → цвет. */
-  highlight?: Record<number, { color: string; strength?: number }>;
+  /** Подсветка: нота → цвет; `finger` — цифра пальца на клавише, `auto` — подобран (бледнее). */
+  highlight?: Record<number, { color: string; strength?: number; finger?: number; auto?: boolean }>;
   naming: NoteNaming;
   /** Подписи: только на «до» или на всех белых клавишах. */
   labels?: "c" | "all" | "none";
@@ -51,6 +51,7 @@ export function Piano({ low = 21, high = 108, highlight = {}, naming, labels = "
             onPointerEnter={(e) => e.buttons === 1 && press(k.note)}
             data-note={k.note}
           >
+            {h?.finger && <span className={`key-finger${h.auto ? " auto" : ""}`}>{h.finger}</span>}
             {showLabel && <span className="key-label">{keyLabel(k.note, naming)}</span>}
           </div>
         );

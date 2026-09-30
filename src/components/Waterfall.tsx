@@ -19,6 +19,8 @@ export interface WaterfallProps {
   bars: number[];
   /** Затемнить ноты вне цикла [от, до) мс. */
   loop?: [number, number] | null;
+  /** Пальцы по id ноты — цифра внутри падающей ноты. */
+  fingers?: Map<string, { finger: number; auto: boolean }> | null;
 }
 
 const COLORS = {
@@ -35,7 +37,7 @@ const COLORS = {
 };
 
 /** Падающие ноты над клавиатурой (Canvas, отрисовка каждый кадр). */
-export function Waterfall({ notes, low, high, getPos, windowMs, includes, states, bars, loop }: WaterfallProps) {
+export function Waterfall({ notes, low, high, getPos, windowMs, includes, states, bars, loop, fingers }: WaterfallProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const keys = useMemo(() => new Map(keyboardLayout(low, high).map((k) => [k.note, k])), [low, high]);
   // Сначала белые, потом чёрные — чёрные поверх.
@@ -43,8 +45,8 @@ export function Waterfall({ notes, low, high, getPos, windowMs, includes, states
     () => [...notes].sort((a, b) => Number(keys.get(a.pitch)?.black ?? 0) - Number(keys.get(b.pitch)?.black ?? 0)),
     [notes, keys],
   );
-  const props = useRef({ getPos, windowMs, includes, bars, loop });
-  props.current = { getPos, windowMs, includes, bars, loop };
+  const props = useRef({ getPos, windowMs, includes, bars, loop, fingers });
+  props.current = { getPos, windowMs, includes, bars, loop, fingers };
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -53,7 +55,7 @@ export function Waterfall({ notes, low, high, getPos, windowMs, includes, states
 
     const draw = () => {
       raf = requestAnimationFrame(draw);
-      const { getPos, windowMs, includes, bars, loop } = props.current;
+      const { getPos, windowMs, includes, bars, loop, fingers } = props.current;
       const dpr = window.devicePixelRatio || 1;
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
@@ -102,6 +104,16 @@ export function Waterfall({ notes, low, high, getPos, windowMs, includes, states
           ctx.strokeStyle = "#ffffff";
           ctx.lineWidth = 2;
           ctx.stroke();
+        }
+        // Цифра пальца у нижнего края ноты (если нота достаточно высокая).
+        const f = fingers?.get(n.id);
+        if (f && height >= 16 && width >= 10) {
+          const size = Math.min(15, width * 0.8, height - 4);
+          ctx.font = `600 ${size}px Inter, "Segoe UI", sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "bottom";
+          ctx.fillStyle = f.auto ? "rgba(13, 17, 24, 0.55)" : "#0d1118";
+          ctx.fillText(String(f.finger), x + width / 2, y1 + 1 + height - 2);
         }
       }
       ctx.globalAlpha = 1;

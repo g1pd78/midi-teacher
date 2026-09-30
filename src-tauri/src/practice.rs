@@ -4,6 +4,7 @@
 //! `mt_core::practice`; здесь — хранение и учёт времени игры.
 
 use mt_core::clock;
+use mt_core::fingering::{self, FingerNote, Fingering};
 use mt_core::piece::{HandMode, MeasureErrors};
 use mt_core::practice::{self, Hands, Outcome, Pass, PracticeView, UnitState};
 use mt_core::store::{
@@ -291,4 +292,51 @@ pub fn progress_overview(hub: State<Arc<PracticeHub>>) -> Result<Progress, Strin
             pieces,
         })
     })
+}
+
+/// Аппликатура пьесы: ручные правки → файл → подбор. Правка, у которой
+/// высота ноты не совпала (файл изменился), не применяется.
+fn fingers_for(store: Option<&Store>, piece: &str, notes: &[FingerNote]) -> Vec<Fingering> {
+    let manual: Vec<(String, u8)> = store
+        .and_then(|s| s.manual_fingers(piece).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(id, pitch, _)| notes.iter().any(|n| &n.id == id && n.pitch == *pitch))
+        .map(|(id, _, f)| (id, f))
+        .collect();
+    fingering::assign(notes, &manual)
+}
+
+#[tauri::command]
+pub fn fingering_get(
+    hub: State<Arc<PracticeHub>>,
+    piece: String,
+    notes: Vec<FingerNote>,
+) -> Vec<Fingering> {
+    fingers_for(hub.store.lock().as_ref(), &piece, &notes)
+}
+
+/// Ручная правка пальца (`finger = None` — убрать правку).
+#[tauri::command]
+pub fn fingering_set(
+    hub: State<Arc<PracticeHub>>,
+    piece: String,
+    notes: Vec<FingerNote>,
+    note_id: String,
+    finger: Option<u8>,
+) -> Result<Vec<Fingering>, String> {
+    let pitch = notes
+        .iter()
+        .find(|n| n.id == note_id)
+        .map(|n| n.pitch)
+        .ok_or("нет такой ноты")?;
+    hub.with_store(|s| {
+        s.set_manual_finger(
+            &piece,
+            &note_id,
+            pitch,
+            finger.filter(|f| (1..=5).contains(f)),
+        )
+    })?;
+    Ok(fingers_for(hub.store.lock().as_ref(), &piece, &notes))
 }

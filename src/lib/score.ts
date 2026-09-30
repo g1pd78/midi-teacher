@@ -194,11 +194,21 @@ export function timemapNoteIds(timemap: TimemapEntry[]): string[] {
 }
 
 /**
- * Подписи нот (до-ре-ми) слогами под нотами: добавляет <verse> в каждую ноту MEI.
- * `name(pname, accid)` возвращает текст подписи.
+ * Подписи нот (до-ре-ми) слогами под нотами: добавляет <verse> в ноты MEI
+ * (всех станов или только `staves`). `name(pname, accid)` возвращает текст подписи.
  */
-export function addNoteNames(mei: string, name: (pname: string, accid: string | undefined) => string): string {
-  return mei.replace(/<note\b([^>]*?)(\/?)>/g, (whole, attrs: string, selfClose: string) => {
+export function addNoteNames(
+  mei: string,
+  name: (pname: string, accid: string | undefined) => string,
+  staves?: Set<number>,
+): string {
+  let staff = 0;
+  return mei.replace(/<staff\b([^>]*?)>|<note\b([^>]*?)(\/?)>/g, (whole, staffAttrs: string | undefined, attrs: string, selfClose: string) => {
+    if (staffAttrs !== undefined) {
+      staff = Number(attr(staffAttrs, "n") ?? 0);
+      return whole;
+    }
+    if (staves && !staves.has(staff)) return whole;
     const pname = attr(attrs, "pname");
     if (!pname || attr(attrs, "grace")) return whole;
     const accid = attr(attrs, "accid") ?? attr(attrs, "accid.ges");

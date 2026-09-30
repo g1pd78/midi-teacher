@@ -8,6 +8,7 @@ import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createMock } from "./mock";
 import type { PieceMetaIn } from "./lib/practice";
+import type { Finger, FingerNoteIn } from "./lib/fingering";
 
 export type SoundRoute = { kind: "internal" } | { kind: "silent" } | { kind: "output"; port: string };
 
@@ -410,6 +411,9 @@ export const api = {
   practiceRecord: (piece: string, attempt: AttemptRecord) =>
     invoke<{ outcome: Outcome | null; view: PracticeView }>("practice_record", { piece, attempt }),
   progressOverview: () => invoke<Progress>("progress_overview"),
+  fingeringGet: (piece: string, notes: FingerNoteIn[]) => invoke<Finger[]>("fingering_get", { piece, notes }),
+  fingeringSet: (piece: string, notes: FingerNoteIn[], noteId: string, finger: number | null) =>
+    invoke<Finger[]>("fingering_set", { piece, notes, noteId, finger }),
 };
 
 export async function pickSoundfont(): Promise<string | null> {

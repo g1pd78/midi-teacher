@@ -6,6 +6,7 @@
 pub mod audio;
 pub mod clock;
 pub mod devices;
+pub mod fingering;
 pub mod midi;
 pub mod piece;
 pub mod practice;

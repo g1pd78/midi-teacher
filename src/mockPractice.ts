@@ -2,6 +2,7 @@
 
 import type { AttemptRecord, Outcome, PieceProgress, PracticeView, Progress, Suggestion, UnitState, UnitView } from "./api";
 import type { PieceMetaIn, PlayHands } from "./lib/practice";
+import type { Finger, FingerNoteIn } from "./lib/fingering";
 
 interface PieceRec {
   meta: PieceMetaIn;
@@ -53,6 +54,27 @@ function handFor(st: UnitState, h: { right: boolean; left: boolean }): PlayHands
 
 export function createPracticeMock() {
   const pieces = new Map<string, PieceRec>();
+  const manual = new Map<string, Map<string, number>>();
+
+  // Имитация подбора: палец по положению ноты в пятипальцевой позиции руки.
+  function fingers(piece: string, notes: FingerNoteIn[]): Finger[] {
+    const man = manual.get(piece) ?? new Map<string, number>();
+    const base = { right: 0, left: 0 };
+    return [...notes]
+      .sort((a, b) => a.startMs - b.startMs)
+      .map((n) => {
+        const m = man.get(n.id);
+        if (m) return { id: n.id, finger: m, source: "manual" as const };
+        if (n.file) return { id: n.id, finger: n.file, source: "file" as const };
+        let off = n.pitch - base[n.hand];
+        if (!base[n.hand] || off < 0 || off > 7) {
+          base[n.hand] = n.hand === "right" ? n.pitch : n.pitch - 7;
+          off = n.pitch - base[n.hand];
+        }
+        const pos = Math.min(4, Math.round(off / 1.8));
+        return { id: n.id, finger: n.hand === "right" ? pos + 1 : 5 - pos, source: "auto" as const };
+      });
+  }
   const play = new Map<number, number>();
   let lastNote = 0;
 
@@ -151,6 +173,14 @@ export function createPracticeMock() {
       lastNote = now;
     },
     handlers: {
+      fingering_get: ({ piece, notes }: { piece: string; notes: FingerNoteIn[] }) => fingers(piece, notes),
+      fingering_set: ({ piece, notes, noteId, finger }: { piece: string; notes: FingerNoteIn[]; noteId: string; finger: number | null }) => {
+        const m = manual.get(piece) ?? new Map<string, number>();
+        if (finger) m.set(noteId, finger);
+        else m.delete(noteId);
+        manual.set(piece, m);
+        return fingers(piece, notes);
+      },
       practice_open: ({ meta }: { meta: PieceMetaIn }) => {
         const old = pieces.get(meta.id);
         const r: PieceRec = old

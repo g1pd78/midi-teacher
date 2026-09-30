@@ -74,6 +74,13 @@ CREATE TABLE IF NOT EXISTS attempt_measures (
     errors INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS attempt_measures_attempt ON attempt_measures (attempt);
+CREATE TABLE IF NOT EXISTS fingerings (
+    piece TEXT NOT NULL,
+    note_id TEXT NOT NULL,
+    pitch INTEGER NOT NULL,
+    finger INTEGER NOT NULL,
+    PRIMARY KEY (piece, note_id)
+);
 CREATE TABLE IF NOT EXISTS play_time (
     bucket INTEGER PRIMARY KEY,
     seconds REAL NOT NULL
@@ -467,6 +474,37 @@ impl Store {
         )?)
     }
 
+    /// Ручные правки аппликатуры пьесы: (id ноты, высота, палец).
+    pub fn manual_fingers(&self, piece: &str) -> Result<Vec<(String, u8, u8)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT note_id, pitch, finger FROM fingerings WHERE piece = ?1")?;
+        let rows = stmt.query_map(params![piece], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Поставить палец ноте (`None` — убрать правку, вернуть файл/подбор).
+    pub fn set_manual_finger(
+        &mut self,
+        piece: &str,
+        note_id: &str,
+        pitch: u8,
+        finger: Option<u8>,
+    ) -> Result<()> {
+        match finger {
+            Some(f) => self.conn.execute(
+                "INSERT INTO fingerings (piece, note_id, pitch, finger) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(piece, note_id) DO UPDATE SET pitch = excluded.pitch, finger = excluded.finger",
+                params![piece, note_id, pitch, f],
+            )?,
+            None => self.conn.execute(
+                "DELETE FROM fingerings WHERE piece = ?1 AND note_id = ?2",
+                params![piece, note_id],
+            )?,
+        };
+        Ok(())
+    }
+
     /// Добавить время игры: (начало корзины в секундах Unix, секунды).
     pub fn add_play_time(&mut self, buckets: &[(i64, f64)]) -> Result<()> {
         let tx = self.conn.transaction()?;
@@ -731,6 +769,20 @@ mod tests {
         store.add_play_time(&[(900, 15.0)]).unwrap();
         assert_eq!(store.play_time(0).unwrap(), vec![(900, 45.0), (1800, 10.0)]);
         assert_eq!(store.play_time(1000).unwrap(), vec![(1800, 10.0)]);
+    }
+
+    #[test]
+    fn manual_fingers_roundtrip() {
+        let mut store = Store::open_in_memory().unwrap();
+        store.set_manual_finger("p", "n1", 60, Some(3)).unwrap();
+        store.set_manual_finger("p", "n1", 60, Some(2)).unwrap();
+        store.set_manual_finger("p", "n2", 62, Some(4)).unwrap();
+        store.set_manual_finger("q", "n1", 60, Some(5)).unwrap();
+        let mut m = store.manual_fingers("p").unwrap();
+        m.sort();
+        assert_eq!(m, vec![("n1".into(), 60, 2), ("n2".into(), 62, 4)]);
+        store.set_manual_finger("p", "n1", 60, None).unwrap();
+        assert_eq!(store.manual_fingers("p").unwrap().len(), 1);
     }
 
     #[test]

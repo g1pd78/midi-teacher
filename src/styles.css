@@ -1479,3 +1479,51 @@ button.link.piece-link:hover {
   margin-top: 4px;
   font-size: 12px;
 }
+
+/* Этап 4а: аппликатура */
+.score-scroll g.fing.auto {
+  fill: #9a9488;
+}
+.score-scroll g.fing.manual {
+  fill: #2f6fc0;
+}
+.score-scroll g.note.mark-select {
+  fill: #8a3fd0;
+}
+.score-scroll.edit-fing g.note {
+  cursor: pointer;
+}
+.fing-legend {
+  font-weight: 700;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--paper);
+}
+.fing-legend.file {
+  color: #111;
+}
+.fing-legend.manual {
+  color: #2f6fc0;
+}
+.fing-legend.auto {
+  color: #8a8478;
+}
+.key-finger {
+  position: absolute;
+  top: 38%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0d1118;
+  pointer-events: none;
+}
+.key.black .key-finger {
+  top: 45%;
+  color: #fff;
+  font-size: 13px;
+}
+.key-finger.auto {
+  opacity: 0.6;
+}

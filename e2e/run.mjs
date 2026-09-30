@@ -247,6 +247,38 @@ try {
   await waitFor("первый фрагмент, знакомство", async () => (await data("unit")) === "1-4" && (await data("level")) === "0", 10000);
   ok("«Ода к радости» разбита на фрагменты, первый — такты 1–4, уровень «Знакомство»");
 
+  // --- Этап 4а: аппликатура ---
+  const fings = () =>
+    js(
+      "const all = [...document.querySelectorAll('.score-page g.fing')];" +
+        "return { all: all.length, auto: all.filter((g) => g.classList.contains('auto')).length," +
+        "manual: all.filter((g) => g.classList.contains('manual')).map((g) => g.textContent.trim()) };",
+    );
+  const fingState = await waitFor("цифры пальцев у всех нот", async () => {
+    const f = await fings();
+    return f.all === 81 && f.auto > 0 ? f : false;
+  }, 20000);
+  const firstFing = await js(
+    "const n = document.querySelector('.score-page g.note'); const f = [...document.querySelectorAll('.score-page g.fing')]" +
+      ".find((g) => !g.classList.contains('auto') && !g.classList.contains('manual')); return f ? f.textContent.trim() : '';",
+  );
+  if (firstFing !== "3") throw new Error(`палец из файла у первой ноты: ${firstFing}`);
+  ok(`аппликатура у всех 81 ноты: из файла и подобранная (серых ${fingState.auto})`);
+
+  await waitFor("режим «Пальцы…»", () => click("Пальцы…"));
+  await waitFor("выбрать вторую ноту", () =>
+    js(
+      "const g = document.querySelectorAll('.score-page g.note')[1]; const el = g && g.querySelector('use, path, ellipse');" +
+        "if (!el) return false; el.dispatchEvent(new MouseEvent('click', { bubbles: true }));" +
+        "return !!document.querySelector('g.note.mark-select');",
+    ),
+  );
+  await js("window.dispatchEvent(new KeyboardEvent('keydown', { key: '2', bubbles: true }));");
+  await waitFor("ручной палец 2 на стане", async () => (await fings()).manual.join() === "2", 10000);
+  await js("window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));");
+  await waitFor("режим правки закрыт", () => js("return !document.querySelector('.score-scroll.edit-fing');"));
+  ok("ручная правка: вторая нота — палец 2 (синяя цифра)");
+
   const clickLevel = (l) =>
     js("const b = document.querySelector(`.guide button[data-level='${arguments[0]}']`); if (!b) return false; b.click(); return true;", [l]);
   const suggestion = () => js("return document.querySelector('[data-suggestion]')?.dataset.suggestion ?? '';");
@@ -277,6 +309,10 @@ try {
   );
   await waitFor("уровень 2, обе руки", async () => (await data("level")) === "2" && (await data("hands")) === "both", 10000);
   ok("предложение принято: уровень 2, обе руки");
+
+  await waitFor("уровень 3", () => clickLevel(3));
+  await waitFor("аппликатура скрыта на уровне 3", () => js("return !!document.querySelector('.score-scroll.hide-fing');"), 10000);
+  ok("на уровне «В темпе» цифры пальцев скрыты");
 
   await waitFor("уровень 4", () => clickLevel(4));
   await waitFor("ноты фрагмента скрыты", () => js("return document.querySelectorAll('.memory-cover').length === 4;"), 10000);
