@@ -1918,3 +1918,174 @@ button.link.piece-link:hover {
     flex-wrap: wrap;
   }
 }
+
+/* --- Гитара и бас --- */
+.guitar {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+  gap: 16px;
+  padding: 16px 20px;
+  overflow: auto;
+  align-items: start;
+}
+.guitar-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.guitar .card h2 {
+  margin: 0 0 10px;
+}
+.guitar .card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.guitar-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.guitar-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.guitar-row .grow {
+  flex: 1;
+}
+.guitar-row .grow input[type="range"] {
+  flex: 1;
+}
+.small-text {
+  font-size: 13px;
+  margin: 0;
+}
+.vu {
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.vu-bar {
+  height: 100%;
+  background: var(--good);
+  transition: width 60ms linear;
+}
+.vu-bar.hot {
+  background: var(--warn);
+}
+.vu-bar.rec {
+  background: var(--bad);
+}
+.vu-peak {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: var(--text);
+}
+.tuner-note {
+  font-size: 72px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  min-height: 80px;
+}
+.tuner-note sub {
+  font-size: 28px;
+  color: var(--muted);
+}
+.tuner-note .in-tune {
+  color: var(--good);
+}
+.tuner-idle {
+  font-size: 18px;
+  font-weight: 400;
+}
+.tuner-gauge {
+  position: relative;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+.tuner-zone {
+  position: absolute;
+  left: 45%;
+  width: 10%;
+  top: 0;
+  bottom: 0;
+  background: rgba(76, 195, 138, 0.2);
+}
+.tuner-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--muted);
+}
+.tuner-needle {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 6px;
+  margin-left: -3px;
+  border-radius: 3px;
+  background: var(--warn);
+  transition: left 80ms linear;
+}
+.tuner-needle.in-tune {
+  background: var(--good);
+}
+.tuner-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.tuner-readout {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  min-height: 20px;
+}
+.tuner-strings {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+.tuner-string {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 56px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  font-weight: 700;
+}
+.tuner-string sub {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.tuner-string small {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--warn);
+}
+.tuner-string.active {
+  border-color: var(--warn);
+}
+.tuner-string.ok {
+  border-color: var(--good);
+}
+.tuner-string.ok small {
+  color: var(--good);
+}
+@media (max-width: 900px) {
+  .guitar {
+    grid-template-columns: 1fr;
+  }
+}

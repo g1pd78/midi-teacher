@@ -3,6 +3,7 @@ import { useApp } from "./store";
 import { Header } from "./components/Header";
 import { Home } from "./screens/Home";
 import { Exercises } from "./screens/Exercises";
+import { Guitar } from "./screens/Guitar";
 import { Pieces } from "./screens/Pieces";
 import { Progress } from "./screens/Progress";
 import { Reference } from "./screens/Reference";
@@ -10,7 +11,7 @@ import { Settings } from "./screens/Settings";
 import { Trainer } from "./screens/Trainer";
 import { Wizard } from "./screens/Wizard";
 
-export type Screen = "home" | "pieces" | "exercises" | "trainer" | "reference" | "progress" | "settings";
+export type Screen = "home" | "pieces" | "exercises" | "trainer" | "guitar" | "reference" | "progress" | "settings";
 
 export function App() {
   const { ready, init, prefs } = useApp();
@@ -60,6 +61,7 @@ export function App() {
       {screen === "exercises" && <Exercises startWarmup={warmupReq} onWarmupStarted={() => setWarmupReq(false)} />}
       {screen === "trainer" && <Trainer />}
       {screen === "reference" && <Reference />}
+      {screen === "guitar" && <Guitar />}
       {screen === "settings" && <Settings />}
     </div>
   );

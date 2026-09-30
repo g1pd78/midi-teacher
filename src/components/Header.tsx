@@ -44,6 +44,9 @@ export function Header({ screen, onNavigate }: { screen: Screen; onNavigate: (s:
         <button className={screen === "trainer" ? "tab active" : "tab"} onClick={() => onNavigate("trainer")}>
           Тренажёр нот
         </button>
+        <button className={screen === "guitar" ? "tab active" : "tab"} onClick={() => onNavigate("guitar")}>
+          Гитара
+        </button>
         <button className={screen === "reference" ? "tab active" : "tab"} onClick={() => onNavigate("reference")}>
           Справочник
         </button>

@@ -9,10 +9,15 @@
 //! Если ASIO не запустился, движок сам переходит на системный вывод и
 //! сообщает об этом в [`AudioStatus::notice`].
 
+use crate::clock;
+use crate::guitar::dsp::Tone;
+use crate::guitar::{GuitarConfig, GuitarShared, InputInfo, InputLink, ASIO_INPUT};
 use crate::midi::MidiMessage;
 use crate::synth::{FallbackSynth, SoundFontSynth, Synth};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{BufferSize, FromSample, SampleFormat, SizedSample, StreamConfig, SupportedBufferSize};
+use cpal::{
+    BufferSize, FromSample, Sample, SampleFormat, SizedSample, StreamConfig, SupportedBufferSize,
+};
 use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
@@ -154,6 +159,9 @@ enum Control {
     Resume,
     StreamFailed(String),
     RefreshDevices(Sender<AudioDevices>),
+    /// Переоткрыть вход гитары (сменились устройство, канал, вкл/выкл).
+    GuitarInput,
+    InputFailed(String),
 }
 
 /// Ручка управления аудиодвижком. Дёшево клонируется.
@@ -165,6 +173,7 @@ pub struct AudioEngine {
     meters: Arc<Meters>,
     volume: Arc<AtomicU32>,
     devices: Arc<RwLock<AudioDevices>>,
+    guitar: Arc<GuitarShared>,
 }
 
 #[derive(Default)]
@@ -176,7 +185,8 @@ struct Meters {
 
 impl AudioEngine {
     /// Запускает управляющий поток и открывает вывод по конфигурации.
-    pub fn start(config: AudioConfig) -> Self {
+    pub fn start(config: AudioConfig, guitar: GuitarConfig) -> Self {
+        let guitar = GuitarShared::start(guitar);
         let (ctl_tx, ctl_rx) = unbounded();
         // Ограниченный канал: при переполнении старые ноты не копятся бесконечно.
         let (ev_tx, ev_rx) = bounded(4096);
@@ -196,6 +206,9 @@ impl AudioEngine {
             meters: meters.clone(),
             volume: volume.clone(),
             devices: devices.clone(),
+            guitar: guitar.clone(),
+            out_device: None,
+            in_stream: None,
             stream: None,
             synth: Arc::new(Mutex::new(Box::new(FallbackSynth::new(48_000)))),
             soundfont: None,
@@ -214,6 +227,7 @@ impl AudioEngine {
             meters,
             volume,
             devices,
+            guitar,
         };
         engine.ctl.send(Control::Resume).ok();
         engine
@@ -291,6 +305,18 @@ impl AudioEngine {
         self.status.read().clone()
     }
 
+    /// Вход гитары/баса: состояние, тюнер, начала нот.
+    pub fn guitar(&self) -> &Arc<GuitarShared> {
+        &self.guitar
+    }
+
+    /// Новые настройки гитарного входа.
+    pub fn set_guitar(&self, config: GuitarConfig) {
+        if self.guitar.set_config(config) {
+            self.ctl.send(Control::GuitarInput).ok();
+        }
+    }
+
     pub fn meters(&self) -> AudioMeters {
         AudioMeters {
             output_latency_ms: self.meters.latency_us.load(Ordering::Relaxed) as f32 / 1000.0,
@@ -333,6 +359,10 @@ struct Worker {
     meters: Arc<Meters>,
     volume: Arc<AtomicU32>,
     devices: Arc<RwLock<AudioDevices>>,
+    guitar: Arc<GuitarShared>,
+    /// Устройство вывода: при ASIO вход гитары открывается на нём же.
+    out_device: Option<cpal::Device>,
+    in_stream: Option<cpal::Stream>,
     stream: Option<cpal::Stream>,
     synth: Arc<Mutex<Box<dyn Synth>>>,
     /// Загруженный SoundFont: нужен, чтобы пересоздать синтезатор при смене частоты.
@@ -360,6 +390,7 @@ impl Worker {
                 }
                 Control::Suspend => {
                     self.suspended = true;
+                    self.close_input();
                     self.stream = None;
                     let mut st = self.status.write();
                     st.running = false;
@@ -376,6 +407,17 @@ impl Worker {
                 Control::RefreshDevices(reply) => {
                     self.refresh_devices();
                     let _ = reply.send(self.devices.read().clone());
+                }
+                Control::GuitarInput => {
+                    if !self.suspended {
+                        self.open_input();
+                    }
+                }
+                Control::InputFailed(err) => {
+                    log::warn!("вход гитары упал: {err}");
+                    self.close_input();
+                    self.guitar
+                        .set_stream(false, String::new(), 0, 0, Some(err));
                 }
                 Control::StreamFailed(err) => {
                     log::warn!("аудиопоток упал: {err}");
@@ -401,6 +443,214 @@ impl Worker {
         if !asio_busy {
             devices.asio = asio_host().map(|h| output_names(&h)).unwrap_or_default();
         }
+        drop(devices);
+        self.guitar.set_inputs(self.input_list());
+    }
+
+    /// Входы для гитары: системные устройства записи и, при ASIO, входы того же драйвера.
+    fn input_list(&self) -> Vec<InputInfo> {
+        let mut list = Vec::new();
+        let asio = self.status.read().backend == "ASIO";
+        if asio {
+            if let Some(ch) = self
+                .out_device
+                .as_ref()
+                .and_then(|d| d.default_input_config().ok())
+                .map(|c| c.channels())
+            {
+                list.push(InputInfo {
+                    name: ASIO_INPUT.to_string(),
+                    channels: ch,
+                });
+            }
+        }
+        if let Ok(devs) = cpal::default_host().input_devices() {
+            for d in devs {
+                let Some(name) = device_name(&d) else {
+                    continue;
+                };
+                let channels = d.default_input_config().map(|c| c.channels()).unwrap_or(1);
+                list.push(InputInfo { name, channels });
+            }
+        }
+        list
+    }
+
+    fn close_input(&mut self) {
+        self.in_stream = None;
+        self.guitar.connect(None);
+    }
+
+    /// Открыть вход гитары по её настройкам. При ASIO — каналы драйвера вывода
+    /// (ASIO держит один драйвер на программу), иначе системное устройство записи.
+    fn open_input(&mut self) {
+        self.close_input();
+        let cfg = self.guitar.config();
+        if !cfg.enabled {
+            self.guitar.set_stream(false, String::new(), 0, 0, None);
+            return;
+        }
+        let asio = self.status.read().backend == "ASIO";
+        let want_asio = cfg.device.as_deref() == Some(ASIO_INPUT);
+        let result = if want_asio {
+            if !asio {
+                Err("вход ASIO доступен, когда вывод звука тоже через ASIO".to_string())
+            } else {
+                self.out_device
+                    .clone()
+                    .ok_or_else(|| "устройство ASIO не открыто".to_string())
+                    .and_then(|d| {
+                        self.start_input(
+                            &d,
+                            format!("ASIO: {}", self.status.read().device),
+                            cfg.channel,
+                            true,
+                        )
+                    })
+            }
+        } else {
+            let host = cpal::default_host();
+            cfg.device
+                .as_ref()
+                .and_then(|want| {
+                    host.input_devices()
+                        .ok()?
+                        .find(|d| device_name(d).as_deref() == Some(want.as_str()))
+                })
+                .or_else(|| host.default_input_device())
+                .ok_or_else(|| {
+                    "нет устройств записи — подключи кабель или звуковую карту".to_string()
+                })
+                .and_then(|d| {
+                    let name = device_name(&d).unwrap_or_else(|| "вход".into());
+                    self.start_input(&d, name, cfg.channel, false)
+                })
+        };
+        if let Err(e) = result {
+            log::warn!("вход гитары: {e}");
+            self.guitar.set_stream(false, String::new(), 0, 0, Some(e));
+        }
+    }
+
+    /// Ошибка драйвера — с понятным пояснением.
+    fn input_error(name: &str, err: String) -> String {
+        format!(
+            "Вход «{name}» не открылся ({err}). Проверь, что кабель или звуковая карта подключены, и нажми «Обновить»."
+        )
+    }
+
+    fn start_input(
+        &mut self,
+        device: &cpal::Device,
+        name: String,
+        channel: u16,
+        asio: bool,
+    ) -> Result<(), String> {
+        let supported = device
+            .default_input_config()
+            .map_err(|e| Self::input_error(&name, e.to_string()))?;
+        let format = supported.sample_format();
+        let mut config: StreamConfig = supported.config();
+        if config.sample_rate == 0 {
+            config.sample_rate = self.sample_rate.max(48_000);
+        }
+        if asio {
+            // Вход и выход ASIO работают с одним буфером и частотой.
+            if let Some(frames) = self.status.read().buffer_frames {
+                config.buffer_size = BufferSize::Fixed(frames);
+            }
+            if self.sample_rate > 0 {
+                config.sample_rate = self.sample_rate;
+            }
+        }
+        let channel = (channel as usize).min(config.channels.max(1) as usize - 1);
+        let link = InputLink::new(config.sample_rate);
+        let stream = match format {
+            SampleFormat::F32 => self.build_input::<f32>(device, &config, channel, &link),
+            SampleFormat::F64 => self.build_input::<f64>(device, &config, channel, &link),
+            SampleFormat::I16 => self.build_input::<i16>(device, &config, channel, &link),
+            SampleFormat::I24 => self.build_input::<cpal::I24>(device, &config, channel, &link),
+            SampleFormat::I32 => self.build_input::<i32>(device, &config, channel, &link),
+            SampleFormat::U16 => self.build_input::<u16>(device, &config, channel, &link),
+            other => Err(format!("формат {other} не поддерживается")),
+        }
+        .map_err(|e| Self::input_error(&name, e))?;
+        stream
+            .play()
+            .map_err(|e| Self::input_error(&name, e.to_string()))?;
+        self.in_stream = Some(stream);
+        self.guitar.connect(Some(&link));
+        self.guitar.set_stream(
+            true,
+            name.clone(),
+            config.sample_rate,
+            config.channels,
+            None,
+        );
+        log::info!(
+            "вход гитары: {name} / {} Гц / канал {}",
+            config.sample_rate,
+            channel + 1
+        );
+        Ok(())
+    }
+
+    fn build_input<T>(
+        &self,
+        device: &cpal::Device,
+        config: &StreamConfig,
+        channel: usize,
+        link: &InputLink,
+    ) -> Result<cpal::Stream, String>
+    where
+        T: SizedSample,
+        f32: FromSample<T>,
+    {
+        let channels = config.channels.max(1) as usize;
+        let guitar = self.guitar.clone();
+        let analysis = link.analysis.clone();
+        let monitor = link.monitor.clone();
+        let timing = link.timing.clone();
+        let chunk = link.chunk.clone();
+        let rate = config.sample_rate as f32;
+        let (kind, bass) = guitar.tone();
+        let mut tone = Tone::new(rate, kind, bass);
+        let mut tone_bass = bass;
+        let mut pushed: u64 = 0;
+        let ctl = self.ctl_tx.clone();
+
+        let data_fn = move |data: &[T], _: &cpal::InputCallbackInfo| {
+            let now = clock::now_us();
+            let frames = data.len() / channels;
+            chunk.store(frames, Ordering::Relaxed);
+            guitar.note_frames(frames as u32);
+            let gain = guitar.gain();
+            let mon = guitar.monitor_on();
+            let (k, b) = guitar.tone();
+            if k != tone.kind() || b != tone_bass {
+                tone = Tone::new(rate, k, b);
+                tone_bass = b;
+            }
+            for frame in data.chunks(channels) {
+                let x = f32::from_sample(frame[channel.min(frame.len() - 1)]) * gain;
+                if analysis.push(x).is_ok() {
+                    pushed += 1;
+                }
+                if mon {
+                    let _ = monitor.push(tone.process(x));
+                }
+            }
+            timing.mark(pushed, now);
+        };
+        let err_fn = move |err: cpal::Error| match err.kind() {
+            cpal::ErrorKind::Xrun | cpal::ErrorKind::RealtimeDenied => {}
+            _ => {
+                let _ = ctl.send(Control::InputFailed(err.to_string()));
+            }
+        };
+        device
+            .build_input_stream(*config, data_fn, err_fn, None)
+            .map_err(|e| e.to_string())
     }
 
     fn load_soundfont(&mut self, path: PathBuf) -> Result<String, String> {
@@ -438,7 +688,10 @@ impl Worker {
 
     /// Открывает вывод согласно конфигурации, с откатом ASIO → системный.
     fn open(&mut self) {
+        // Вход ASIO живёт на устройстве вывода — закрываем его раньше вывода.
+        self.close_input();
         self.stream = None;
+        self.out_device = None;
         // Поток закрыт — можно безопасно перечислить и ASIO-драйверы.
         self.refresh_devices();
         let want_asio = match self.config.backend {
@@ -454,6 +707,7 @@ impl Worker {
                 Ok(host) => match self.open_on(&host, "ASIO") {
                     Ok(()) => {
                         self.status.write().notice = None;
+                        self.open_input();
                         return;
                     }
                     Err(e) => {
@@ -471,12 +725,15 @@ impl Worker {
             host.id().name()
         };
         let result = self.open_on(&host, label);
-        let mut st = self.status.write();
-        st.notice = notice;
-        if let Err(e) = result {
-            st.running = false;
-            st.error = Some(e);
+        {
+            let mut st = self.status.write();
+            st.notice = notice;
+            if let Err(e) = result {
+                st.running = false;
+                st.error = Some(e);
+            }
         }
+        self.open_input();
     }
 
     fn open_on(&mut self, host: &cpal::Host, label: &str) -> Result<(), String> {
@@ -529,6 +786,7 @@ impl Worker {
                 Ok(stream) => {
                     stream.play().map_err(|e| e.to_string())?;
                     self.stream = Some(stream);
+                    self.out_device = Some(device.clone());
                     let mut st = self.status.write();
                     st.running = true;
                     st.suspended = false;
@@ -590,11 +848,14 @@ impl Worker {
         let volume = self.volume.clone();
         let err_meters = self.meters.clone();
         let ctl = self.ctl_tx.clone();
+        let guitar = self.guitar.clone();
+        let out_rate = config.sample_rate as f32;
 
         // Буферы выделяются один раз; большие буферы драйвера обрабатываются частями.
         const CHUNK: usize = 1024;
         let mut left = vec![0.0f32; CHUNK];
         let mut right = vec![0.0f32; CHUNK];
+        let mut mon = vec![0.0f32; CHUNK];
         let mut click = ClickGen::new(config.sample_rate);
 
         let data_fn = move |data: &mut [T], info: &cpal::OutputCallbackInfo| {
@@ -625,8 +886,23 @@ impl Worker {
                 let n = block.len() / channels.max(1);
                 let (l, r) = (&mut left[..n], &mut right[..n]);
                 synth.render(l, r);
+                // Прослушивание гитары (без блокировок: занято — этот буфер без него).
+                let mon_gain = if guitar.monitor_on() {
+                    match guitar.monitor.try_lock() {
+                        Some(mut slot) => match slot.as_mut() {
+                            Some(reader) => {
+                                reader.fill(out_rate, &mut mon[..n]);
+                                guitar.monitor_volume()
+                            }
+                            None => 0.0,
+                        },
+                        None => 0.0,
+                    }
+                } else {
+                    0.0
+                };
                 for (i, frame) in block.chunks_mut(channels.max(1)).enumerate() {
-                    let c = click.next();
+                    let c = click.next() + mon[i] * mon_gain;
                     let (sl, sr) = (l[i] * gain + c, r[i] * gain + c);
                     match frame.len() {
                         1 => frame[0] = T::from_sample(0.5 * (sl + sr)),

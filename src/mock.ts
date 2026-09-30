@@ -40,6 +40,20 @@ export function createMock() {
   };
   let appRoute: SoundRoute = { kind: "internal" };
   let recording: { start: number; notes: number } | null = null;
+  // Гитара в демо: вход «Rocksmith Guitar Adapter», тюнер медленно плавает около ля.
+  let guitar = {
+    enabled: false,
+    device: null as string | null,
+    channel: 0,
+    instrument: "guitar",
+    gain: 1,
+    monitor: true,
+    monitorVolume: 0.8,
+    tone: "clean",
+    latencyMs: null as number | null,
+  };
+  let guitarSignal: { hz: number; until: number } | null = null;
+  let guitarRec: { start: number; secs: number; path: string } | null = null;
   let appChannel = 0;
 
   const state: Omit<FullState, "devices"> = {
@@ -387,6 +401,63 @@ export function createMock() {
       return save && r && r.notes > 0 ? `${name}.mid` : null;
     },
     save_text_file: () => undefined,
+    guitar_state: () => {
+      const now = performance.now();
+      const on = guitar.enabled;
+      const test = guitarSignal && now < guitarSignal.until ? guitarSignal.hz : null;
+      const hz = test ?? (on ? 110 * 2 ** ((Math.sin(now / 1500) * 18) / 1200) : null);
+      const midi = hz ? Math.round(69 + 12 * Math.log2(hz / 440)) : 0;
+      const cents = hz ? (69 + 12 * Math.log2(hz / 440) - midi) * 100 : 0;
+      const level = hz ? -18 + Math.sin(now / 300) * 4 : -90;
+      const rec = guitarRec
+        ? (now - guitarRec.start) / 1000 >= guitarRec.secs
+          ? { elapsedSec: guitarRec.secs, totalSec: guitarRec.secs, path: guitarRec.path, error: null }
+          : { elapsedSec: (now - guitarRec.start) / 1000, totalSec: guitarRec.secs, path: null, error: null }
+        : null;
+      return {
+        config: guitar,
+        status: {
+          running: on,
+          device: on ? (guitar.device ?? "Rocksmith Guitar Adapter Mono") : "",
+          sampleRate: on ? 48000 : 0,
+          channels: 1,
+          bufferFrames: on ? 480 : 0,
+          error: null,
+          levelDb: level,
+          peakDb: level + 6,
+          clipping: false,
+          pitch: hz ? { hz, midi, cents, clarity: 0.97 } : null,
+          recording: rec,
+        },
+        inputs: [
+          { name: "Rocksmith Guitar Adapter Mono", channels: 1 },
+          { name: "Микрофон (Realtek High Definition Audio)", channels: 2 },
+        ],
+      };
+    },
+    guitar_inputs: () => [
+      { name: "Rocksmith Guitar Adapter Mono", channels: 1 },
+      { name: "Микрофон (Realtek High Definition Audio)", channels: 2 },
+    ],
+    guitar_set: ({ config }) => {
+      guitar = config as unknown as typeof guitar;
+      return undefined;
+    },
+    guitar_calibrate: () =>
+      new Promise((resolve) => setTimeout(() => resolve({ offsetMs: 38, spreadMs: 6, matched: 8, total: 8 }), 5500)),
+    guitar_record: ({ name, secs }) => {
+      const path = `C:\\Users\\Ученик\\Documents\\MIDI Teacher\\Гитара\\${name}.wav`;
+      guitarRec = { start: performance.now(), secs: Number(secs), path };
+      return path;
+    },
+    guitar_stop_record: () => {
+      if (guitarRec) guitarRec.secs = (performance.now() - guitarRec.start) / 1000;
+      return undefined;
+    },
+    guitar_test_signal: ({ hz, secs }) => {
+      guitarSignal = { hz: Number(hz), until: performance.now() + Number(secs) * 1000 + 1500 };
+      return undefined;
+    },
     library_import: () => [],
     library_open_folder: () => undefined,
     piece_start: ({ notes, config }) => {

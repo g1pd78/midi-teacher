@@ -2,6 +2,7 @@
 
 use mt_core::audio::AudioConfig;
 use mt_core::devices::DeviceSettings;
+use mt_core::guitar::GuitarConfig;
 use mt_core::midifile::{HandOverride, TrackRole};
 use mt_core::piece::HandMode;
 use mt_core::trainer::ErrorMode;
@@ -127,6 +128,8 @@ pub struct AppSettings {
     pub audio: AudioConfig,
     /// Свой SoundFont пользователя; `None` — встроенный.
     pub soundfont: Option<PathBuf>,
+    /// Вход гитары/баса.
+    pub guitar: GuitarConfig,
 }
 
 impl AppSettings {

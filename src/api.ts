@@ -176,6 +176,68 @@ export interface Converted {
   tripletQuarters: number;
 }
 
+export type Instrument = "guitar" | "bass";
+export type ToneKind = "clean" | "drive";
+
+export interface GuitarConfig {
+  enabled: boolean;
+  /** Системное устройство записи, "ASIO" (входы драйвера вывода) или null — по умолчанию. */
+  device: string | null;
+  channel: number;
+  instrument: Instrument;
+  gain: number;
+  monitor: boolean;
+  monitorVolume: number;
+  tone: ToneKind;
+  latencyMs: number | null;
+}
+
+export interface GuitarInput {
+  name: string;
+  channels: number;
+}
+
+export interface PitchReading {
+  hz: number;
+  midi: number;
+  cents: number;
+  clarity: number;
+}
+
+export interface GuitarRecording {
+  elapsedSec: number;
+  totalSec: number;
+  path: string | null;
+  error: string | null;
+}
+
+export interface GuitarStatus {
+  running: boolean;
+  device: string;
+  sampleRate: number;
+  channels: number;
+  bufferFrames: number;
+  error: string | null;
+  levelDb: number;
+  peakDb: number;
+  clipping: boolean;
+  pitch: PitchReading | null;
+  recording: GuitarRecording | null;
+}
+
+export interface GuitarState {
+  config: GuitarConfig;
+  status: GuitarStatus;
+  inputs: GuitarInput[];
+}
+
+export interface Calibration {
+  offsetMs: number;
+  spreadMs: number;
+  matched: number;
+  total: number;
+}
+
 export interface RecordStatus {
   recording: boolean;
   elapsedMs: number;
@@ -506,6 +568,13 @@ export const api = {
   recordStatus: () => invoke<RecordStatus>("record_status"),
   recordStop: (name: string, save: boolean) => invoke<string | null>("record_stop", { name, save }),
   saveTextFile: (path: string, content: string) => invoke<void>("save_text_file", { path, content }),
+  guitarState: () => invoke<GuitarState>("guitar_state"),
+  guitarInputs: () => invoke<GuitarInput[]>("guitar_inputs"),
+  guitarSet: (config: GuitarConfig) => invoke<void>("guitar_set", { config }),
+  guitarCalibrate: (bpm: number, count: number) => invoke<Calibration | null>("guitar_calibrate", { bpm, count }),
+  guitarRecord: (name: string, secs: number) => invoke<string>("guitar_record", { name, secs }),
+  guitarStopRecord: () => invoke<void>("guitar_stop_record"),
+  guitarTestSignal: (hz: number, secs: number, kind: "pluck" | "sine") => invoke<void>("guitar_test_signal", { hz, secs, kind }),
   fingeringGet: (piece: string, notes: FingerNoteIn[]) => invoke<Finger[]>("fingering_get", { piece, notes }),
   fingeringSet: (piece: string, notes: FingerNoteIn[], noteId: string, finger: number | null) =>
     invoke<Finger[]>("fingering_set", { piece, notes, noteId, finger }),

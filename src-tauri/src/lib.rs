@@ -1,6 +1,7 @@
 //! Оболочка приложения: связывает ядро `mt-core` с интерфейсом через
 //! команды и события Tauri и хранит настройки.
 
+mod guitar;
 mod library;
 mod midi_import;
 mod piece;
@@ -191,7 +192,7 @@ pub fn run() {
             let settings = AppSettings::load(&settings_path);
             log::info!("настройки: {}", settings_path.display());
 
-            let audio = AudioEngine::start(settings.audio.clone());
+            let audio = AudioEngine::start(settings.audio.clone(), settings.guitar.clone());
             // Прогресс обучения. Если база недоступна, тренажёр работает без сохранения.
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
@@ -209,6 +210,7 @@ pub fn run() {
 
             let (tx, rx) = unbounded::<DeviceEvent>();
             let devices = DeviceManager::start(audio.clone(), tx, settings.devices.clone());
+            devices.set_guitar_sound_demand(settings.guitar.enabled);
 
             let state = AppState {
                 devices: devices.clone(),
@@ -341,6 +343,13 @@ pub fn run() {
             midi_import::record_status,
             midi_import::record_stop,
             midi_import::save_text_file,
+            guitar::guitar_state,
+            guitar::guitar_inputs,
+            guitar::guitar_set,
+            guitar::guitar_calibrate,
+            guitar::guitar_record,
+            guitar::guitar_stop_record,
+            guitar::guitar_test_signal,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска приложения");

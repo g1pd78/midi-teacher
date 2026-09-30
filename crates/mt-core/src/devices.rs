@@ -249,6 +249,8 @@ pub struct DeviceManager {
     sound_needed: Mutex<Option<bool>>,
     /// Встроенный вывод нужен помимо маршрутов (метроном).
     extra_demand: std::sync::atomic::AtomicBool,
+    /// Вход гитары включён: прослушивание и ASIO-вход требуют открытого вывода.
+    guitar_demand: std::sync::atomic::AtomicBool,
 }
 
 impl DeviceManager {
@@ -270,6 +272,7 @@ impl DeviceManager {
             last_snapshot: Mutex::new(DevicesSnapshot::default()),
             sound_needed: Mutex::new(None),
             extra_demand: std::sync::atomic::AtomicBool::new(false),
+            guitar_demand: std::sync::atomic::AtomicBool::new(false),
         });
         manager.rescan();
 
@@ -314,6 +317,16 @@ impl DeviceManager {
     }
 
     /// Держать встроенный вывод открытым независимо от маршрутов (для метронома).
+    /// Звук нужен гитаре (отдельно от метронома, чтобы конец игры его не выключал).
+    pub fn set_guitar_sound_demand(&self, on: bool) {
+        let prev = self
+            .guitar_demand
+            .swap(on, std::sync::atomic::Ordering::Relaxed);
+        if prev != on {
+            self.rescan();
+        }
+    }
+
     pub fn set_extra_sound_demand(&self, on: bool) {
         let prev = self
             .extra_demand
@@ -387,7 +400,10 @@ impl DeviceManager {
             .map(|(n, _)| n.clone())
             .collect();
         let needed = internal_sound_needed(&settings, &connected)
-            || self.extra_demand.load(std::sync::atomic::Ordering::Relaxed);
+            || self.extra_demand.load(std::sync::atomic::Ordering::Relaxed)
+            || self
+                .guitar_demand
+                .load(std::sync::atomic::Ordering::Relaxed);
         let snapshot = DevicesSnapshot {
             inputs: settings
                 .inputs

@@ -456,6 +456,39 @@ try {
   if (!existsSync(xmlPath)) throw new Error("MusicXML не сохранён");
   ok("сохранение MusicXML в файл");
 
+  // --- Гитара и бас (этап Г0): тюнер по тестовому сигналу вместо кабеля ---
+  console.log("Сквозной тест: гитара и бас");
+  await waitFor("вкладка «Гитара»", () => click("Гитара"));
+  await waitFor("экран гитары", () => js("return !!document.querySelector('[data-guitar]');"));
+  const tuner = () => js("const t = document.querySelector('.tuner'); return t ? [t.dataset.midi, t.dataset.cents] : null;");
+  await invoke("guitar_test_signal", { hz: 110, secs: 1.0, kind: "pluck" });
+  await waitFor("тюнер: ля (щипок 110 Гц)", async () => (await tuner())?.[0] === "45");
+  await invoke("guitar_test_signal", { hz: 82.407 * 2 ** (22 / 1200), secs: 0.6, kind: "sine" });
+  const [eMidi, eCents] = await waitFor("тюнер: ми +22 цента", async () => {
+    const t = await tuner();
+    return t && t[0] === "40" ? t : null;
+  });
+  if (Math.abs(Number(eCents) - 22) > 3) throw new Error(`центы: ${eCents}`);
+  await waitFor("подсвечена струна ми", () => js("return !!document.querySelector('[data-string=\"0\"].active');"));
+  ok(`тюнер гитары: ля по щипку, ми ${eMidi} на +${eCents} центов, подсказка у нужной струны`);
+
+  await js("document.querySelector('[data-instrument=\"bass\"]').click();");
+  await waitFor("бас в настройках", async () => (await invoke("guitar_state")).config.instrument === "bass");
+  await waitFor("четыре струны баса", () => js("return document.querySelectorAll('.tuner-string').length === 4;"));
+  await invoke("guitar_test_signal", { hz: 41.2, secs: 1.0, kind: "pluck" });
+  await waitFor("тюнер: ми контроктавы", async () => (await tuner())?.[0] === "28");
+  ok("тюнер баса: низкая ми (41 Гц) определена");
+
+  // Включение входа без устройства (в CI звуковых карт нет) — понятное сообщение, не падение.
+  await js("document.querySelector('[data-enable]').click();");
+  const gst = await waitFor("вход открылся или ошибка", async () => {
+    const s = (await invoke("guitar_state")).status;
+    return s.running || s.error ? s : null;
+  });
+  ok(gst.running ? `вход открыт: ${gst.device}` : `без устройства записи — сообщение: «${gst.error}»`);
+  await js("document.querySelector('[data-enable]').click();");
+  await waitFor("вход выключен", async () => !(await invoke("guitar_state")).config.enabled);
+
   console.log("Готово: все проверки пройдены");
 } catch (e) {
   console.error(`✗ ${e.message}`);
