@@ -25,6 +25,8 @@ struct Recording {
     bpm: f64,
     events: Vec<(u64, MidiMessage)>,
     notes: usize,
+    /// Без метронома и отсчёта: сетка тактов начинается с первой ноты.
+    free: bool,
 }
 
 pub struct MidiHub {
@@ -188,6 +190,7 @@ pub fn record_start(
         bpm,
         events: Vec::new(),
         notes: 0,
+        free: !(metronome || count_in),
     });
     if !(metronome || count_in) {
         return;
@@ -250,11 +253,14 @@ pub fn record_stop(
     save: bool,
 ) -> Result<Option<String>, String> {
     hub.stop_metronome();
-    let Some(rec) = hub.rec.lock().take() else {
+    let Some(mut rec) = hub.rec.lock().take() else {
         return Ok(None);
     };
     if !save || rec.notes == 0 {
         return Ok(None);
+    }
+    if rec.free {
+        align_to_first_note(&mut rec.events);
     }
     let clean: String = name
         .chars()
@@ -273,8 +279,54 @@ pub fn record_stop(
     Ok(Some(file))
 }
 
+/// Свободная запись (без щелчков): первая нота — начало первой доли.
+fn align_to_first_note(events: &mut [(u64, MidiMessage)]) {
+    let Some(first) = events
+        .iter()
+        .find(|e| matches!(e.1, MidiMessage::NoteOn { .. }))
+        .map(|e| e.0)
+    else {
+        return;
+    };
+    // Педаль, нажатая до первой ноты, остаётся в начале.
+    for e in events.iter_mut() {
+        e.0 = e.0.saturating_sub(first);
+    }
+}
+
 /// Сохранить текст в файл, выбранный в диалоге «Сохранить как».
 #[tauri::command]
 pub fn save_text_file(path: String, content: String) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| format!("не удалось сохранить {path}: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn free_recording_starts_at_first_note() {
+        let mut ev = vec![
+            (
+                100,
+                MidiMessage::ControlChange {
+                    controller: 64,
+                    value: 127,
+                },
+            ),
+            (
+                250_000,
+                MidiMessage::NoteOn {
+                    note: 60,
+                    velocity: 90,
+                },
+            ),
+            (900_000, MidiMessage::NoteOff { note: 60 }),
+        ];
+        align_to_first_note(&mut ev);
+        assert_eq!(
+            ev.iter().map(|e| e.0).collect::<Vec<_>>(),
+            vec![0, 0, 650_000]
+        );
+    }
 }

@@ -499,6 +499,26 @@ fn quantize(notes: &[RawNote], ppq: u64, grids: &[i64]) -> Vec<QNote> {
         .collect()
 }
 
+/// Ноту, отпущенную чуть раньше следующей (зазор не больше шестнадцатой или четверти
+/// промежутка между началами), дотягиваем до следующей ноты этой руки: живая игра
+/// почти всегда чуть короче записанной, а «восьмая с точкой и пауза» вместо
+/// четверти только мешает читать.
+fn fill_gaps(notes: &mut [QNote]) {
+    let mut onsets: Vec<i64> = notes.iter().map(|n| n.start).collect();
+    onsets.sort_unstable();
+    onsets.dedup();
+    for n in notes.iter_mut() {
+        // После последней ноты — до ближайшей доли.
+        let next = match onsets.iter().find(|&&t| t > n.start) {
+            Some(&t) => t,
+            None => (n.end + DIV - 1).div_euclid(DIV) * DIV,
+        };
+        if next > n.end && next - n.end <= STRAIGHT.max((next - n.start) / 4) {
+            n.end = next;
+        }
+    }
+}
+
 // --- Руки ---
 
 /// Деление на руки: для каждого аккорда (одновременных нот) выбирается граница,
@@ -1043,6 +1063,9 @@ pub fn convert(data: &MidiData, opts: &ConvertOptions) -> Result<Converted> {
         }
     }
 
+    fill_gaps(&mut right);
+    fill_gaps(&mut left);
+
     let (num, den) = data.meter;
     let ml = num as i64 * 4 * DIV / den as i64;
     let all_start = right
@@ -1516,6 +1539,28 @@ mod tests {
         // Первые четыре — ровные четверти.
         let first = c.musicxml.split("<measure number=\"2\"").next().unwrap();
         assert_eq!(first.matches("<type>quarter</type>").count(), 4);
+    }
+
+    #[test]
+    fn short_releases_become_legato_but_rests_stay() {
+        // Четверти, отпущенные на 80% длины (живая игра), затем четверть и четвертная пауза.
+        let mut notes: Vec<(u64, u64, u8)> = (0..4).map(|k| (k * 480, 384, 60 + k as u8)).collect();
+        notes.push((1920, 480, 67));
+        notes.push((2880, 480, 69));
+        let c = convert(
+            &parse(&smf(480, &[("P", 0, None, notes)], None, (4, 4))).unwrap(),
+            &ConvertOptions::default(),
+        )
+        .unwrap();
+        check_measures(&c.musicxml, 48);
+        let first = c.musicxml.split("<measure number=\"2\"").next().unwrap();
+        assert_eq!(first.matches("<type>quarter</type>").count(), 4, "{first}");
+        let second = c.musicxml.split("<measure number=\"2\"").nth(1).unwrap();
+        let upper = second.split("<backup>").next().unwrap();
+        assert!(
+            upper.contains("<rest"),
+            "пауза между соль и ля остаётся: {upper}"
+        );
     }
 
     #[test]

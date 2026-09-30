@@ -10,7 +10,7 @@
 // Используется голый протокол W3C WebDriver поверх fetch — без WebdriverIO.
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -61,6 +61,11 @@ if (await fetch(DRIVER + "/status").then((r) => r.ok).catch(() => false)) {
 
 // Чистый профиль: настройки и база прогресса во временном каталоге (Linux).
 const profile = mkdtempSync(join(tmpdir(), "mt-e2e-"));
+// Папка библиотеки («Документы») — тоже во временном каталоге.
+const docs = join(profile, "docs");
+mkdirSync(join(profile, "config"), { recursive: true });
+mkdirSync(docs, { recursive: true });
+writeFileSync(join(profile, "config", "user-dirs.dirs"), `XDG_DOCUMENTS_DIR="${docs}"\n`);
 const driver = spawn("tauri-driver", [], {
   stdio: ["ignore", "inherit", "inherit"],
   env: { ...process.env, XDG_CONFIG_HOME: join(profile, "config"), XDG_DATA_HOME: join(profile, "data") },
@@ -108,8 +113,9 @@ try {
 
   // Имитация MIDI доходит до интерфейса.
   await press(60);
-  await waitFor("название ноты на главном экране", () => js("return document.querySelector('.now-name')?.textContent;"))
-    .then((t) => t.includes("До первой октавы") || Promise.reject(new Error(`на экране: ${t}`)));
+  await waitFor("название ноты на главном экране", () =>
+    js("return (document.querySelector('.now-name')?.textContent ?? '').includes('До первой октавы');"),
+  );
   ok("нажатие через имитацию MIDI показано на главном экране");
 
   await waitFor("вкладка тренажёра", () => click("Тренажёр нот"));
@@ -383,6 +389,72 @@ try {
   );
   await waitFor("нотный пример карточки", () => js("return !!document.querySelector('.theory-example svg');"), 15000);
   ok("справочник: карточка с нотным примером");
+
+  // --- Этап 6: запись своей игры → MIDI-пьеса с нотами ---
+  console.log("Сквозной тест: запись и импорт MIDI");
+  await waitFor("вкладка пьес", () => click("Пьесы"));
+  await waitFor("кнопка записи", () => js("const b = document.querySelector('[data-record-open]'); if (!b) return false; b.click(); return true;"));
+  // Без отсчёта и метронома — сразу запись.
+  await waitFor("настройки записи", () =>
+    js("const boxes = [...document.querySelectorAll('.record-panel input[type=checkbox]')]; if (boxes.length !== 2) return false; boxes.forEach((b) => b.checked && b.click()); return boxes.every((b) => !b.checked);"),
+  );
+  await waitFor("начать запись", () => js("const b = document.querySelector('[data-record-start]'); if (!b) return false; b.click(); return true;"));
+  await waitFor("идёт запись", () => js("return document.querySelector('.record-panel')?.dataset.recording === '1';"));
+  // Восемь четвертей до–до при 80 уд/мин (750 мс), каждая звучит ~690 мс.
+  // Время считается от начала, чтобы задержки вызовов не накапливались.
+  const melody = [60, 62, 64, 65, 67, 69, 71, 72];
+  const t0 = Date.now();
+  const until = (ms) => sleep(Math.max(0, t0 + ms - Date.now()));
+  for (const [k, note] of melody.entries()) {
+    await until(k * 750);
+    await invoke("simulate_midi", { device: "E2E", bytes: [0x90, note, 90] });
+    await until(k * 750 + 690);
+    await invoke("simulate_midi", { device: "E2E", bytes: [0x80, note, 0] });
+  }
+  await waitFor("остановить запись", () => js("const b = document.querySelector('[data-record-stop]'); if (!b) return false; b.click(); return true;"));
+  const recFile = await waitFor("запись в библиотеке", () =>
+    js("const c = [...document.querySelectorAll('[data-file]')].find((c) => c.dataset.file.startsWith('Запись')); return c ? c.dataset.file : '';"),
+  );
+  if (!existsSync(join(docs, "MIDI Teacher", recFile))) throw new Error(`файла ${recFile} нет в папке библиотеки`);
+  ok(`запись сохранена в библиотеку: ${recFile}`);
+
+  await js("[...document.querySelectorAll('[data-file]')].find((c) => c.dataset.file === arguments[0]).click();", [recFile]);
+  await waitFor("окно дорожек", () => js("return !!document.querySelector('[data-track-dialog]');"), 15000);
+  const trackRows = await js("return document.querySelectorAll('[data-track]').length;");
+  if (trackRows !== 1) throw new Error(`дорожек в записи: ${trackRows}`);
+  await js("document.querySelector('[data-apply]').click();");
+  await waitFor("ноты из MIDI", () => js("return document.querySelectorAll('.score-page svg g.note').length === 8;"), 30000);
+  ok("окно дорожек → ноты построены: 8 нот на стане");
+  const pieceId = `user:${recFile}`;
+  const setupOf = async () => (await invoke("get_state")).prefs.pieceSetup[pieceId];
+  const setup = await setupOf();
+  if (!setup?.roles || setup.roles.length !== 1) throw new Error(`выбор дорожек не сохранён: ${JSON.stringify(setup)}`);
+  const conv = await invoke("midi_convert", { id: recFile, options: { roles: setup.roles } });
+  const quarters = (conv.musicxml.match(/<type>quarter<\/type>/g) ?? []).length;
+  if (conv.measures !== 2 || quarters !== 8) throw new Error(`выравнивание: тактов ${conv.measures}, четвертей ${quarters}`);
+  ok("выравнивание по сетке: 2 такта по 4 четверти");
+
+  await waitFor("тон +1", () => js("const b = document.querySelector('[data-transpose-up]'); if (!b) return false; b.click(); return true;"));
+  await waitFor("тон сохранён", async () => (await setupOf())?.transpose === 1);
+  await waitFor("ноты после транспонирования", () => js("return document.querySelectorAll('.score-page svg g.note').length === 8;"), 20000);
+  ok("транспонирование на полутон: настройка сохранена, ноты перестроены");
+
+  await waitFor("режим «Руки…»", () => click("Руки…"));
+  await waitFor("клик по ноте", () =>
+    js("const n = document.querySelector('.score-page svg g.note'); if (!n) return false; n.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true;"),
+  );
+  await waitFor("правка руки сохранена", async () => (await setupOf())?.handOverrides?.length === 1);
+  await waitFor("нота в левой руке", () =>
+    js("return [...document.querySelectorAll('.score-page svg g.staff')].some((s, i) => i % 2 === 1 && s.querySelector('g.note'));"),
+    20000,
+  );
+  ok("«Руки…»: нота перенесена в левую руку");
+  await waitFor("выйти из «Руки…»", () => click("Готово"));
+
+  const xmlPath = join(profile, "export.musicxml");
+  await invoke("save_text_file", { path: xmlPath, content: conv.musicxml });
+  if (!existsSync(xmlPath)) throw new Error("MusicXML не сохранён");
+  ok("сохранение MusicXML в файл");
 
   console.log("Готово: все проверки пройдены");
 } catch (e) {
