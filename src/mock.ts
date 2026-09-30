@@ -45,6 +45,7 @@ export function createMock() {
       noteNames: "solfege",
       wizardDone: new URLSearchParams(location.search).has("done"),
       trainer: { layout: "single", errorMode: "wait", names: "struggle" },
+      theorySeen: [],
       piece: { guided: true, heat: false, layout: "line", hands: "right", accompany: true, names: false, fingering: true, keyHints: true, mode: "wait", tempo: 0.8, countIn: true, metronome: false, waterfall: true },
     },
     audioConfig: { backend: "auto", device: null, bufferFrames: 128, volume: 0.8 },
@@ -89,7 +90,7 @@ export function createMock() {
     if (ev.type === "noteOn") {
       judge(ev.note);
       judgePiece(ev.note);
-      judgeRhythm(ev.note);
+      judgeRhythm(ev.note, ev.velocity);
       practice.onNote();
     }
     emitMidi(device, ev);
@@ -272,7 +273,7 @@ export function createMock() {
       troubleMeasures: [],
     };
   }
-  function judgeRhythm(note: number) {
+  function judgeRhythm(note: number, velocity: number) {
     if (!rhythm) return;
     const pos = rPos();
     const cand = rhythm.notes
@@ -285,7 +286,7 @@ export function createMock() {
       rhythm.hits++;
       rhythm.deltas.push(cand.d);
       const g = Math.abs(cand.d) <= 50 ? "perfect" : Math.abs(cand.d) <= 120 ? "good" : "poor";
-      emit("rhythm", { kind: "hit", id: cand.n.id, deltaMs: cand.d, grade: g });
+      emit("rhythm", { kind: "hit", id: cand.n.id, deltaMs: cand.d, grade: g, velocity });
     } else if (pos > rhythm.pos0 - 200) {
       rhythm.extras++;
       emit("rhythm", { kind: "extra", pitch: note });

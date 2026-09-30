@@ -3,16 +3,77 @@ import { Notices } from "../components/Notices";
 import { fullName, keyLabel } from "../lib/notes";
 import { deviceColor, useApp } from "../store";
 import type { Screen } from "../App";
+import { useEffect, useState } from "react";
+import { api, type TodayStatus } from "../api";
+import { dayStartSecs } from "./Exercises";
 
 const SECTIONS: { title: string; text: string; stage: string; screen?: Screen }[] = [
   { title: "Тренажёр нот", text: "Учимся узнавать ноты на нотном стане", stage: "Этап 1", screen: "trainer" },
   { title: "Пьесы", text: "Разучивание по фрагментам: от подсказок до игры по памяти", stage: "Этап 2", screen: "pieces" },
-  { title: "Упражнения", text: "Гаммы, арпеджио, пять пальцев", stage: "Этап 5" },
-  { title: "Справочник", text: "Длительности, знаки, ключи", stage: "Этап 5" },
+  { title: "Упражнения", text: "Гаммы, арпеджио, пять пальцев, разминка дня", stage: "Этап 5", screen: "exercises" },
+  { title: "Справочник", text: "Длительности, знаки, ключи", stage: "Этап 5", screen: "reference" },
   { title: "Прогресс", text: "Минуты занятий, выученные фрагменты, трудные такты", stage: "Этап 4", screen: "progress" },
 ];
 
-export function Home({ onNavigate }: { onNavigate: (s: Screen) => void }) {
+export interface TodayActions {
+  warmup: () => void;
+  trainer: () => void;
+  piece: (id: string | null) => void;
+}
+
+/** «Занятие на сегодня»: разминка → тренажёр нот → пьеса. */
+function Today({ actions }: { actions: TodayActions }) {
+  const [st, setSt] = useState<TodayStatus | null>(null);
+  useEffect(() => {
+    api
+      .todayStatus(dayStartSecs())
+      .then(setSt)
+      .catch(() => setSt(null));
+  }, []);
+  if (!st) return null;
+  const steps = [
+    {
+      done: st.warmupDone,
+      title: "Разминка",
+      text: st.warmupDone ? "Сделана сегодня" : st.exercises ? `Сыграно упражнений: ${st.exercises}` : "Упражнения на ~5 минут",
+      go: actions.warmup,
+    },
+    {
+      done: st.trainerSessions > 0,
+      title: "Тренажёр нот",
+      text: st.trainerSessions ? `Серий сегодня: ${st.trainerSessions}` : "Одна серия из 20 нот",
+      go: actions.trainer,
+    },
+    {
+      done: st.pieceAttempts > 0,
+      title: st.lastPiece ? `«${st.lastPiece[1]}»` : "Пьеса",
+      text: st.lastPiece
+        ? st.pieceAttempts
+          ? `Проходов сегодня: ${st.pieceAttempts}`
+          : "Продолжить с того же отрезка"
+        : "Выбрать пьесу и начать разучивать",
+      go: () => actions.piece(st.lastPiece?.[0] ?? null),
+    },
+  ];
+  const next = steps.findIndex((s) => !s.done);
+  return (
+    <section className="card today" data-today>
+      <div className="today-title">
+        <h2>Занятие на сегодня</h2>
+        <span className="muted">{next < 0 ? "всё сделано — отлично!" : "по порядку, без спешки"}</span>
+      </div>
+      {steps.map((s, i) => (
+        <button key={i} className={`today-step${s.done ? " done" : ""}${i === next ? " next" : ""}`} onClick={s.go}>
+          <span className="num">Шаг {i + 1}</span>
+          <b>{s.title}</b>
+          <span className="muted">{s.text}</span>
+        </button>
+      ))}
+    </section>
+  );
+}
+
+export function Home({ onNavigate, today }: { onNavigate: (s: Screen) => void; today: TodayActions }) {
   const { held, lastNote, devices, prefs, pressScreenKey, sustain } = useApp();
   const naming = prefs.noteNames;
 
@@ -29,6 +90,7 @@ export function Home({ onNavigate }: { onNavigate: (s: Screen) => void }) {
   return (
     <main className="home">
       <Notices />
+      <Today actions={today} />
       <section className="now card">
         {lastNote ? (
           <>

@@ -55,6 +55,21 @@ function handFor(st: UnitState, h: { right: boolean; left: boolean }): PlayHands
 export function createPracticeMock() {
   const pieces = new Map<string, PieceRec>();
   const manual = new Map<string, Map<string, number>>();
+  const exResults: { exercise: string; at: number; tempo: number; accuracy: number; timingSdMs: number; loudness: number; passed: boolean }[] = [];
+  let warmupAt = 0;
+  const exStats = () => {
+    const by = new Map<string, typeof exResults>();
+    for (const r of exResults) by.set(r.exercise, [...(by.get(r.exercise) ?? []), r]);
+    return [...by].map(([exercise, rs]) => ({
+      exercise,
+      attempts: rs.length,
+      passed: rs.some((r) => r.passed),
+      bestAccuracy: Math.max(...rs.map((r) => r.accuracy)),
+      lastAt: rs[rs.length - 1].at,
+      lastTimingSdMs: rs[rs.length - 1].timingSdMs,
+      lastLoudness: rs[rs.length - 1].loudness,
+    }));
+  };
 
   // Имитация подбора: палец по положению ноты в пятипальцевой позиции руки.
   function fingers(piece: string, notes: FingerNoteIn[]): Finger[] {
@@ -173,6 +188,24 @@ export function createPracticeMock() {
       lastNote = now;
     },
     handlers: {
+      exercise_stats: () => exStats(),
+      exercise_record: ({ result }: { result: Omit<(typeof exResults)[number], "at"> }) => {
+        exResults.push({ ...result, at: Date.now() / 1000 });
+        return exStats();
+      },
+      warmup_done: () => {
+        warmupAt = Date.now() / 1000;
+      },
+      today_status: ({ dayStart }: { dayStart: number }) => {
+        const last = [...pieces.values()].sort((a, b) => b.openedAt - a.openedAt)[0];
+        return {
+          warmupDone: warmupAt >= dayStart,
+          exercises: exResults.filter((r) => r.at >= dayStart).length,
+          trainerSessions: 0,
+          pieceAttempts: [...pieces.values()].reduce((n, r) => n + r.attempts.filter((a) => a.at >= dayStart).length, 0),
+          lastPiece: last ? [last.meta.id, last.meta.title] : null,
+        };
+      },
       fingering_get: ({ piece, notes }: { piece: string; notes: FingerNoteIn[] }) => fingers(piece, notes),
       fingering_set: ({ piece, notes, noteId, finger }: { piece: string; notes: FingerNoteIn[]; noteId: string; finger: number | null }) => {
         const m = manual.get(piece) ?? new Map<string, number>();

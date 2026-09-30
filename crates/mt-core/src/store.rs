@@ -81,6 +81,17 @@ CREATE TABLE IF NOT EXISTS fingerings (
     finger INTEGER NOT NULL,
     PRIMARY KEY (piece, note_id)
 );
+CREATE TABLE IF NOT EXISTS exercise_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exercise TEXT NOT NULL,
+    finished_at INTEGER NOT NULL,
+    tempo REAL NOT NULL,
+    accuracy REAL NOT NULL,
+    timing_sd_ms REAL NOT NULL,
+    loudness REAL NOT NULL,
+    passed INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS exercise_results_ex ON exercise_results (exercise, finished_at);
 CREATE TABLE IF NOT EXISTS play_time (
     bucket INTEGER PRIMARY KEY,
     seconds REAL NOT NULL
@@ -90,6 +101,44 @@ CREATE TABLE IF NOT EXISTS play_time (
 /// Корзина учёта времени игры — 15 минут: так интерфейс может разложить
 /// время по дням в любом часовом поясе (смещения кратны 15 минутам).
 pub const PLAY_BUCKET_SECS: i64 = 900;
+
+/// Результат упражнения (оценку считает интерфейс по событиям режима ритма).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExerciseResult {
+    pub exercise: String,
+    pub tempo: f64,
+    pub accuracy: f64,
+    /// Разброс отклонений от ритма (стандартное отклонение), мс.
+    pub timing_sd_ms: f64,
+    /// Ровность громкости 0–1 (1 — все ноты одинаково громко).
+    pub loudness: f64,
+    pub passed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExerciseStat {
+    pub exercise: String,
+    pub attempts: u32,
+    pub passed: bool,
+    pub best_accuracy: f64,
+    pub last_at: i64,
+    pub last_timing_sd_ms: f64,
+    pub last_loudness: f64,
+}
+
+/// Что сделано за сегодня (с начала местных суток).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TodayStatus {
+    pub warmup_done: bool,
+    pub exercises: u32,
+    pub trainer_sessions: u32,
+    pub piece_attempts: u32,
+    /// Последняя открытая пьеса: (id, название).
+    pub last_piece: Option<(String, String)>,
+}
 
 /// Описание пьесы от интерфейса: сколько тактов, где кончаются фразы, какие руки в каждом такте.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -505,6 +554,94 @@ impl Store {
         Ok(())
     }
 
+    pub fn record_exercise(&mut self, r: &ExerciseResult, now_secs: i64) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO exercise_results
+               (exercise, finished_at, tempo, accuracy, timing_sd_ms, loudness, passed)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                r.exercise,
+                now_secs,
+                r.tempo,
+                r.accuracy,
+                r.timing_sd_ms,
+                r.loudness,
+                r.passed
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Сводка по каждому упражнению, которое играли.
+    pub fn exercise_stats(&self) -> Result<Vec<ExerciseStat>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT r.exercise, COUNT(*), MAX(r.passed), MAX(r.accuracy), MAX(r.finished_at),
+                    (SELECT timing_sd_ms FROM exercise_results WHERE exercise = r.exercise ORDER BY id DESC LIMIT 1),
+                    (SELECT loudness FROM exercise_results WHERE exercise = r.exercise ORDER BY id DESC LIMIT 1)
+             FROM exercise_results r GROUP BY r.exercise",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(ExerciseStat {
+                exercise: r.get(0)?,
+                attempts: r.get(1)?,
+                passed: r.get(2)?,
+                best_accuracy: r.get(3)?,
+                last_at: r.get(4)?,
+                last_timing_sd_ms: r.get(5)?,
+                last_loudness: r.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Разминка дня пройдена (момент — секунды Unix).
+    pub fn set_warmup_done(&mut self, now_secs: i64) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO kv (key, value) VALUES ('warmup_done_at', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![now_secs.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// Что сделано с момента `day_start_secs` (начало местных суток).
+    pub fn today(&self, day_start_secs: i64) -> Result<TodayStatus> {
+        let count = |sql: &str| -> Result<u32> {
+            Ok(self
+                .conn
+                .query_row(sql, params![day_start_secs], |r| r.get(0))?)
+        };
+        let warmup_at: i64 = self
+            .conn
+            .query_row(
+                "SELECT value FROM kv WHERE key = 'warmup_done_at'",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let last_piece = self
+            .conn
+            .query_row(
+                "SELECT id, title FROM pieces ORDER BY opened_at DESC LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        Ok(TodayStatus {
+            warmup_done: warmup_at >= day_start_secs,
+            exercises: count("SELECT COUNT(*) FROM exercise_results WHERE finished_at >= ?1")?,
+            trainer_sessions: count(
+                "SELECT COUNT(*) FROM trainer_sessions WHERE finished_at >= ?1",
+            )?,
+            piece_attempts: count(
+                "SELECT COUNT(*) FROM practice_attempts WHERE finished_at >= ?1",
+            )?,
+            last_piece,
+        })
+    }
+
     /// Добавить время игры: (начало корзины в секундах Unix, секунды).
     pub fn add_play_time(&mut self, buckets: &[(i64, f64)]) -> Result<()> {
         let tx = self.conn.transaction()?;
@@ -783,6 +920,46 @@ mod tests {
         assert_eq!(m, vec![("n1".into(), 60, 2), ("n2".into(), 62, 4)]);
         store.set_manual_finger("p", "n1", 60, None).unwrap();
         assert_eq!(store.manual_fingers("p").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn exercises_and_today() {
+        let mut store = Store::open_in_memory().unwrap();
+        let res = |ex: &str, acc: f64, passed: bool| ExerciseResult {
+            exercise: ex.into(),
+            tempo: 1.0,
+            accuracy: acc,
+            timing_sd_ms: 30.0,
+            loudness: 0.9,
+            passed,
+        };
+        store
+            .record_exercise(&res("c-major-rh", 0.8, false), 100)
+            .unwrap();
+        store
+            .record_exercise(&res("c-major-rh", 1.0, true), 200)
+            .unwrap();
+        store
+            .record_exercise(&res("five-c-rh", 0.9, false), 300)
+            .unwrap();
+        let mut stats = store.exercise_stats().unwrap();
+        stats.sort_by(|a, b| a.exercise.cmp(&b.exercise));
+        assert_eq!(stats.len(), 2);
+        assert!(stats[0].passed && stats[0].attempts == 2 && stats[0].best_accuracy == 1.0);
+        assert!(!stats[1].passed);
+
+        let t = store.today(150).unwrap();
+        assert_eq!(
+            (t.exercises, t.trainer_sessions, t.piece_attempts),
+            (2, 0, 0)
+        );
+        assert!(!t.warmup_done && t.last_piece.is_none());
+        store.set_warmup_done(160).unwrap();
+        store.open_piece(&meta(8), 170).unwrap();
+        let t = store.today(150).unwrap();
+        assert!(t.warmup_done);
+        assert_eq!(t.last_piece, Some(("builtin:ode".into(), "Ода".into())));
+        assert!(!store.today(1000).unwrap().warmup_done);
     }
 
     #[test]

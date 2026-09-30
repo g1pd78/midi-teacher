@@ -38,14 +38,20 @@ export function Header({ screen, onNavigate }: { screen: Screen; onNavigate: (s:
         <button className={screen === "pieces" ? "tab active" : "tab"} onClick={() => onNavigate("pieces")}>
           Пьесы
         </button>
+        <button className={screen === "exercises" ? "tab active" : "tab"} onClick={() => onNavigate("exercises")}>
+          Упражнения
+        </button>
         <button className={screen === "trainer" ? "tab active" : "tab"} onClick={() => onNavigate("trainer")}>
           Тренажёр нот
+        </button>
+        <button className={screen === "reference" ? "tab active" : "tab"} onClick={() => onNavigate("reference")}>
+          Справочник
         </button>
         <button className={screen === "progress" ? "tab active" : "tab"} onClick={() => onNavigate("progress")}>
           Прогресс
         </button>
         <button className={screen === "settings" ? "tab active" : "tab"} onClick={() => onNavigate("settings")}>
-          Устройства и звук
+          Настройки
         </button>
       </nav>
     </header>

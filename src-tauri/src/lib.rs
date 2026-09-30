@@ -234,10 +234,10 @@ pub fn run() {
                     for ev in rx {
                         match ev {
                             DeviceEvent::Midi(e) => {
-                                if let MidiMessage::NoteOn { note, .. } = e.msg {
+                                if let MidiMessage::NoteOn { note, velocity } = e.msg {
                                     trainer_hub.on_note_on(&handle, note, e.time_us);
                                     piece_events.on_note_on(note, e.time_us);
-                                    rhythm_events.on_note_on(note, e.time_us);
+                                    rhythm_events.on_note_on(note, velocity, e.time_us);
                                     practice_events.on_note_on(e.time_us);
                                 }
                                 let _ = handle.emit("midi", e);
@@ -323,6 +323,10 @@ pub fn run() {
             practice::progress_overview,
             practice::fingering_get,
             practice::fingering_set,
+            practice::exercise_stats,
+            practice::exercise_record,
+            practice::warmup_done,
+            practice::today_status,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска приложения");

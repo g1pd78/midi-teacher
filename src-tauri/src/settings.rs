@@ -17,6 +17,8 @@ pub struct UiPrefs {
     pub wizard_done: bool,
     pub trainer: TrainerPrefs,
     pub piece: PiecePrefs,
+    /// Карточки теории, которые уже показаны («Понятно»).
+    pub theory_seen: Vec<String>,
 }
 
 /// Настройки экрана пьесы.
@@ -95,6 +97,7 @@ impl Default for UiPrefs {
             wizard_done: false,
             trainer: TrainerPrefs::default(),
             piece: PiecePrefs::default(),
+            theory_seen: Vec::new(),
         }
     }
 }

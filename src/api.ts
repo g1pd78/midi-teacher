@@ -9,6 +9,15 @@ import { listen as tauriListen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createMock } from "./mock";
 import type { PieceMetaIn } from "./lib/practice";
 import type { Finger, FingerNoteIn } from "./lib/fingering";
+import type { ExerciseStatView } from "./lib/exercises";
+
+export interface TodayStatus {
+  warmupDone: boolean;
+  exercises: number;
+  trainerSessions: number;
+  pieceAttempts: number;
+  lastPiece: [string, string] | null;
+}
 
 export type SoundRoute = { kind: "internal" } | { kind: "silent" } | { kind: "output"; port: string };
 
@@ -100,6 +109,7 @@ export interface UiPrefs {
   wizardDone: boolean;
   trainer: TrainerPrefs;
   piece: PiecePrefs;
+  theorySeen: string[];
 }
 
 export interface PieceNoteIn {
@@ -150,7 +160,7 @@ export interface RhythmSummary {
 
 export type RhythmEvent =
   | { kind: "clock"; originUs: number; pos0: number; tempo: number }
-  | { kind: "hit"; id: string; deltaMs: number; grade: Grade }
+  | { kind: "hit"; id: string; deltaMs: number; grade: Grade; velocity: number }
   | { kind: "miss"; id: string }
   | { kind: "extra"; pitch: number }
   | { kind: "loopPass"; pass: number; summary: RhythmSummary }
@@ -411,6 +421,11 @@ export const api = {
   practiceRecord: (piece: string, attempt: AttemptRecord) =>
     invoke<{ outcome: Outcome | null; view: PracticeView }>("practice_record", { piece, attempt }),
   progressOverview: () => invoke<Progress>("progress_overview"),
+  exerciseStats: () => invoke<ExerciseStatView[]>("exercise_stats"),
+  exerciseRecord: (result: { exercise: string; tempo: number; accuracy: number; timingSdMs: number; loudness: number; passed: boolean }) =>
+    invoke<ExerciseStatView[]>("exercise_record", { result }),
+  warmupDone: () => invoke<void>("warmup_done"),
+  todayStatus: (dayStart: number) => invoke<TodayStatus>("today_status", { dayStart }),
   fingeringGet: (piece: string, notes: FingerNoteIn[]) => invoke<Finger[]>("fingering_get", { piece, notes }),
   fingeringSet: (piece: string, notes: FingerNoteIn[], noteId: string, finger: number | null) =>
     invoke<Finger[]>("fingering_set", { piece, notes, noteId, finger }),

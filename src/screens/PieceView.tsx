@@ -15,9 +15,12 @@ import {
   type UnitView,
 } from "../api";
 import { Piano } from "../components/Piano";
+import { TheoryPlaque } from "../components/Theory";
+import { detectFeatures } from "../lib/theory";
 import { Waterfall, type NoteState } from "../components/Waterfall";
 import { keyLabel } from "../lib/notes";
-import { fingerNotes, injectFingering, type Finger } from "../lib/fingering";
+import { fingerNotes, injectFingering, parseFinger, type Finger } from "../lib/fingering";
+import { PASS_ACCURACY, PASS_TIMING_SD_MS, evaluate, type Evaluation, type HitRecord } from "../lib/exercises";
 import {
   LEVELS,
   STREAK_TO_ADVANCE,
@@ -123,12 +126,27 @@ function streakOf(unit: UnitView): number {
   return s.streak;
 }
 
-export function PieceView({ source, onBack }: { source: PieceSource; onBack: () => void }) {
+/** Упражнение: тот же экран игры, но своя оценка (ровность ритма и громкости) и свои кнопки. */
+export interface ExerciseContext {
+  id: string;
+  /** Место в разминке дня: «2 из 4». */
+  playlist?: { index: number; total: number };
+  next?: { label: string; go: () => void } | null;
+  onRecorded?: (ev: Evaluation) => void;
+}
+
+export function PieceView({ source, onBack, exercise }: { source: PieceSource; onBack: () => void; exercise?: ExerciseContext }) {
   const { prefs, setPrefs, held, devices } = useApp();
   const p = prefs.piece;
   const setPiece = (patch: Partial<PiecePrefs>) => setPrefs({ piece: { ...p, ...patch } });
   const naming = prefs.noteNames;
-  const guided = p.guided;
+  const guided = !exercise && p.guided;
+  // Упражнения: режим, темп и метроном — свои, не из настроек пьес.
+  const [exMode, setExMode] = useState<"wait" | "rhythm">("rhythm");
+  const [exTempo, setExTempo] = useState(1);
+  const [exMetronome, setExMetronome] = useState(true);
+  const [exResult, setExResult] = useState<Evaluation | null>(null);
+  const hitLog = useRef<HitRecord[]>([]);
 
   const [mei, setMei] = useState<string | null>(null);
   const [pages, setPages] = useState<string[]>([]);
@@ -184,11 +202,13 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
   const unit: UnitView | null = guided && practice ? (practice.units[unitSel ?? practice.current] ?? null) : null;
   const level = unit?.state.level ?? 0;
   const preset = unit ? levelPreset(level) : null;
-  const rhythmMode = (preset ? preset.mode : p.mode) === "rhythm";
-  const freeHands: HandMode = !hasLeft ? "right" : !hasRight ? "left" : p.hands;
+  const rhythmMode = exercise ? exMode === "rhythm" : (preset ? preset.mode : p.mode) === "rhythm";
+  const freeHands: HandMode = !hasLeft ? "right" : !hasRight ? "left" : exercise ? "both" : p.hands;
   const hands: PlayHands = unit ? unit.hand : freeHands;
-  const tempo = unit ? levelTempo(level, unit.state.tempo) : p.tempo;
-  const accompany = unit ? true : p.accompany;
+  const tempo = exercise ? exTempo : unit ? levelTempo(level, unit.state.tempo) : p.tempo;
+  const accompany = unit || exercise ? true : p.accompany;
+  const countIn = p.countIn;
+  const metronome = exercise ? exMetronome : p.metronome;
   const showNames = preset ? preset.names : p.names;
   const keyHints = preset ? preset.keyHints : p.keyHints;
   const showWaterfall = preset ? preset.waterfall : p.waterfall;
@@ -297,6 +317,12 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
       .catch(() => setFingers(null));
   }, [fingerInput, source]);
   const fingerOf = useMemo(() => new Map((fingers ?? []).map((f) => [f.id, f])), [fingers]);
+  // Элементы нотной записи в пьесе — для плашек теории «Новое».
+  const theoryFeatures = useMemo(
+    () => (mei && scoreRef.current ? detectFeatures(mei, scoreRef.current.structure, scoreRef.current.notes) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mei, notesKey],
+  );
   const waterfallFingers = useMemo(
     () => (showFingers ? new Map((fingers ?? []).map((f) => [f.id, { finger: f.finger, auto: f.source === "auto" }])) : null),
     [fingers, showFingers],
@@ -320,7 +346,7 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
   // Пьеса в базе практики: фрагменты, уровни, трудные такты.
   useEffect(() => {
     const sc = scoreRef.current;
-    if (!sc || !sc.notes.length) return;
+    if (!sc || !sc.notes.length || exercise) return;
     api
       .practiceOpen({
         id: source.id,
@@ -386,20 +412,21 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
     await clock.current.sync();
     resetMarks();
     setRhythmSummary(null);
+    setExResult(null);
     setToast(null);
     const beats = buildBeats(sc.starts, sc.endMs, sc.structure.meter, sc.tempoBpm);
     await api.rhythmStart(sc.notes.map(toIn), beats, {
       hands,
       accompany,
       tempo,
-      countIn: p.countIn,
-      metronome: p.metronome,
+      countIn,
+      metronome,
       loopRange: loopMs,
       beatsPerMeasure: sc.structure.meter.count,
       beatMs: Math.round(beatDuration(sc.structure.meter, sc.tempoBpm)),
     });
     setPlaying(true);
-  }, [hands, accompany, tempo, p.countIn, p.metronome, loopMs, resetMarks]);
+  }, [hands, accompany, tempo, countIn, metronome, loopMs, resetMarks]);
   const startRhythmRef = useRef(startRhythm);
   startRhythmRef.current = startRhythm;
 
@@ -410,7 +437,7 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
 
   // Смена настроек во время игры в темпе: в свободной игре — остановка,
   // в ведущем режиме (темп вырос, другой отрезок) — сразу заново.
-  const rhythmKey = `${hands}|${tempo}|${accompany}|${p.countIn}|${p.metronome}|${rangeFrom}-${rangeTo}|${notesKey}`;
+  const rhythmKey = `${hands}|${tempo}|${accompany}|${countIn}|${metronome}|${rangeFrom}-${rangeTo}|${notesKey}`;
   const prevRhythmKey = useRef(rhythmKey);
   useEffect(() => {
     if (prevRhythmKey.current === rhythmKey) return;
@@ -425,7 +452,7 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
 
   // --- Проходы: запись в историю и решения движка практики ---
   const onPass = (accuracy: number, durationMs: number | null, trouble: MeasureErrors[]) => {
-    if (!practice) return;
+    if (!practice || exercise) return;
     const from = range?.from ?? 1;
     const to = range?.to ?? measures;
     const span = loopMs ? loopMs[1] - loopMs[0] : (score?.endMs ?? 0);
@@ -465,6 +492,32 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
   };
   const passRef = useRef(onPass);
   passRef.current = onPass;
+
+  // Упражнение сыграно в темпе: оценка ровности и запись результата.
+  const onExerciseFinished = (s: RhythmSummary) => {
+    if (!exercise || !score) return;
+    const fingerMap = new Map<string, number>();
+    for (const n of score.notes) {
+      const fg = fingerOf.get(n.id)?.finger ?? parseFinger(score.structure.fingerOf.get(n.id));
+      if (fg) fingerMap.set(n.id, fg);
+    }
+    const ev = evaluate(hitLog.current, s.requiredNotes, s.extras, score.notes, fingerMap, tempo);
+    setExResult(ev);
+    api
+      .exerciseRecord({
+        exercise: exercise.id,
+        tempo,
+        accuracy: ev.accuracy,
+        timingSdMs: ev.timingSdMs,
+        loudness: ev.loudness,
+        passed: ev.passed,
+      })
+      .then(() => exercise.onRecorded?.(ev))
+      .catch((e) => setToast(`Результат не сохранён: ${e}`));
+  };
+  const exFinishRef = useRef(onExerciseFinished);
+  exFinishRef.current = onExerciseFinished;
+  const isExercise = !!exercise;
   const guidedRef = useRef(guided);
   guidedRef.current = guided;
 
@@ -498,7 +551,9 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
         const first = !transport.current;
         transport.current = { originUs: e.originUs, pos0: e.pos0, tempo: e.tempo };
         if (!first) resetMarks();
+        hitLog.current = [];
       } else if (e.kind === "hit") {
+        hitLog.current.push({ id: e.id, deltaMs: e.deltaMs, velocity: e.velocity });
         noteStates.current.set(e.id, e.grade === "poor" ? "poor" : "hit");
         setMarksVersion((v) => v + 1);
       } else if (e.kind === "miss") {
@@ -512,6 +567,10 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
         passRef.current(rhythmAccuracy(s.requiredNotes, s.hits, s.extras), null, s.troubleMeasures);
       } else if (e.kind === "finished") {
         setPlaying(false);
+        if (isExercise) {
+          exFinishRef.current(e.summary);
+          return;
+        }
         setRhythmSummary(e.summary);
         const s = e.summary;
         passRef.current(rhythmAccuracy(s.requiredNotes, s.hits, s.extras), null, s.troubleMeasures);
@@ -521,7 +580,7 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
       alive = false;
       offs.forEach((f) => f());
     };
-  }, [resetMarks]);
+  }, [resetMarks, isExercise]);
 
   function flashWrong(pitch: number) {
     setWrongKey(pitch);
@@ -777,7 +836,12 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
         const i = practice.units.indexOf(unit) + (e.key === "ArrowLeft" ? -1 : 1);
         if (i >= 0 && i < practice.units.length) selectUnit(i);
       } else if (guided) return;
-      else if (e.key === "h" || e.key === "H" || e.key === "р" || e.key === "Р") setPiece({ waterfall: !p.waterfall });
+      else if (exercise) {
+        if (e.key === "+" || e.key === "=") setExTempo((t) => clampTempo(t + 0.05));
+        else if (e.key === "-" || e.key === "_") setExTempo((t) => clampTempo(t - 0.05));
+        else if (e.key === "h" || e.key === "H" || e.key === "р" || e.key === "Р") setPiece({ waterfall: !p.waterfall });
+        return;
+      } else if (e.key === "h" || e.key === "H" || e.key === "р" || e.key === "Р") setPiece({ waterfall: !p.waterfall });
       else if (e.key === "+" || e.key === "=") setPiece({ tempo: clampTempo(p.tempo + 0.05) });
       else if (e.key === "-" || e.key === "_") setPiece({ tempo: clampTempo(p.tempo - 0.05) });
       else if (e.key === "1") setPiece({ hands: "right" });
@@ -790,7 +854,15 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
   const [low, high] = useMemo(() => {
     if (!notes.length) return [48, 84];
     const ps = notes.map((n) => n.pitch);
-    return [Math.min(...ps) - 2, Math.max(...ps) + 2];
+    let lo = Math.min(...ps) - 2;
+    let hi = Math.max(...ps) + 2;
+    // Не уже двух октав: иначе клавиши огромные и трудно узнать место на клавиатуре.
+    const lack = 24 - (hi - lo);
+    if (lack > 0) {
+      lo -= Math.floor(lack / 2);
+      hi += Math.ceil(lack / 2);
+    }
+    return [lo, hi];
   }, [notes]);
   const highlight: Record<number, { color: string; strength?: number }> = {};
   if (keyHints) {
@@ -849,9 +921,19 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
     <main className={`piece${showWaterfall ? " with-waterfall" : ""}`}>
       <div className="piece-bar">
         <button className="ghost" onClick={onBack} title="Esc">
-          ← Пьесы
+          {exercise ? "← Упражнения" : "← Пьесы"}
         </button>
         <div className="piece-name">{source.title}</div>
+        {exercise ? (
+          <span className="segmented">
+            <button className={!rhythmMode ? "on" : ""} onClick={() => setExMode("wait")} title="Разобрать ноты: курсор ждёт">
+              Ожидание
+            </button>
+            <button className={rhythmMode ? "on" : ""} onClick={() => setExMode("rhythm")} title="В темпе с метрономом — с оценкой">
+              В темпе
+            </button>
+          </span>
+        ) : (
         <span className="segmented" title="Ведущий режим или свободная игра">
           <button className={guided ? "on" : ""} onClick={() => setPiece({ guided: true })}>
             Разучить
@@ -860,7 +942,8 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
             Свободно
           </button>
         </span>
-        {!guided && (
+        )}
+        {!guided && !exercise && (
           <>
             <span className="segmented" title="1 / 2 / 3">
               <button className={hands === "right" ? "on" : ""} disabled={!hasRight} onClick={() => setPiece({ hands: "right" })}>
@@ -902,7 +985,44 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
         )}
       </div>
 
-      {guided && unit && practice ? (
+      {exercise ? (
+        <>
+          <div className="piece-toggles">
+            <label className="tempo" title="+ / −">
+              Темп
+              <input
+                type="range"
+                min={0.5}
+                max={TEMPO_MAX}
+                step={0.05}
+                value={exTempo}
+                onChange={(e) => setExTempo(clampTempo(Number(e.target.value)))}
+              />
+              <b>{percent(exTempo)}</b>
+              {score && <span className="muted">{Math.round(score.tempoBpm * exTempo)} уд/мин</span>}
+              {exTempo < 0.999 && <span className="muted">· для зачёта — от 100%</span>}
+            </label>
+            {rhythmMode && (
+              <>
+                <Toggle label="Отсчёт" on={p.countIn} onChange={(v) => setPiece({ countIn: v })} />
+                <Toggle label="Метроном" on={exMetronome} onChange={setExMetronome} />
+              </>
+            )}
+            {exercise.playlist && (
+              <span className="chip small">
+                Разминка: {exercise.playlist.index + 1} из {exercise.playlist.total}
+              </span>
+            )}
+            <span className="piece-progress">{progressText}</span>
+          </div>
+          <div className="piece-toggles secondary">
+            <Toggle label="Падающие ноты" on={p.waterfall} onChange={(v) => setPiece({ waterfall: v })} />
+            <Toggle label="Названия нот" on={p.names} onChange={(v) => setPiece({ names: v })} />
+            <Toggle label="Аппликатура" on={p.fingering} onChange={(v) => setPiece({ fingering: v })} />
+            <Toggle label="Подсветка клавиш" on={p.keyHints} onChange={(v) => setPiece({ keyHints: v })} />
+          </div>
+        </>
+      ) : guided && unit && practice ? (
         <GuidePanel
           practice={practice}
           unit={unit}
@@ -1059,6 +1179,7 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
           data-level={unit ? level : ""}
           data-unit={unitKey}
           data-hands={hands}
+          data-ex-result={exResult ? (exResult.passed ? "passed" : "failed") : ""}
         >
           <div ref={contentRef} className="score-content" onClick={onScoreClick}>
             {!pages.length && !error && <div className="muted score-loading">Загрузка нот…</div>}
@@ -1086,10 +1207,6 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
           </div>
         </div>
         {toast && <div className="toast">{toast}</div>}
-        {waitSummary && !rhythmMode && <WaitSummary summary={waitSummary} onAgain={restart} onBack={onBack} />}
-        {rhythmSummary && rhythmMode && (
-          <RhythmSummaryPanel summary={rhythmSummary} onAgain={() => void startRhythm()} onClose={() => setRhythmSummary(null)} />
-        )}
       </section>
 
       {showWaterfall && (
@@ -1112,6 +1229,22 @@ export function PieceView({ source, onBack }: { source: PieceSource; onBack: () 
       <section className="session-piano">
         <Piano low={low} high={high} naming={naming} highlight={highlight} labels="c" />
       </section>
+      <TheoryPlaque features={theoryFeatures} />
+      {/* Итоги — поверх всего экрана игры, чтобы помещались при любой высоте нот. */}
+        {waitSummary && !rhythmMode && <WaitSummary summary={waitSummary} onAgain={restart} onBack={onBack} />}
+      {rhythmSummary && rhythmMode && (
+        <RhythmSummaryPanel summary={rhythmSummary} onAgain={() => void startRhythm()} onClose={() => setRhythmSummary(null)} />
+      )}
+      {exResult && rhythmMode && exercise && (
+        <ExerciseSummary
+          ev={exResult}
+          tempo={tempo}
+          next={exercise.next ?? null}
+          onAgain={() => void startRhythm()}
+          onBack={onBack}
+          onClose={() => setExResult(null)}
+        />
+      )}
     </main>
   );
 }
@@ -1363,6 +1496,96 @@ function RhythmSummaryPanel({ summary, onAgain, onClose }: { summary: RhythmSumm
           </button>
           <button className="ghost" onClick={onClose}>
             Закрыть
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExerciseSummary({
+  ev,
+  tempo,
+  next,
+  onAgain,
+  onBack,
+  onClose,
+}: {
+  ev: Evaluation;
+  tempo: number;
+  next: { label: string; go: () => void } | null;
+  onAgain: () => void;
+  onBack: () => void;
+  onClose: () => void;
+}) {
+  const reasons: string[] = [];
+  if (ev.accuracy < PASS_ACCURACY) reasons.push(`точность от ${percent(PASS_ACCURACY)}`);
+  if (ev.timingSdMs > PASS_TIMING_SD_MS) reasons.push(`ровнее ритм (разброс до ±${PASS_TIMING_SD_MS} мс)`);
+  if (tempo < 0.999) reasons.push("темп от 100%");
+  const maxV = Math.max(1, ...ev.byFinger.map((b) => b.velocity));
+  return (
+    <div className="summary-overlay">
+      <div className="summary card exercise-summary">
+        <h2>{ev.passed ? "Засчитано ✓" : "Упражнение сыграно"}</h2>
+        <div className="summary-stats">
+          <div>
+            <div className={`big ${ev.accuracy >= PASS_ACCURACY ? "good" : ev.accuracy < 0.7 ? "bad" : ""}`}>{percent(ev.accuracy)}</div>
+            <div className="muted">верных нот</div>
+          </div>
+          <div>
+            <div className={`big ${ev.timingSdMs <= PASS_TIMING_SD_MS ? "good" : ""}`}>±{ev.timingSdMs} мс</div>
+            <div className="muted">ровность ритма</div>
+          </div>
+          <div>
+            <div className="big">{percent(ev.loudness)}</div>
+            <div className="muted">ровность громкости</div>
+          </div>
+        </div>
+        {!ev.passed && reasons.length > 0 && <p className="hint">Для зачёта нужно: {reasons.join(", ")}.</p>}
+        {ev.passed && <p className="hint">Следующее упражнение открыто.</p>}
+        {ev.crossingMs !== null && ev.otherMs !== null && ev.crossingMs > ev.otherMs + 20 && (
+          <p className="hint">
+            На подкладывании и перекладывании пальцев отклонение в среднем {ev.crossingMs} мс, на остальных нотах — {ev.otherMs} мс.
+            Потренируй эти места медленнее.
+          </p>
+        )}
+        {ev.byFinger.length > 1 && (
+          <div className="finger-bars" title="Средняя сила нажатия каждым пальцем">
+            {ev.byFinger.map((b) => (
+              <div key={b.finger} className={`finger-bar${ev.weakFinger?.finger === b.finger ? " weak" : ""}`}>
+                <div className="bar">
+                  <div style={{ height: `${(b.velocity / maxV) * 100}%` }} />
+                </div>
+                <span>{b.finger}</span>
+              </div>
+            ))}
+            <span className="muted finger-bars-note">
+              {ev.weakFinger
+                ? `${ev.weakFinger.finger}-й палец звучит тише остальных на ${Math.round((1 - ev.weakFinger.ratio) * 100)}%.`
+                : "Пальцы звучат примерно одинаково."}
+            </span>
+          </div>
+        )}
+        <div className="summary-actions">
+          {next && ev.passed ? (
+            <button className="primary" onClick={next.go}>
+              {next.label}
+            </button>
+          ) : (
+            <button className="primary" onClick={onAgain}>
+              Ещё раз
+            </button>
+          )}
+          {next && ev.passed ? (
+            <button onClick={onAgain}>Ещё раз</button>
+          ) : next ? (
+            <button onClick={next.go}>{next.label}</button>
+          ) : null}
+          <button className="ghost" onClick={onClose}>
+            Закрыть
+          </button>
+          <button className="ghost" onClick={onBack}>
+            К упражнениям
           </button>
         </div>
       </div>

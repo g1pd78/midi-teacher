@@ -10,6 +10,8 @@ import {
   type TrainerSummary,
 } from "../api";
 import { Piano } from "../components/Piano";
+import { TheoryPlaque } from "../components/Theory";
+import { trainerFeatures } from "../lib/theory";
 import { Staff, type NoteMark } from "../components/Staff";
 import { spelledName } from "../lib/mei";
 import { fullName } from "../lib/notes";
@@ -365,6 +367,9 @@ function TrainerSession({ session, level, overview, onExit, onRestart }: Session
       <section className="session-piano">
         <Piano low={low} high={high} naming={naming} highlight={highlight} labels="c" />
       </section>
+      <TheoryPlaque
+        features={trainerFeatures(level.id, session.grandStaff, level.pool.every(([, clef]) => clef === "bass"))}
+      />
     </main>
   );
 }

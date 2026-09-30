@@ -111,6 +111,8 @@ pub enum RhythmEvent {
         id: String,
         delta_ms: i32,
         grade: Grade,
+        /// Сила нажатия (1–127) — для ровности громкости в упражнениях.
+        velocity: u8,
     },
     #[serde(rename_all = "camelCase")]
     Miss { id: String },
@@ -153,7 +155,7 @@ pub struct RhythmSession {
     pass: u32,
     finished: bool,
     /// Нажатия на стыке кругов, которые относятся к началу следующего круга.
-    pending_next: Vec<(usize, i32)>,
+    pending_next: Vec<(usize, i32, u8)>,
 }
 
 impl RhythmSession {
@@ -352,12 +354,12 @@ impl RhythmSession {
             pos0: self.start_ms,
             tempo: self.cfg.tempo,
         }));
-        for (k, delta) in std::mem::take(&mut self.pending_next) {
-            self.record_hit(k, delta, out);
+        for (k, delta, velocity) in std::mem::take(&mut self.pending_next) {
+            self.record_hit(k, delta, velocity, out);
         }
     }
 
-    fn record_hit(&mut self, k: usize, delta: i32, out: &mut Vec<Action>) {
+    fn record_hit(&mut self, k: usize, delta: i32, velocity: u8, out: &mut Vec<Action>) {
         self.matched[k] = Some(delta);
         let n = &self.notes[self.required[k]];
         let g = grade(delta);
@@ -368,6 +370,7 @@ impl RhythmSession {
             id: n.id.clone(),
             delta_ms: delta,
             grade: g,
+            velocity,
         }));
     }
 
@@ -403,7 +406,7 @@ impl RhythmSession {
         self.sounding = keep;
     }
 
-    pub fn on_note_on(&mut self, pitch: u8, t_us: u64) -> Vec<Action> {
+    pub fn on_note_on(&mut self, pitch: u8, velocity: u8, t_us: u64) -> Vec<Action> {
         let mut out = Vec::new();
         if self.finished {
             return out;
@@ -426,8 +429,8 @@ impl RhythmSession {
         };
 
         match (use_next, best, next) {
-            (true, _, Some(n)) => self.pending_next.push(n),
-            (false, Some((k, delta)), _) => self.record_hit(k, delta, &mut out),
+            (true, _, Some(n)) => self.pending_next.push((n.0, n.1, velocity)),
+            (false, Some((k, delta)), _) => self.record_hit(k, delta, velocity, &mut out),
             _ => {
                 if pos < self.start_ms as f64 - WINDOW_MS as f64 * tempo {
                     return out; // во время отсчёта нажатия не считаются
@@ -600,7 +603,7 @@ mod tests {
         let mut pi = 0;
         while t <= until_us && !s.is_finished() {
             while pi < presses.len() && presses[pi].0 <= t {
-                out.extend(s.on_note_on(presses[pi].1, presses[pi].0));
+                out.extend(s.on_note_on(presses[pi].1, 64, presses[pi].0));
                 pi += 1;
             }
             out.extend(s.advance(t));
@@ -709,13 +712,15 @@ mod tests {
         assert!(ev.contains(&RhythmEvent::Hit {
             id: "r1".into(),
             delta_ms: 90,
-            grade: Grade::Good
+            grade: Grade::Good,
+            velocity: 64
         }));
         assert!(ev.contains(&RhythmEvent::Extra { pitch: 61 }));
         assert!(ev.contains(&RhythmEvent::Hit {
             id: "r3".into(),
             delta_ms: -150,
-            grade: Grade::Poor
+            grade: Grade::Poor,
+            velocity: 64
         }));
         assert!(ev.contains(&RhythmEvent::Miss { id: "r2".into() }));
         assert!(ev.contains(&RhythmEvent::Miss { id: "r4".into() }));
@@ -773,7 +778,8 @@ mod tests {
         assert!(events(&out).contains(&RhythmEvent::Hit {
             id: "r2".into(),
             delta_ms: 40,
-            grade: Grade::Perfect
+            grade: Grade::Perfect,
+            velocity: 64
         }));
     }
 

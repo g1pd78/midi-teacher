@@ -731,6 +731,7 @@ button.section-tile:hover {
 /* Серия */
 .trainer.session {
   overflow: hidden;
+  position: relative;
 }
 .session-bar {
   display: flex;
@@ -834,6 +835,7 @@ button.section-tile:hover {
 .summary-overlay {
   position: absolute;
   inset: 0;
+  z-index: 5;
   display: grid;
   place-items: center;
   background: rgba(21, 23, 28, 0.55);
@@ -841,6 +843,8 @@ button.section-tile:hover {
 }
 .summary {
   width: min(520px, 92%);
+  max-height: calc(100% - 24px);
+  overflow: auto;
   color: var(--text);
 }
 .summary-stats {
@@ -961,6 +965,7 @@ code {
   gap: 10px;
   padding: 14px 18px 18px;
   min-height: 0;
+  position: relative;
 }
 .piece-bar {
   display: flex;
@@ -1526,4 +1531,287 @@ button.link.piece-link:hover {
 }
 .key-finger.auto {
   opacity: 0.6;
+}
+
+/* Этап 5: упражнения */
+.exercises {
+  flex: 1;
+  overflow: auto;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.warmup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.warmup-title {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+.warmup-list {
+  margin: 0;
+  padding-left: 22px;
+  color: #c9ccd2;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.warmup-list li.done {
+  color: var(--good);
+}
+.warmup-list li.done::after {
+  content: " ✓";
+}
+.ex-category.locked {
+  opacity: 0.7;
+}
+.ex-category-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.ex-category-head .section-h {
+  margin-bottom: 0;
+}
+.ex-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ex-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ex-group-name {
+  min-width: 190px;
+  font-size: 14px;
+  color: #c9ccd2;
+}
+.ex-variants {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ex-chip {
+  padding: 4px 10px;
+  font-size: 13px;
+  border-radius: 999px;
+}
+.ex-chip.open {
+  border-color: var(--right-hand);
+}
+.ex-chip.passed {
+  border-color: #2f5a45;
+  color: var(--good);
+}
+.finger-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 6px 0 12px;
+  flex-wrap: wrap;
+}
+.finger-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.finger-bar .bar {
+  width: 22px;
+  height: 60px;
+  display: flex;
+  align-items: flex-end;
+  background: #1a1d23;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.finger-bar .bar > div {
+  width: 100%;
+  background: var(--right-hand);
+}
+.finger-bar.weak .bar > div {
+  background: var(--warn);
+}
+.finger-bars-note {
+  align-self: center;
+  font-size: 13px;
+  margin-left: 6px;
+}
+.exercise-summary .summary-stats {
+  grid-template-columns: repeat(3, 1fr);
+}
+.exercise-summary .summary-stats .big {
+  font-size: 32px;
+}
+
+/* «Занятие на сегодня» */
+.today {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.today-title {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.today-title h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.today-step {
+  flex: 1 1 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 10px;
+}
+.today-step .num {
+  font-size: 12px;
+  color: var(--muted);
+}
+.today-step b {
+  font-size: 15px;
+}
+.today-step .muted {
+  font-size: 13px;
+}
+.today-step.done {
+  border-color: #2f5a45;
+}
+.today-step.done b::after {
+  content: " ✓";
+  color: var(--good);
+}
+.today-step.next {
+  border-color: var(--right-hand);
+}
+
+/* Теория: плашка «Новое», окно карточки, справочник */
+.theory-plaque {
+  position: absolute;
+  top: 212px;
+  right: 26px;
+  width: 300px;
+  z-index: 4;
+  background: var(--panel);
+  border: 1px solid #3d5a80;
+  border-left: 4px solid var(--right-hand);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+}
+.theory-plaque-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.theory-plaque p {
+  margin: 6px 0 8px;
+  color: #c9ccd2;
+  line-height: 1.45;
+}
+.theory-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 11, 14, 0.6);
+}
+.theory-modal-card {
+  width: min(640px, 92vw);
+  max-height: 88vh;
+  overflow: auto;
+}
+.theory-card h2 {
+  margin: 2px 0 10px;
+}
+.theory-card p {
+  line-height: 1.55;
+  color: #d4d6db;
+}
+.theory-group {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.theory-example {
+  flex: none;
+  min-height: 0;
+  padding: 10px 16px;
+  margin-top: 12px;
+  display: flex;
+  justify-content: center;
+}
+.theory-example > div {
+  width: 100%;
+  height: 150px;
+}
+.theory-example svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.reference {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 16px;
+  padding: 18px;
+}
+.reference-list {
+  overflow: auto;
+}
+.reference-list h1 {
+  margin: 0 0 10px;
+  font-size: 22px;
+}
+.reference-group {
+  margin-bottom: 12px;
+}
+.reference-group-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.reference-item {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  padding: 5px 8px;
+  font-size: 14px;
+}
+.reference-item.on {
+  background: var(--panel-2);
+  border-color: var(--line);
+}
+.reference-new {
+  color: var(--right-hand);
+}
+.reference-detail {
+  overflow: auto;
 }

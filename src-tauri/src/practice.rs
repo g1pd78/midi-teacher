@@ -8,7 +8,8 @@ use mt_core::fingering::{self, FingerNote, Fingering};
 use mt_core::piece::{HandMode, MeasureErrors};
 use mt_core::practice::{self, Hands, Outcome, Pass, PracticeView, UnitState};
 use mt_core::store::{
-    AttemptRecord, PieceActivity, PieceMeta, PieceRecord, Store, PLAY_BUCKET_SECS,
+    AttemptRecord, ExerciseResult, ExerciseStat, PieceActivity, PieceMeta, PieceRecord, Store,
+    TodayStatus, PLAY_BUCKET_SECS,
 };
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -339,4 +340,32 @@ pub fn fingering_set(
         )
     })?;
     Ok(fingers_for(hub.store.lock().as_ref(), &piece, &notes))
+}
+
+#[tauri::command]
+pub fn exercise_stats(hub: State<Arc<PracticeHub>>) -> Result<Vec<ExerciseStat>, String> {
+    hub.with_store(|s| s.exercise_stats())
+}
+
+#[tauri::command]
+pub fn exercise_record(
+    hub: State<Arc<PracticeHub>>,
+    result: ExerciseResult,
+) -> Result<Vec<ExerciseStat>, String> {
+    hub.flush_play_time();
+    hub.with_store(|s| {
+        s.record_exercise(&result, clock::unix_secs())?;
+        s.exercise_stats()
+    })
+}
+
+#[tauri::command]
+pub fn warmup_done(hub: State<Arc<PracticeHub>>) -> Result<(), String> {
+    hub.with_store(|s| s.set_warmup_done(clock::unix_secs()))
+}
+
+/// Что сделано сегодня; `day_start` — начало местных суток (секунды Unix) от интерфейса.
+#[tauri::command]
+pub fn today_status(hub: State<Arc<PracticeHub>>, day_start: i64) -> Result<TodayStatus, String> {
+    hub.with_store(|s| s.today(day_start))
 }
