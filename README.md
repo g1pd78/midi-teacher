@@ -40,6 +40,16 @@ MIDI своими инструментами и барабанами (GM-бан�
 Windows может показать предупреждение SmartScreen: установщик не подписан.
 Нажми «Подробнее» → «Выполнить в любом случае».
 
+Если Chrome блокирует архив («Это опасный файл»), скачай сборку без браузера
+через GitHub CLI (PowerShell):
+
+```powershell
+winget install --id GitHub.cli   # один раз
+gh auth login                    # один раз
+$id = gh run list -R g1pd78/midi-teacher -b claude/piano-learning-app-mmhm6f -s success -L 1 --json databaseId -q ".[0].databaseId"
+gh run download $id -R g1pd78/midi-teacher -p "MIDI-Teacher-windows-*" -D "$env:USERPROFILE\Downloads\MIDI-Teacher"
+```
+
 ## Локальная разработка (Windows)
 
 Нужно один раз:
