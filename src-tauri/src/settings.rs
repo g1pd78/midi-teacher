@@ -32,6 +32,15 @@ pub struct PiecePrefs {
     pub fingering: bool,
     /// Подсвечивать клавиши текущего шага.
     pub key_hints: bool,
+    /// `wait` — режим ожидания, `rhythm` — игра в темпе.
+    pub mode: String,
+    /// Темп относительно пьесы (0,3–1,2).
+    pub tempo: f32,
+    /// Отсчёт такта перед началом (режим ритма).
+    pub count_in: bool,
+    pub metronome: bool,
+    /// Показывать падающие ноты.
+    pub waterfall: bool,
 }
 
 impl Default for PiecePrefs {
@@ -43,6 +52,11 @@ impl Default for PiecePrefs {
             names: false,
             fingering: true,
             key_hints: true,
+            mode: "wait".into(),
+            tempo: 0.8,
+            count_in: true,
+            metronome: false,
+            waterfall: true,
         }
     }
 }

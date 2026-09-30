@@ -2,7 +2,18 @@ import { beforeAll, describe, expect, it } from "vitest";
 import createVerovioModule from "verovio/wasm";
 import { VerovioToolkit } from "verovio/esm";
 import { readFileSync } from "node:fs";
-import { addNoteNames, buildNotes, parseMei, timemapNoteIds, type MidiValues, type TimemapEntry } from "./score";
+import {
+  addNoteNames,
+  buildBeats,
+  buildNotes,
+  initialTempo,
+  loopRangeMs,
+  measureStarts,
+  parseMei,
+  timemapNoteIds,
+  type MidiValues,
+  type TimemapEntry,
+} from "./score";
 
 // Тесты используют тулкит напрямую (в приложении то же делает воркер).
 type Tk = VerovioToolkit & {
@@ -26,7 +37,7 @@ function load(file: string) {
   const midi: MidiValues = {};
   for (const id of timemapNoteIds(timemap)) midi[id] = tk.getMIDIValuesForElement(id);
   const structure = parseMei(mei);
-  return { mei, structure, notes: buildNotes(timemap, midi, structure) };
+  return { mei, structure, timemap, notes: buildNotes(timemap, midi, structure) };
 }
 
 describe("встроенные пьесы", () => {
@@ -65,6 +76,29 @@ describe("встроенные пьесы", () => {
     // До-диез в т. 20 и бекар в т. 24.
     expect(right.filter((n) => n.measure === 20).map((n) => n.pitch)).toContain(73);
     expect(notes.filter((n) => n.measure === 24 && n.hand === "left").map((n) => n.pitch)).toEqual([62, 50, 60]);
+  });
+
+  it("размер, ключи, такты и доли метронома", () => {
+    const { structure, timemap, notes } = load("src/pieces/minuet-g-anh114.musicxml");
+    expect(structure.meter).toEqual({ count: 3, unit: 4 });
+    expect(structure.clefOf.get(1)).toBe("G");
+    expect(structure.clefOf.get(2)).toBe("F");
+    expect(structure.measureIds).toHaveLength(32);
+    const starts = measureStarts(timemap, structure);
+    expect(starts.slice(0, 3)).toEqual([0, 1800, 3600]);
+    const tempo = initialTempo(timemap);
+    expect(tempo).toBe(100);
+    const end = Math.max(...notes.map((n) => n.startMs + n.durMs));
+    const beats = buildBeats(starts, end, structure.meter, tempo);
+    expect(beats).toHaveLength(32 * 3);
+    expect(beats.slice(0, 4)).toEqual([
+      { ms: 0, accent: true },
+      { ms: 600, accent: false },
+      { ms: 1200, accent: false },
+      { ms: 1800, accent: true },
+    ]);
+    expect(loopRangeMs(starts, end, 2, 3)).toEqual([1800, 5400]);
+    expect(loopRangeMs(starts, end, 31, 32)).toEqual([54000, end]);
   });
 
   it("подписи нот добавляются в MEI и отображаются", () => {

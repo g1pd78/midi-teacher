@@ -88,6 +88,8 @@ pub struct PieceConfig {
     pub accompany: bool,
     /// Темп для шагов, которые проходятся сами (1.0 — темп пьесы).
     pub tempo: f32,
+    /// Повторять по кругу (выбранные такты): после последнего шага — снова первый.
+    pub looping: bool,
 }
 
 impl Default for PieceConfig {
@@ -96,6 +98,7 @@ impl Default for PieceConfig {
             hands: HandMode::Both,
             accompany: true,
             tempo: 0.8,
+            looping: false,
         }
     }
 }
@@ -145,6 +148,12 @@ pub enum PieceEvent {
     Finished {
         summary: PieceSummary,
     },
+    /// Круг цикла пройден, начинается следующий.
+    #[serde(rename_all = "camelCase")]
+    LoopPass {
+        pass: u32,
+        summary: PieceSummary,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -181,6 +190,7 @@ pub struct PieceSession {
     errors_by_measure: BTreeMap<u32, u32>,
     started_us: u64,
     finished: bool,
+    pass: u32,
 }
 
 impl PieceSession {
@@ -199,6 +209,7 @@ impl PieceSession {
             errors_by_measure: BTreeMap::new(),
             started_us: 0,
             finished: false,
+            pass: 0,
         }
     }
 
@@ -317,7 +328,24 @@ impl PieceSession {
 
     fn finish(&mut self, t_us: u64, out: &mut Vec<Action>) {
         self.release_until(u32::MAX, out);
+        let summary = self.summary(t_us);
+        if self.cfg.looping && !self.steps.is_empty() {
+            self.pass += 1;
+            out.push(Action::Event(PieceEvent::LoopPass {
+                pass: self.pass,
+                summary,
+            }));
+            self.errors = 0;
+            self.errors_by_measure.clear();
+            self.started_us = t_us;
+            self.activate(0, t_us, out);
+            return;
+        }
         self.finished = true;
+        out.push(Action::Event(PieceEvent::Finished { summary }));
+    }
+
+    fn summary(&self, t_us: u64) -> PieceSummary {
         let played_steps = (0..self.steps.len())
             .filter(|&s| self.required(s).next().is_some())
             .count();
@@ -330,15 +358,13 @@ impl PieceSession {
             .map(|(&measure, &errors)| MeasureErrors { measure, errors })
             .collect();
         trouble.sort_by(|a, b| b.errors.cmp(&a.errors).then(a.measure.cmp(&b.measure)));
-        out.push(Action::Event(PieceEvent::Finished {
-            summary: PieceSummary {
-                played_steps,
-                required_notes,
-                errors: self.errors,
-                duration_ms: (t_us.saturating_sub(self.started_us) / 1000) as u32,
-                trouble_measures: trouble,
-            },
-        }));
+        PieceSummary {
+            played_steps,
+            required_notes,
+            errors: self.errors,
+            duration_ms: (t_us.saturating_sub(self.started_us) / 1000) as u32,
+            trouble_measures: trouble,
+        }
     }
 
     pub fn on_note_on(&mut self, pitch: u8, t_us: u64) -> Vec<Action> {
@@ -543,6 +569,7 @@ mod tests {
                 hands: HandMode::Right,
                 accompany: true,
                 tempo: 1.0,
+                looping: false,
             },
         );
         let a = s.start(0);
@@ -589,6 +616,7 @@ mod tests {
                 hands: HandMode::Right,
                 accompany: false,
                 tempo: 0.5,
+                looping: false,
             },
         );
         s.start(0);
@@ -614,6 +642,7 @@ mod tests {
                 hands: HandMode::Right,
                 accompany: true,
                 tempo: 1.0,
+                looping: false,
             },
         );
         let a = s.start(0);
@@ -634,6 +663,40 @@ mod tests {
     }
 
     #[test]
+    fn looping_restarts_after_last_step() {
+        let notes = vec![
+            note("a", 60, 0, 400, Hand::Right, 3),
+            note("b", 62, 400, 400, Hand::Right, 3),
+        ];
+        let cfg = PieceConfig {
+            hands: HandMode::Right,
+            looping: true,
+            ..Default::default()
+        };
+        let mut s = PieceSession::new(notes, cfg);
+        s.start(0);
+        s.on_note_on(61, 1);
+        s.on_note_on(60, 2);
+        let a = s.on_note_on(62, 3);
+        let pass = events(&a).into_iter().find_map(|e| match e {
+            PieceEvent::LoopPass { pass, summary } => Some((*pass, summary.errors)),
+            _ => None,
+        });
+        assert_eq!(pass, Some((1, 1)));
+        assert!(!s.is_finished());
+        assert_eq!(s.index(), 0, "снова первый шаг");
+        assert!(events(&a)
+            .iter()
+            .any(|e| matches!(e, PieceEvent::Step { index: 0, .. })));
+        // Второй круг без ошибок.
+        s.on_note_on(60, 4);
+        let a = s.on_note_on(62, 5);
+        assert!(events(&a).iter().any(
+            |e| matches!(e, PieceEvent::LoopPass { pass: 2, summary } if summary.errors == 0)
+        ));
+    }
+
+    #[test]
     fn repeated_chord_note_is_ignored_and_stop_releases_sound() {
         let mut s = PieceSession::new(
             piece(),
@@ -641,6 +704,7 @@ mod tests {
                 hands: HandMode::Right,
                 accompany: true,
                 tempo: 1.0,
+                looping: false,
             },
         );
         s.start(0);

@@ -187,6 +187,55 @@ try {
   if (steps !== 62) throw new Error(`сыграно шагов ${steps}, ожидалось 62`);
   ok("«Ода к радости» правой рукой: 62 шага, 1 ошибка в итоге");
 
+  // --- Этап 3: цикл в режиме ожидания и режим ритма ---
+  console.log("Сквозной тест: цикл и ритм");
+  await waitFor("к списку пьес", () => click("К списку пьес"));
+  await waitFor("снова «Ода к радости»", () =>
+    js("const b = [...document.querySelectorAll('.piece-card')].find((b) => b.textContent.includes('Ода к радости')); if (!b) return false; b.click(); return true;"),
+  );
+  await waitFor("ноты пьесы", () => js("return !!document.querySelector('.score-page svg g.note');"), 30000);
+  const setInput = (selector, index, value) =>
+    js(
+      "const [sel, i, v] = arguments; const el = document.querySelectorAll(sel)[i]; if (!el) return false;" +
+        "Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, String(v));" +
+        "el.dispatchEvent(new Event('input', { bubbles: true })); return true;",
+      [selector, index, value],
+    );
+  // Такт 2 по кругу: соль фа ми ре.
+  await waitFor("поле «с такта»", () => setInput(".loop-fields input", 0, 2));
+  await waitFor("поле «по такт»", () => setInput(".loop-fields input", 1, 2));
+  await waitFor("выделение такта", () => js("return document.querySelectorAll('.loop-rect').length === 1;"));
+  await waitFor("шаг цикла", async () => (await pitches()) === "67");
+  for (let pass = 0; pass < 2; pass++) {
+    for (const note of [67, 65, 64, 62]) {
+      const step = await stepNo();
+      await waitFor(`нота ${note}`, async () => (await pitches()) === String(note), 5000);
+      await press(note);
+      await waitFor("следующий шаг", async () => (await stepNo()) !== step, 5000);
+    }
+  }
+  const toast = await waitFor("сообщение о круге", () => js("return document.querySelector('.toast')?.textContent;"), 5000);
+  if (!/Круг \d: без ошибок/.test(toast)) throw new Error(`сообщение о круге: ${toast}`);
+  ok("цикл такта 2 в режиме ожидания: круг пройден без ошибок, курсор вернулся в начало");
+
+  // Режим ритма: один такт по кругу в темпе 100%, ничего не играем — все ноты пропущены.
+  await waitFor("режим «Ритм»", () => click("Ритм"));
+  await waitFor("темп 100%", () => setInput(".tempo input", 0, 1));
+  await waitFor("кнопка «Старт»", () => click("▶ Старт"));
+  await waitFor("идёт игра", () => js("return document.querySelector('.score-scroll')?.dataset.playing === '1';"));
+  await press(61); // лишняя нота во время игры
+  // Пропуски видны на стане до конца круга (с новым кругом отметки сбрасываются).
+  await waitFor("пропущенные ноты на стане", () => js("return document.querySelectorAll('g.note.mark-miss').length >= 2;"), 10000);
+  const rhythmToast = await waitFor(
+    "итог круга в ритме",
+    () => js("const t = document.querySelector('.toast')?.textContent ?? ''; return t.includes('нот') ? t : false;"),
+    15000,
+  );
+  if (!/Круг 1: 0% нот/.test(rhythmToast)) throw new Error(`круг в ритме: ${rhythmToast}`);
+  await waitFor("кнопка «Стоп»", () => click("■ Стоп"));
+  await waitFor("остановлено", () => js("return document.querySelector('.score-scroll')?.dataset.playing === '0';"));
+  ok("режим ритма: транспорт идёт, пропуски отмечены, цикл повторяется, остановка работает");
+
   console.log("Готово: все проверки пройдены");
 } catch (e) {
   console.error(`✗ ${e.message}`);

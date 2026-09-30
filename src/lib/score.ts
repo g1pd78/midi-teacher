@@ -38,9 +38,13 @@ export interface MeiStructure {
   /** Ключ стана: номер → "G" | "F" | "C". */
   clefOf: Map<number, string>;
   measures: number;
+  /** xml:id тактов по порядку (номер такта = индекс + 1). */
+  measureIds: string[];
+  /** Размер: долей в такте и длительность доли (4 — четверть, 8 — восьмая). */
+  meter: { count: number; unit: number };
 }
 
-const TAG = /<(\/?)(measure|staff|note|fing|tie|staffDef)\b([^>]*?)(\/?)>/g;
+const TAG = /<(\/?)(measure|staff|note|fing|tie|staffDef|clef|meterSig|scoreDef)\b([^>]*?)(\/?)>/g;
 
 function attr(attrs: string, name: string): string | undefined {
   const m = new RegExp(`(?:^|\\s)${name.replace(":", "\\:")}="([^"]*)"`).exec(attrs);
@@ -53,24 +57,56 @@ export function parseMei(mei: string): MeiStructure {
   const fingerOf = new Map<string, string>();
   const tieEndToStart = new Map<string, string>();
   const clefOf = new Map<number, string>();
+  const measureIds: string[] = [];
+  let meter = { count: 4, unit: 4 };
+  let meterFound = false;
+  let staffDefN = 0;
   let staves = 0;
   let measure = 0;
   let staff = 0;
 
   for (const m of mei.matchAll(TAG)) {
     const [whole, closing, tag, attrs] = m;
-    if (closing) continue;
+    if (closing) {
+      if (tag === "staffDef") staffDefN = 0;
+      continue;
+    }
     switch (tag) {
       case "staffDef": {
         const n = Number(attr(attrs, "n") ?? 0);
         staves = Math.max(staves, n);
         const shape = attr(attrs, "clef.shape");
-        if (shape) clefOf.set(n, shape);
+        if (shape && !clefOf.has(n)) clefOf.set(n, shape);
+        const count = Number(attr(attrs, "meter.count") ?? 0);
+        const unit = Number(attr(attrs, "meter.unit") ?? 0);
+        if (!meterFound && count && unit) (meter = { count, unit }), (meterFound = true);
+        // Самозакрытый staffDef не содержит вложенных clef/meterSig.
+        staffDefN = m[4] ? 0 : n;
         break;
       }
-      case "measure":
-        measure += 1;
+      case "scoreDef": {
+        const count = Number(attr(attrs, "meter.count") ?? 0);
+        const unit = Number(attr(attrs, "meter.unit") ?? 0);
+        if (!meterFound && count && unit) (meter = { count, unit }), (meterFound = true);
         break;
+      }
+      case "clef": {
+        const shape = attr(attrs, "shape");
+        if (shape && staffDefN && !clefOf.has(staffDefN)) clefOf.set(staffDefN, shape);
+        break;
+      }
+      case "meterSig": {
+        const count = Number(attr(attrs, "count") ?? 0);
+        const unit = Number(attr(attrs, "unit") ?? 0);
+        if (!meterFound && count && unit) (meter = { count, unit }), (meterFound = true);
+        break;
+      }
+      case "measure": {
+        measure += 1;
+        const id = attr(attrs, "xml:id");
+        if (id) measureIds.push(id);
+        break;
+      }
       case "staff":
         staff = Number(attr(attrs, "n") ?? 0);
         break;
@@ -99,7 +135,7 @@ export function parseMei(mei: string): MeiStructure {
       }
     }
   }
-  return { staffOf, measureOf, fingerOf, tieEndToStart, staves, clefOf, measures: measure };
+  return { staffOf, measureOf, fingerOf, tieEndToStart, staves, clefOf, measures: measure, measureIds, meter };
 }
 
 /** Рука по стану: первый (верхний) — правая, второй — левая. Один стан в басовом ключе — левая. */
@@ -164,4 +200,49 @@ export function addNoteNames(mei: string, name: (pname: string, accid: string | 
     const verse = `<verse n="9"><syl>${name(pname, accid)}</syl></verse>`;
     return selfClose ? `<note${attrs}>${verse}</note>` : `<note${attrs}>${verse}`;
   });
+}
+
+/** Начало каждого такта (мс) по временной карте; такты без записи — по соседним. */
+export function measureStarts(timemap: TimemapEntry[], s: MeiStructure): number[] {
+  const byId = new Map<string, number>();
+  for (const e of timemap) if (e.measureOn) byId.set(e.measureOn, e.tstamp);
+  const starts = s.measureIds.map((id) => byId.get(id) ?? NaN);
+  for (let i = 0; i < starts.length; i++) if (Number.isNaN(starts[i])) starts[i] = i > 0 ? starts[i - 1] : 0;
+  return starts;
+}
+
+/** Темп (четвертей в минуту) в начале пьесы. */
+export function initialTempo(timemap: TimemapEntry[]): number {
+  return timemap.find((e) => e.tempo)?.tempo ?? 120;
+}
+
+export interface Beat {
+  ms: number;
+  accent: boolean;
+}
+
+/** Доли метронома: по размеру и темпу внутри каждого такта (сильная — первая). */
+export function buildBeats(starts: number[], endMs: number, meter: { count: number; unit: number }, tempo: number): Beat[] {
+  const beatMs = beatDuration(meter, tempo);
+  const beats: Beat[] = [];
+  starts.forEach((start, i) => {
+    const next = i + 1 < starts.length ? starts[i + 1] : endMs;
+    for (let k = 0; k < meter.count; k++) {
+      const t = Math.round(start + k * beatMs);
+      if (t >= next - 1) break;
+      beats.push({ ms: t, accent: k === 0 });
+    }
+  });
+  return beats;
+}
+
+export function beatDuration(meter: { unit: number }, tempo: number): number {
+  return (60000 / tempo) * (4 / meter.unit);
+}
+
+/** Отрезок цикла в мс для тактов [from, to] (номера с 1). */
+export function loopRangeMs(starts: number[], endMs: number, from: number, to: number): [number, number] {
+  const a = starts[Math.max(0, from - 1)] ?? 0;
+  const b = to < starts.length ? starts[to] : endMs;
+  return [Math.round(a), Math.round(b)];
 }

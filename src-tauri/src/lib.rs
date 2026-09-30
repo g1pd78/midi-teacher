@@ -3,6 +3,7 @@
 
 mod library;
 mod piece;
+mod rhythm;
 mod settings;
 mod trainer;
 
@@ -13,6 +14,7 @@ use mt_core::midi::MidiMessage;
 use mt_core::store::Store;
 use parking_lot::Mutex;
 use piece::PieceHub;
+use rhythm::RhythmHub;
 use serde::Serialize;
 use settings::{AppSettings, UiPrefs};
 use std::path::PathBuf;
@@ -215,6 +217,12 @@ pub fn run() {
             let trainer_hub = hub.clone();
             let piece_hub = Arc::new(PieceHub::new(devices.clone(), app.handle().clone()));
             let piece_events = piece_hub.clone();
+            let rhythm_hub = Arc::new(RhythmHub::new(
+                devices.clone(),
+                audio.clone(),
+                app.handle().clone(),
+            ));
+            let rhythm_events = rhythm_hub.clone();
             thread::Builder::new()
                 .name("mt-events".into())
                 .spawn(move || {
@@ -224,6 +232,7 @@ pub fn run() {
                                 if let MidiMessage::NoteOn { note, .. } = e.msg {
                                     trainer_hub.on_note_on(&handle, note, e.time_us);
                                     piece_events.on_note_on(note, e.time_us);
+                                    rhythm_events.on_note_on(note, e.time_us);
                                 }
                                 let _ = handle.emit("midi", e);
                             }
@@ -271,6 +280,7 @@ pub fn run() {
             app.manage(state);
             app.manage(hub);
             app.manage(piece_hub);
+            app.manage(rhythm_hub);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -296,6 +306,9 @@ pub fn run() {
             library::library_open_folder,
             piece::piece_start,
             piece::piece_stop,
+            rhythm::rhythm_start,
+            rhythm::rhythm_stop,
+            rhythm::clock_now,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска приложения");

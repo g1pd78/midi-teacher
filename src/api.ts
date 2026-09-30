@@ -84,6 +84,11 @@ export interface PiecePrefs {
   names: boolean;
   fingering: boolean;
   keyHints: boolean;
+  mode: "wait" | "rhythm";
+  tempo: number;
+  countIn: boolean;
+  metronome: boolean;
+  waterfall: boolean;
 }
 
 export interface UiPrefs {
@@ -106,7 +111,43 @@ export interface PieceConfig {
   hands: HandMode;
   accompany: boolean;
   tempo: number;
+  looping: boolean;
 }
+
+export interface RhythmConfig {
+  hands: HandMode;
+  accompany: boolean;
+  tempo: number;
+  countIn: boolean;
+  metronome: boolean;
+  loopRange: [number, number] | null;
+  beatsPerMeasure: number;
+  beatMs: number;
+}
+
+export type Grade = "perfect" | "good" | "poor";
+
+export interface RhythmSummary {
+  requiredNotes: number;
+  hits: number;
+  misses: number;
+  extras: number;
+  perfect: number;
+  good: number;
+  poor: number;
+  accuracy: number;
+  meanAbsDeltaMs: number;
+  meanDeltaMs: number;
+  troubleMeasures: { measure: number; errors: number }[];
+}
+
+export type RhythmEvent =
+  | { kind: "clock"; originUs: number; pos0: number; tempo: number }
+  | { kind: "hit"; id: string; deltaMs: number; grade: Grade }
+  | { kind: "miss"; id: string }
+  | { kind: "extra"; pitch: number }
+  | { kind: "loopPass"; pass: number; summary: RhythmSummary }
+  | { kind: "finished"; summary: RhythmSummary };
 
 export interface PieceSummary {
   playedSteps: number;
@@ -120,7 +161,8 @@ export type PieceEvent =
   | { kind: "step"; index: number; noteIds: string[]; required: number[]; auto: boolean }
   | { kind: "hit"; index: number; noteIds: string[] }
   | { kind: "wrong"; index: number; pitch: number }
-  | { kind: "finished"; summary: PieceSummary };
+  | { kind: "finished"; summary: PieceSummary }
+  | { kind: "loopPass"; pass: number; summary: PieceSummary };
 
 export interface LibraryItem {
   id: string;
@@ -229,18 +271,26 @@ export interface Events {
   audio: AudioStatus;
   trainer: TrainerEvent;
   piece: PieceEvent;
+  rhythm: RhythmEvent;
 }
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-const mock = inTauri ? null : createMock();
+// Имитация создаётся при первом обращении (в тестах под Node её нет вовсе).
+let mockInstance: ReturnType<typeof createMock> | null = null;
+function mock() {
+  if (inTauri || typeof window === "undefined") return null;
+  return (mockInstance ??= createMock());
+}
 
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  return mock ? mock.invoke<T>(cmd, args) : tauriInvoke<T>(cmd, args);
+  const m = mock();
+  return m ? m.invoke<T>(cmd, args) : tauriInvoke<T>(cmd, args);
 }
 
 export function listen<K extends keyof Events>(event: K, cb: (payload: Events[K]) => void): Promise<UnlistenFn> {
-  if (mock) return Promise.resolve(mock.listen(event, cb));
+  const m = mock();
+  if (m) return Promise.resolve(m.listen(event, cb));
   return tauriListen<Events[K]>(event, (e) => cb(e.payload));
 }
 
@@ -268,6 +318,10 @@ export const api = {
   libraryOpenFolder: () => invoke<void>("library_open_folder"),
   pieceStart: (notes: PieceNoteIn[], config: PieceConfig) => invoke<number>("piece_start", { notes, config }),
   pieceStop: () => invoke<void>("piece_stop"),
+  rhythmStart: (notes: PieceNoteIn[], beats: { ms: number; accent: boolean }[], config: RhythmConfig) =>
+    invoke<void>("rhythm_start", { notes, beats, config }),
+  rhythmStop: () => invoke<void>("rhythm_stop"),
+  clockNow: () => invoke<number>("clock_now"),
 };
 
 export async function pickSoundfont(): Promise<string | null> {

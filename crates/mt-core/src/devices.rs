@@ -247,6 +247,8 @@ pub struct DeviceManager {
     available_outputs: Mutex<Vec<String>>,
     last_snapshot: Mutex<DevicesSnapshot>,
     sound_needed: Mutex<Option<bool>>,
+    /// Встроенный вывод нужен помимо маршрутов (метроном).
+    extra_demand: std::sync::atomic::AtomicBool,
 }
 
 impl DeviceManager {
@@ -267,6 +269,7 @@ impl DeviceManager {
             available_outputs: Mutex::new(Vec::new()),
             last_snapshot: Mutex::new(DevicesSnapshot::default()),
             sound_needed: Mutex::new(None),
+            extra_demand: std::sync::atomic::AtomicBool::new(false),
         });
         manager.rescan();
 
@@ -308,6 +311,16 @@ impl DeviceManager {
             s.app_channel = channel & 0x0F;
         }
         self.rescan();
+    }
+
+    /// Держать встроенный вывод открытым независимо от маршрутов (для метронома).
+    pub fn set_extra_sound_demand(&self, on: bool) {
+        let prev = self
+            .extra_demand
+            .swap(on, std::sync::atomic::Ordering::Relaxed);
+        if prev != on {
+            self.rescan();
+        }
     }
 
     /// Звук приложения (экранная клавиатура, вторая рука, метроном).
@@ -373,7 +386,8 @@ impl DeviceManager {
             .filter(|(_, s)| s.conn.is_some())
             .map(|(n, _)| n.clone())
             .collect();
-        let needed = internal_sound_needed(&settings, &connected);
+        let needed = internal_sound_needed(&settings, &connected)
+            || self.extra_demand.load(std::sync::atomic::Ordering::Relaxed);
         let snapshot = DevicesSnapshot {
             inputs: settings
                 .inputs

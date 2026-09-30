@@ -97,6 +97,53 @@ pub struct AudioDevices {
 enum SynthEvent {
     Midi { channel: u8, msg: MidiMessage },
     AllNotesOff,
+    Click { accent: bool },
+}
+
+/// Щелчок метронома: короткий затухающий тон, сильная доля выше и громче.
+/// Генерируется прямо в аудиопотоке, поверх синтезатора.
+struct ClickGen {
+    sample_rate: f32,
+    remaining: u32,
+    phase: f32,
+    step: f32,
+    amp: f32,
+    decay: f32,
+}
+
+impl ClickGen {
+    const LENGTH_SEC: f32 = 0.045;
+
+    fn new(sample_rate: u32) -> Self {
+        Self {
+            sample_rate: sample_rate as f32,
+            remaining: 0,
+            phase: 0.0,
+            step: 0.0,
+            amp: 0.0,
+            decay: 1.0,
+        }
+    }
+
+    fn trigger(&mut self, accent: bool) {
+        let freq = if accent { 1760.0 } else { 1320.0 };
+        self.step = std::f32::consts::TAU * freq / self.sample_rate;
+        self.phase = 0.0;
+        self.amp = if accent { 0.55 } else { 0.35 };
+        self.remaining = (Self::LENGTH_SEC * self.sample_rate) as u32;
+        self.decay = (-6.0 / (Self::LENGTH_SEC * self.sample_rate)).exp();
+    }
+
+    fn next(&mut self) -> f32 {
+        if self.remaining == 0 {
+            return 0.0;
+        }
+        self.remaining -= 1;
+        let s = self.amp * self.phase.sin();
+        self.phase += self.step;
+        self.amp *= self.decay;
+        s
+    }
 }
 
 enum Control {
@@ -179,6 +226,11 @@ impl AudioEngine {
 
     pub fn all_notes_off(&self) {
         let _ = self.events.try_send(SynthEvent::AllNotesOff);
+    }
+
+    /// Щелчок метронома (звучит через встроенный вывод, даже если ноты идут на пианино).
+    pub fn click(&self, accent: bool) {
+        let _ = self.events.try_send(SynthEvent::Click { accent });
     }
 
     pub fn apply(&self, config: AudioConfig) {
@@ -543,6 +595,7 @@ impl Worker {
         const CHUNK: usize = 1024;
         let mut left = vec![0.0f32; CHUNK];
         let mut right = vec![0.0f32; CHUNK];
+        let mut click = ClickGen::new(config.sample_rate);
 
         let data_fn = move |data: &mut [T], info: &cpal::OutputCallbackInfo| {
             let frames = data.len() / channels.max(1);
@@ -563,6 +616,7 @@ impl Worker {
                 match ev {
                     SynthEvent::Midi { channel, msg } => synth.handle(channel, msg),
                     SynthEvent::AllNotesOff => synth.all_notes_off(),
+                    SynthEvent::Click { accent } => click.trigger(accent),
                 }
             }
             let gain = f32::from_bits(volume.load(Ordering::Relaxed));
@@ -572,7 +626,8 @@ impl Worker {
                 let (l, r) = (&mut left[..n], &mut right[..n]);
                 synth.render(l, r);
                 for (i, frame) in block.chunks_mut(channels.max(1)).enumerate() {
-                    let (sl, sr) = (l[i] * gain, r[i] * gain);
+                    let c = click.next();
+                    let (sl, sr) = (l[i] * gain + c, r[i] * gain + c);
                     match frame.len() {
                         1 => frame[0] = T::from_sample(0.5 * (sl + sr)),
                         _ => {

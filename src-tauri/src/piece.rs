@@ -67,7 +67,7 @@ impl PieceHub {
         }
     }
 
-    fn stop(self: &Arc<Self>) {
+    pub fn stop(self: &Arc<Self>) {
         let actions = self
             .session
             .lock()
@@ -79,7 +79,13 @@ impl PieceHub {
 }
 
 #[tauri::command]
-pub fn piece_start(hub: State<Arc<PieceHub>>, notes: Vec<PieceNote>, config: PieceConfig) -> usize {
+pub fn piece_start(
+    hub: State<Arc<PieceHub>>,
+    rhythm: State<Arc<crate::rhythm::RhythmHub>>,
+    notes: Vec<PieceNote>,
+    config: PieceConfig,
+) -> usize {
+    rhythm.stop();
     hub.stop();
     let mut session = PieceSession::new(notes, config);
     let steps = session.steps().len();

@@ -43,7 +43,7 @@ export function createMock() {
       noteNames: "solfege",
       wizardDone: new URLSearchParams(location.search).has("done"),
       trainer: { layout: "single", errorMode: "wait", names: "struggle" },
-      piece: { layout: "line", hands: "right", accompany: true, names: false, fingering: true, keyHints: true },
+      piece: { layout: "line", hands: "right", accompany: true, names: false, fingering: true, keyHints: true, mode: "wait", tempo: 0.8, countIn: true, metronome: false, waterfall: true },
     },
     audioConfig: { backend: "auto", device: null, bufferFrames: 128, volume: 0.8 },
     customSoundfont: null,
@@ -87,6 +87,7 @@ export function createMock() {
     if (ev.type === "noteOn") {
       judge(ev.note);
       judgePiece(ev.note);
+      judgeRhythm(ev.note);
     }
     emitMidi(device, ev);
   };
@@ -231,7 +232,85 @@ export function createMock() {
   (window as unknown as { __mockPiece: () => number[] | null }).__mockPiece = () =>
     piece && piece.index < piece.steps.length ? pieceRequired(piece.index).map((n) => n.pitch) : null;
 
+  // --- Ритм (упрощённо: попадания ±200 мс, пропуски, итог) ---
+  type RNote = PieceNoteIn & { done?: boolean };
+  let rhythm: { notes: RNote[]; origin: number; pos0: number; end: number; tempo: number; timer: number; hits: number; misses: number; extras: number; deltas: number[] } | null = null;
+  const nowUs = () => performance.now() * 1000;
+  const rPos = () => (rhythm ? rhythm.pos0 + ((nowUs() - rhythm.origin) / 1000) * rhythm.tempo : 0);
+  function rhythmSummary() {
+    const r = rhythm!;
+    const abs = r.deltas.map(Math.abs);
+    return {
+      requiredNotes: r.notes.length,
+      hits: r.hits,
+      misses: r.misses,
+      extras: r.extras,
+      perfect: abs.filter((d) => d <= 50).length,
+      good: abs.filter((d) => d > 50 && d <= 120).length,
+      poor: abs.filter((d) => d > 120).length,
+      accuracy: r.notes.length ? r.hits / r.notes.length : 0,
+      meanAbsDeltaMs: abs.length ? Math.round(abs.reduce((a, b) => a + b, 0) / abs.length) : 0,
+      meanDeltaMs: r.deltas.length ? Math.round(r.deltas.reduce((a, b) => a + b, 0) / r.deltas.length) : 0,
+      troubleMeasures: [],
+    };
+  }
+  function judgeRhythm(note: number) {
+    if (!rhythm) return;
+    const pos = rPos();
+    const cand = rhythm.notes
+      .filter((n) => !n.done && n.pitch === note)
+      .map((n) => ({ n, d: Math.round((pos - n.startMs) / rhythm!.tempo) }))
+      .filter((c) => Math.abs(c.d) <= 200)
+      .sort((a, b) => Math.abs(a.d) - Math.abs(b.d))[0];
+    if (cand) {
+      cand.n.done = true;
+      rhythm.hits++;
+      rhythm.deltas.push(cand.d);
+      const g = Math.abs(cand.d) <= 50 ? "perfect" : Math.abs(cand.d) <= 120 ? "good" : "poor";
+      emit("rhythm", { kind: "hit", id: cand.n.id, deltaMs: cand.d, grade: g });
+    } else if (pos > rhythm.pos0 - 200) {
+      rhythm.extras++;
+      emit("rhythm", { kind: "extra", pitch: note });
+    }
+  }
+  function stopRhythmMock() {
+    if (rhythm) clearInterval(rhythm.timer);
+    rhythm = null;
+  }
+  (window as unknown as { __mockRhythm: () => { pos: number; next: { pitch: number; startMs: number }[] } | null }).__mockRhythm = () =>
+    rhythm ? { pos: rPos(), next: rhythm.notes.filter((n) => !n.done).slice(0, 4).map((n) => ({ pitch: n.pitch, startMs: n.startMs })) } : null;
+
   const handlers: Record<string, (args: Record<string, never>) => unknown> = {
+    clock_now: () => nowUs(),
+    rhythm_start: ({ notes, config }) => {
+      stopRhythmMock();
+      const cfg = config as unknown as { hands: string; tempo: number; loopRange: [number, number] | null; countIn: boolean; beatMs: number; beatsPerMeasure: number };
+      const [a, b] = cfg.loopRange ?? [0, Infinity];
+      const all = (notes as unknown as PieceNoteIn[]).filter((n) => n.startMs >= a && n.startMs < b);
+      const mine = all.filter((n) => cfg.hands === "both" || n.hand === cfg.hands).sort((x, y) => x.startMs - y.startMs);
+      const pos0 = cfg.loopRange ? a : Math.min(...all.map((n) => n.startMs));
+      const lead = Math.max(1200, cfg.countIn ? (cfg.beatsPerMeasure * cfg.beatMs) / cfg.tempo : 0);
+      const end = Math.max(...all.map((n) => n.startMs + n.durMs));
+      rhythm = { notes: mine, origin: nowUs() + lead * 1000, pos0, end, tempo: cfg.tempo, timer: 0, hits: 0, misses: 0, extras: 0, deltas: [] };
+      emit("rhythm", { kind: "clock", originUs: rhythm.origin, pos0, tempo: cfg.tempo });
+      rhythm.timer = window.setInterval(() => {
+        if (!rhythm) return;
+        const pos = rPos();
+        for (const n of rhythm.notes) {
+          if (!n.done && n.startMs + 200 * rhythm.tempo < pos) {
+            n.done = true;
+            rhythm.misses++;
+            emit("rhythm", { kind: "miss", id: n.id });
+          }
+        }
+        if (pos > rhythm.end + 200) {
+          emit("rhythm", { kind: "finished", summary: rhythmSummary() });
+          stopRhythmMock();
+        }
+      }, 20);
+      return undefined;
+    },
+    rhythm_stop: () => stopRhythmMock(),
     library_list: () => ({
       dir: "C:\\Users\\Ученик\\Documents\\MIDI Teacher",
       items: [{ id: "Песня.mid", title: "Песня", format: "midi", size: 2048, modified: 0 }],
