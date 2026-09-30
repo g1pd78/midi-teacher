@@ -8,6 +8,7 @@ pub mod clock;
 pub mod devices;
 pub mod fingering;
 pub mod midi;
+pub mod midifile;
 pub mod piece;
 pub mod practice;
 pub mod rhythm;
