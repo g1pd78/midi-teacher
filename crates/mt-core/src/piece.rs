@@ -17,6 +17,8 @@ use std::collections::{BTreeMap, HashSet};
 pub enum Hand {
     Right,
     Left,
+    /// Аккомпанемент из MIDI-файла: его всегда играет приложение.
+    Accomp,
 }
 
 /// Какую руку учим.
@@ -34,7 +36,7 @@ pub enum HandMode {
 impl HandMode {
     pub fn includes(self, hand: Hand) -> bool {
         match self {
-            HandMode::Both => true,
+            HandMode::Both => hand != Hand::Accomp,
             HandMode::Right => hand == Hand::Right,
             HandMode::Left => hand == Hand::Left,
             HandMode::None => false,
@@ -481,6 +483,28 @@ mod tests {
             2,
             "ми и соль с разницей 5 мс — один аккорд"
         );
+    }
+
+    #[test]
+    fn accompaniment_is_never_required() {
+        let mut notes = piece();
+        notes.push(note("a1", 72, 0, 2000, Hand::Accomp, 1));
+        let mut s = PieceSession::new(notes, PieceConfig::default());
+        let a = s.start(0);
+        let required = events(&a).into_iter().find_map(|e| match e {
+            PieceEvent::Step { required, .. } => Some(required.clone()),
+            _ => None,
+        });
+        assert_eq!(
+            required.unwrap().len(),
+            2,
+            "до и до малой, без аккомпанемента"
+        );
+        // Аккомпанемент звучит вместе с первой верной нотой ученика.
+        assert!(s
+            .on_note_on(60, 10)
+            .iter()
+            .any(|x| matches!(x, Action::AppNoteOn { pitch: 72, .. })));
     }
 
     #[test]

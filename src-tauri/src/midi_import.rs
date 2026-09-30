@@ -1,0 +1,280 @@
+//! MIDI-файлы: разбор, перевод в ноты, прослушивание дорожек и запись своей игры.
+
+use crate::library::{library_dir, safe_path, unique_name};
+use mt_core::audio::AudioEngine;
+use mt_core::clock;
+use mt_core::devices::DeviceManager;
+use mt_core::midi::MidiMessage;
+use mt_core::midifile::{self, ConvertOptions, Converted, MidiData, MidiInfo};
+use parking_lot::Mutex;
+use serde::Serialize;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
+use tauri::{AppHandle, State};
+
+/// Сколько секунд звучит дорожка в окне выбора.
+const PREVIEW_SECS: f64 = 8.0;
+/// Нажатия чуть раньше первой доли (после отсчёта) ещё попадают в запись.
+const EARLY_US: u64 = 300_000;
+
+struct Recording {
+    /// Первая доля записи (после отсчёта), мкс.
+    start_us: u64,
+    bpm: f64,
+    events: Vec<(u64, MidiMessage)>,
+    notes: usize,
+}
+
+pub struct MidiHub {
+    devices: Arc<DeviceManager>,
+    audio: AudioEngine,
+    preview_gen: AtomicU64,
+    rec: Mutex<Option<Recording>>,
+    rec_gen: AtomicU64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordStatus {
+    recording: bool,
+    /// Время от первой доли; во время отсчёта отрицательное.
+    elapsed_ms: i64,
+    notes: usize,
+}
+
+impl MidiHub {
+    pub fn new(devices: Arc<DeviceManager>, audio: AudioEngine) -> Self {
+        Self {
+            devices,
+            audio,
+            preview_gen: AtomicU64::new(0),
+            rec: Mutex::new(None),
+            rec_gen: AtomicU64::new(0),
+        }
+    }
+
+    /// Любое сообщение с входов: во время записи сохраняется.
+    pub fn on_midi(&self, msg: MidiMessage, time_us: u64) {
+        let mut guard = self.rec.lock();
+        let Some(rec) = guard.as_mut() else { return };
+        if time_us + EARLY_US < rec.start_us {
+            return; // отсчёт
+        }
+        if matches!(msg, MidiMessage::NoteOn { .. }) {
+            rec.notes += 1;
+        }
+        rec.events.push((time_us.saturating_sub(rec.start_us), msg));
+    }
+
+    fn stop_preview(&self) {
+        self.preview_gen.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn stop_metronome(&self) {
+        self.rec_gen.fetch_add(1, Ordering::SeqCst);
+        self.devices.set_extra_sound_demand(false);
+    }
+}
+
+fn load(app: &AppHandle, id: &str) -> Result<MidiData, String> {
+    let path = safe_path(&library_dir(app)?, id)?;
+    let bytes = std::fs::read(&path).map_err(|e| format!("не удалось прочитать {id}: {e}"))?;
+    midifile::parse(&bytes).map_err(|e| e.to_string())
+}
+
+/// Дорожки файла, темп, размер, тональность и предложенные роли.
+#[tauri::command]
+pub fn midi_inspect(app: AppHandle, id: String) -> Result<MidiInfo, String> {
+    Ok(midifile::inspect(&load(&app, &id)?))
+}
+
+/// Ноты для стана (MusicXML) и аккомпанемент.
+#[tauri::command]
+pub async fn midi_convert(
+    app: AppHandle,
+    id: String,
+    options: ConvertOptions,
+) -> Result<Converted, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let data = load(&app, &id)?;
+        midifile::convert(&data, &options).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Прослушать начало дорожки (звучит как «звук приложения»).
+#[tauri::command]
+pub fn midi_preview(
+    app: AppHandle,
+    hub: State<Arc<MidiHub>>,
+    id: String,
+    track: usize,
+) -> Result<(), String> {
+    let notes = midifile::track_preview(&load(&app, &id)?, track, PREVIEW_SECS);
+    hub.stop_preview();
+    let gen = hub.preview_gen.load(Ordering::SeqCst);
+    let hub = Arc::clone(&hub);
+    thread::Builder::new()
+        .name("mt-preview".into())
+        .spawn(move || {
+            // События: (время мс, нажатие?, высота, сила); отпускания раньше нажатий.
+            let mut events: Vec<(u32, bool, u8, u8)> = notes
+                .iter()
+                .flat_map(|&(s, d, p, v)| [(s, true, p, v), (s + d, false, p, 0)])
+                .collect();
+            events.sort_by_key(|e| (e.0, e.1));
+            let t0 = clock::now_us();
+            let mut sounding: Vec<u8> = Vec::new();
+            for (ms, on, pitch, velocity) in events {
+                loop {
+                    if hub.preview_gen.load(Ordering::SeqCst) != gen {
+                        break;
+                    }
+                    let due = t0 + ms as u64 * 1000;
+                    let now = clock::now_us();
+                    if now >= due {
+                        break;
+                    }
+                    thread::sleep(Duration::from_micros((due - now).min(20_000)));
+                }
+                if hub.preview_gen.load(Ordering::SeqCst) != gen {
+                    break;
+                }
+                if on {
+                    hub.devices.play_app(MidiMessage::NoteOn {
+                        note: pitch,
+                        velocity,
+                    });
+                    sounding.push(pitch);
+                } else if let Some(i) = sounding.iter().position(|&p| p == pitch) {
+                    sounding.swap_remove(i);
+                    hub.devices.play_app(MidiMessage::NoteOff { note: pitch });
+                }
+            }
+            for pitch in sounding {
+                hub.devices.play_app(MidiMessage::NoteOff { note: pitch });
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn midi_preview_stop(hub: State<Arc<MidiHub>>) {
+    hub.stop_preview();
+}
+
+/// Начать запись: отсчёт такта (если нужен), затем метроном (если нужен).
+#[tauri::command]
+pub fn record_start(
+    hub: State<Arc<MidiHub>>,
+    bpm: f64,
+    beats_per_bar: u32,
+    metronome: bool,
+    count_in: bool,
+) {
+    hub.stop_metronome();
+    let bpm = bpm.clamp(30.0, 240.0);
+    let beat_us = (60_000_000.0 / bpm) as u64;
+    let beats_per_bar = beats_per_bar.clamp(1, 12) as u64;
+    let lead = if count_in { beats_per_bar } else { 0 };
+    let first_click = clock::now_us() + 100_000;
+    let start_us = first_click + lead * beat_us;
+    *hub.rec.lock() = Some(Recording {
+        start_us,
+        bpm,
+        events: Vec::new(),
+        notes: 0,
+    });
+    if !(metronome || count_in) {
+        return;
+    }
+    hub.devices.set_extra_sound_demand(true);
+    let gen = hub.rec_gen.load(Ordering::SeqCst);
+    let hub = Arc::clone(&hub);
+    let spawned = thread::Builder::new()
+        .name("mt-record-click".into())
+        .spawn(move || {
+            let mut beat: u64 = 0;
+            loop {
+                let due = first_click + beat * beat_us;
+                loop {
+                    if hub.rec_gen.load(Ordering::SeqCst) != gen {
+                        return;
+                    }
+                    let now = clock::now_us();
+                    if now >= due {
+                        break;
+                    }
+                    thread::sleep(Duration::from_micros((due - now).min(20_000)));
+                }
+                if beat >= lead && !metronome {
+                    hub.devices.set_extra_sound_demand(false);
+                    return;
+                }
+                hub.audio.click(beat.is_multiple_of(beats_per_bar));
+                beat += 1;
+            }
+        });
+    if let Err(e) = spawned {
+        log::warn!("метроном записи не запущен: {e}");
+    }
+}
+
+#[tauri::command]
+pub fn record_status(hub: State<Arc<MidiHub>>) -> RecordStatus {
+    match hub.rec.lock().as_ref() {
+        Some(r) => RecordStatus {
+            recording: true,
+            elapsed_ms: (clock::now_us() as i64 - r.start_us as i64) / 1000,
+            notes: r.notes,
+        },
+        None => RecordStatus {
+            recording: false,
+            elapsed_ms: 0,
+            notes: 0,
+        },
+    }
+}
+
+/// Остановить запись и сохранить её в библиотеку. `None` — не было ни одной ноты
+/// (или `save = false`).
+#[tauri::command]
+pub fn record_stop(
+    app: AppHandle,
+    hub: State<Arc<MidiHub>>,
+    name: String,
+    save: bool,
+) -> Result<Option<String>, String> {
+    hub.stop_metronome();
+    let Some(rec) = hub.rec.lock().take() else {
+        return Ok(None);
+    };
+    if !save || rec.notes == 0 {
+        return Ok(None);
+    }
+    let clean: String = name
+        .chars()
+        .map(|c| if "/\\:*?\"<>|".contains(c) { '-' } else { c })
+        .collect();
+    let clean = clean.trim();
+    let title = if clean.is_empty() {
+        "Запись"
+    } else {
+        clean
+    };
+    let bytes = midifile::write_smf(&rec.events, rec.bpm, title);
+    let dir = library_dir(&app)?;
+    let file = unique_name(&dir, &format!("{title}.mid"));
+    std::fs::write(dir.join(&file), bytes).map_err(|e| format!("запись не сохранена: {e}"))?;
+    Ok(Some(file))
+}
+
+/// Сохранить текст в файл, выбранный в диалоге «Сохранить как».
+#[tauri::command]
+pub fn save_text_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content).map_err(|e| format!("не удалось сохранить {path}: {e}"))
+}

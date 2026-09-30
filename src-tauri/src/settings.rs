@@ -2,9 +2,11 @@
 
 use mt_core::audio::AudioConfig;
 use mt_core::devices::DeviceSettings;
+use mt_core::midifile::{HandOverride, TrackRole};
 use mt_core::piece::HandMode;
 use mt_core::trainer::ErrorMode;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// Настройки интерфейса.
@@ -19,6 +21,20 @@ pub struct UiPrefs {
     pub piece: PiecePrefs,
     /// Карточки теории, которые уже показаны («Понятно»).
     pub theory_seen: Vec<String>,
+    /// Настройки отдельных пьес по id: транспонирование, дорожки MIDI, правка рук.
+    pub piece_setup: BTreeMap<String, PieceSetup>,
+}
+
+/// Настройки одной пьесы.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PieceSetup {
+    /// Сдвиг в полутонах (−12…+12).
+    pub transpose: i8,
+    /// Роли дорожек MIDI-файла; `None` — ещё не выбраны (показать окно дорожек).
+    pub roles: Option<Vec<TrackRole>>,
+    /// Ноты, переброшенные в другую руку вручную.
+    pub hand_overrides: Vec<HandOverride>,
 }
 
 /// Настройки экрана пьесы.
@@ -98,6 +114,7 @@ impl Default for UiPrefs {
             trainer: TrainerPrefs::default(),
             piece: PiecePrefs::default(),
             theory_seen: Vec::new(),
+            piece_setup: BTreeMap::new(),
         }
     }
 }

@@ -343,6 +343,27 @@ fn detect_key<'a>(notes: impl Iterator<Item = &'a RawNote>) -> (i8, bool) {
     (best.1, best.2)
 }
 
+/// Ноты дорожки для прослушивания: первые `secs` секунд от её первой ноты,
+/// как (начало мс, длительность мс, высота, сила).
+pub fn track_preview(data: &MidiData, track: usize, secs: f64) -> Vec<(u32, u32, u8, u8)> {
+    let Some(t) = data.tracks.get(track) else {
+        return Vec::new();
+    };
+    let ms_per_tick = data.tempo_us as f64 / 1000.0 / data.ppq as f64;
+    let first = t.notes.iter().map(|n| n.tick).min().unwrap_or(0);
+    let limit = secs * 1000.0;
+    t.notes
+        .iter()
+        .map(|n| {
+            let start = (n.tick - first) as f64 * ms_per_tick;
+            let dur = ((n.end - n.tick) as f64 * ms_per_tick).min(limit - start);
+            (start, dur, n.pitch, n.velocity)
+        })
+        .filter(|&(start, ..)| start < limit)
+        .map(|(start, dur, p, v)| (start as u32, dur.max(30.0) as u32, p, v.max(1)))
+        .collect()
+}
+
 /// Знаки после транспонирования на `semitones` (не больше 6 знаков).
 pub fn transpose_fifths(fifths: i8, semitones: i8) -> i8 {
     let mut f = (fifths as i32 + 7 * semitones as i32).rem_euclid(12);

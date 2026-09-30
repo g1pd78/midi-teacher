@@ -86,7 +86,7 @@ fn extract_tag(text: &str, tag: &str) -> Option<String> {
 }
 
 /// Проверяет, что `id` — простое имя файла внутри папки (без путей).
-fn safe_path(dir: &Path, id: &str) -> Result<PathBuf, String> {
+pub fn safe_path(dir: &Path, id: &str) -> Result<PathBuf, String> {
     if id.is_empty() || id.contains(['/', '\\']) || id == "." || id == ".." {
         return Err("неверное имя файла".into());
     }
@@ -94,7 +94,7 @@ fn safe_path(dir: &Path, id: &str) -> Result<PathBuf, String> {
 }
 
 /// Свободное имя: «Пьеса.musicxml», «Пьеса (2).musicxml», …
-fn unique_name(dir: &Path, name: &str) -> String {
+pub fn unique_name(dir: &Path, name: &str) -> String {
     if !dir.join(name).exists() {
         return name.to_string();
     }

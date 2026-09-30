@@ -2,6 +2,7 @@
 //! команды и события Tauri и хранит настройки.
 
 mod library;
+mod midi_import;
 mod piece;
 mod practice;
 mod rhythm;
@@ -9,6 +10,7 @@ mod settings;
 mod trainer;
 
 use crossbeam_channel::unbounded;
+use midi_import::MidiHub;
 use mt_core::audio::{AudioConfig, AudioDevices, AudioEngine, AudioMeters, AudioStatus};
 use mt_core::devices::{DeviceEvent, DeviceManager, DevicesSnapshot, InputSettings, SoundRoute};
 use mt_core::midi::MidiMessage;
@@ -228,12 +230,15 @@ pub fn run() {
                 app.handle().clone(),
             ));
             let rhythm_events = rhythm_hub.clone();
+            let midi_hub = Arc::new(MidiHub::new(devices.clone(), audio.clone()));
+            let midi_events = midi_hub.clone();
             thread::Builder::new()
                 .name("mt-events".into())
                 .spawn(move || {
                     for ev in rx {
                         match ev {
                             DeviceEvent::Midi(e) => {
+                                midi_events.on_midi(e.msg, e.time_us);
                                 if let MidiMessage::NoteOn { note, velocity } = e.msg {
                                     trainer_hub.on_note_on(&handle, note, e.time_us);
                                     piece_events.on_note_on(note, e.time_us);
@@ -288,6 +293,7 @@ pub fn run() {
             app.manage(piece_hub);
             app.manage(rhythm_hub);
             app.manage(practice_hub);
+            app.manage(midi_hub);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -327,6 +333,14 @@ pub fn run() {
             practice::exercise_record,
             practice::warmup_done,
             practice::today_status,
+            midi_import::midi_inspect,
+            midi_import::midi_convert,
+            midi_import::midi_preview,
+            midi_import::midi_preview_stop,
+            midi_import::record_start,
+            midi_import::record_status,
+            midi_import::record_stop,
+            midi_import::save_text_file,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска приложения");
