@@ -21,15 +21,15 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 DIV = 4  # делений на четверть
-DURS = {"1": 16, "2.": 12, "2": 8, "4.": 6, "4": 4, "8.": 3, "8": 2, "16": 1}
-TYPES = {16: ("whole", 0), 12: ("half", 1), 8: ("half", 0), 6: ("quarter", 1), 4: ("quarter", 0),
+DURS = {"1": 16, "2.": 12, "2": 8, "4..": 7, "4.": 6, "4": 4, "8.": 3, "8": 2, "16": 1}
+TYPES = {16: ("whole", 0), 12: ("half", 1), 8: ("half", 0), 7: ("quarter", 2), 6: ("quarter", 1), 4: ("quarter", 0),
          3: ("eighth", 1), 2: ("eighth", 0), 1: ("16th", 0)}
 STEP_SEMI = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 # Знаки при ключе: число диезов → какие ступени повышены.
 SHARP_ORDER = "FCGDAEB"
 FLAT_ORDER = "BEADGCF"
 
-TOKEN = re.compile(r"^(?P<pitches>r|[A-G][#b]?\d(?:\+[A-G][#b]?\d)*)(?P<force>!?):(?P<dur>\d+\.?)(?:/(?P<fing>\d(?:\+\d)*))?(?P<tie>~?)$")
+TOKEN = re.compile(r"^(?P<pitches>r|[A-G][#b]?\d(?:\+[A-G][#b]?\d)*)(?P<force>!?):(?P<dur>\d+\.{0,2})(?:/(?P<fing>\d(?:\+\d)*))?(?P<tie>~?)$")
 PITCH = re.compile(r"^([A-G])([#b]?)(\d)$")
 
 
@@ -140,13 +140,22 @@ def staff_measure(text: str, staff: int, fifths: int, ties: dict, measure_len: i
 def build(piece: dict) -> str:
     beats, beat_type = piece["time"]
     measure_len = beats * DIV * 4 // beat_type
+    # Затакт: первый такт короче (неполный), последний — дополняет его, если short_end.
+    pickup = piece.get("pickup", 0)
     fifths = piece["fifths"]
     rh, lh = piece["rh"], piece["lh"]
     assert len(rh) == len(lh), "число тактов в руках различается"
     ties: dict = {}
     measures = []
     for i, (r, l) in enumerate(zip(rh, lh), start=1):
-        parts = [f'<measure number="{i}">']
+        this_len = measure_len
+        if pickup and i == 1:
+            this_len = pickup
+        elif pickup and i == len(rh) and piece.get("short_end"):
+            this_len = measure_len - pickup
+        number = i - 1 if pickup else i
+        implicit = ' implicit="yes"' if pickup and i == 1 else ""
+        parts = [f'<measure number="{number}"{implicit}>']
         if i == 1:
             parts.append(
                 f"<attributes><divisions>{DIV}</divisions><key><fifths>{fifths}</fifths></key>"
@@ -157,10 +166,10 @@ def build(piece: dict) -> str:
                 f'<per-minute>{piece["tempo"]}</per-minute></metronome></direction-type>'
                 f'<sound tempo="{piece["tempo"]}"/></direction>'
             )
-        right, _ = staff_measure(r, 1, fifths, ties, measure_len, f"такт {i}, правая")
-        left, _ = staff_measure(l, 2, fifths, ties, measure_len, f"такт {i}, левая")
+        right, _ = staff_measure(r, 1, fifths, ties, this_len, f"такт {i}, правая")
+        left, _ = staff_measure(l, 2, fifths, ties, this_len, f"такт {i}, левая")
         parts += right
-        parts.append(f"<backup><duration>{measure_len}</duration></backup>")
+        parts.append(f"<backup><duration>{this_len}</duration></backup>")
         parts += left
         if i == len(rh):
             parts.append('<barline location="right"><bar-style>light-heavy</bar-style></barline>')
@@ -297,10 +306,213 @@ MINUET = {
 }
 
 
+# --- Этап 5: простые пьесы ---------------------------------------------------
+# Мелодии — общественное достояние. Источники записи указаны у каждой пьесы;
+# партия левой руки — простой бас по гармонии, MIDI Teacher.
+
+# «Ах, скажу я вам, мама» (Twinkle, Twinkle). Мелодия по Musica Viva (abc.musicaviva.com, X:571)
+# и нотной вставке статьи Википедии «Twinkle, Twinkle, Little Star».
+TWINKLE_A = ["C4:4 C4:4 G4:4 G4:4", "A4:4 A4:4 G4:2", "F4:4 F4:4 E4:4 E4:4", "D4:4 D4:4 C4:2"]
+TWINKLE_B = ["G4:4 G4:4 F4:4 F4:4", "E4:4 E4:4 D4:2"] * 2
+TWINKLE_LA = ["C3:1", "F3:2 C3:2", "F3:2 C3:2", "G3:2 C3:2"]
+TWINKLE = {
+    "title": "Ах, скажу я вам, мама",
+    "composer": "Французская народная песня",
+    "rights": "Общественное достояние. Мелодия по Musica Viva (X:571); бас — MIDI Teacher.",
+    "time": (4, 4),
+    "fifths": 0,
+    "tempo": 90,
+    "rh": TWINKLE_A + TWINKLE_B + TWINKLE_A,
+    "lh": TWINKLE_LA + ["C3:2 G3:2"] * 4 + TWINKLE_LA,
+}
+
+# «Братец Яков» (Frère Jacques). Мелодия по нотным вставкам статей Википедии
+# (en «Frère Jacques», de «Bruder Jakob»), транспонировано в до мажор.
+JACQUES = {
+    "title": "Братец Яков",
+    "composer": "Французская народная песня",
+    "rights": "Общественное достояние. Мелодия по нотным вставкам Википедии, до мажор; бас — MIDI Teacher.",
+    "time": (4, 4),
+    "fifths": 0,
+    "tempo": 100,
+    "rh": ["C4:4 D4:4 E4:4 C4:4"] * 2 + ["E4:4 F4:4 G4:2"] * 2
+    + ["[G4:8 A4:8 G4:8 F4:8] E4:4 C4:4"] * 2 + ["C4:4 G3:4 C4:2"] * 2,
+    "lh": ["C3:4 G2:4 C3:2"] * 8,
+}
+
+# «При свете луны» (Au clair de la lune). Мелодия по нотной вставке статьи
+# французской Википедии «Au clair de la lune».
+LUNE_A = ["C5:4 C5:4 C5:4 D5:4", "E5:2 D5:2", "C5:4 E5:4 D5:4 D5:4", "C5:1"]
+LUNE_LA = ["C3:1", "C3:2 G2:2", "C3:2 G2:2", "C3:1"]
+LUNE = {
+    "title": "При свете луны",
+    "composer": "Французская народная песня",
+    "rights": "Общественное достояние. Мелодия по нотной вставке французской Википедии; бас — MIDI Teacher.",
+    "time": (4, 4),
+    "fifths": 0,
+    "tempo": 100,
+    "rh": LUNE_A + LUNE_A + ["D5:4 D5:4 D5:4 D5:4", "A4:2 A4:2", "D5:4 C5:4 B4:4 A4:4", "G4:1"] + LUNE_A,
+    "lh": LUNE_LA + LUNE_LA + ["G2:1", "D3:1", "G2:1", "G2:1"] + LUNE_LA,
+}
+
+# «Во поле берёза стояла». Мелодия по Musica Viva (abc.musicaviva.com, «The birch tree», X:7955).
+BEREZA = {
+    "title": "Во поле берёза стояла",
+    "composer": "Русская народная песня",
+    "rights": "Общественное достояние. Мелодия по Musica Viva (X:7955); бас — MIDI Teacher.",
+    "time": (2, 4),
+    "fifths": 0,
+    "tempo": 88,
+    "rh": [
+        "[E5:8 E5:8 E5:8 E5:8]", "D5:4 [C5:8 C5:8]", "B4:4 A4:4",
+        "[E5:8 E5:8 G5:8 E5:8]", "[D5:8 D5:8 C5:8 C5:8]", "B4:4 A4:4",
+        "B4:4. C5:8", "D5:4 [C5:8 C5:8]", "B4:4 A4:4",
+        "B4:4. C5:8", "[D5:8 E5:8 C5:8 C5:8]", "B4:4 A4:4",
+    ],
+    "lh": [
+        "A3:2", "D3:4 A3:4", "E3:4 A3:4",
+        "C3:2", "G2:4 C3:4", "E3:4 A3:4",
+        "E3:2", "D3:4 A3:4", "E3:4 A3:4",
+        "E3:2", "D3:4 A3:4", "E3:4 A2:4",
+    ],
+}
+
+# «Бубенчики» (Jingle Bells, припев; Дж. Пьерпонт, 1857). Общеизвестная мелодия припева, до мажор.
+BELLS = {
+    "title": "Бубенчики",
+    "composer": "Дж. Пьерпонт, припев «Jingle Bells»",
+    "rights": "Общественное достояние (1857). Припев, до мажор; бас — MIDI Teacher.",
+    "time": (4, 4),
+    "fifths": 0,
+    "tempo": 110,
+    "rh": [
+        "E4:4 E4:4 E4:2", "E4:4 E4:4 E4:2", "E4:4 G4:4 C4:4. D4:8", "E4:1",
+        "F4:4 F4:4 F4:4. F4:8", "F4:4 E4:4 E4:4 [E4:8 E4:8]", "E4:4 D4:4 D4:4 E4:4", "D4:2 G4:2",
+        "E4:4 E4:4 E4:2", "E4:4 E4:4 E4:2", "E4:4 G4:4 C4:4. D4:8", "E4:1",
+        "F4:4 F4:4 F4:4 F4:4", "F4:4 E4:4 E4:4 [E4:8 E4:8]", "G4:4 G4:4 F4:4 D4:4", "C4:1",
+    ],
+    "lh": [
+        "C3:1", "C3:1", "C3:1", "C3:1", "F3:1", "C3:1", "D3:2 G2:2", "G2:1",
+        "C3:1", "C3:1", "C3:1", "C3:1", "F3:1", "C3:1", "G2:1", "C3:1",
+    ],
+}
+
+# «Калинка» (И. Ларионов, 1860), припев. Мелодия по abcnotation.com
+# (trillian.mit.edu/~jc/music/abc/Russia/song/Kalinka_Dm), ре минор.
+KALINKA_A = ["G4:4 [E4:8 F4:8]", "G4:4 [E4:8 F4:8]", "G4:4 [F4:8 E4:8]", "D4:4 [A4:8 A4:8]",
+             "[G4:8. F4:16 E4:8 F4:8]", "G4:4 [E4:8 F4:8]", "G4:4 [F4:8 E4:8]"]
+KALINKA_LA = ["A2:2", "A2:2", "A2:2", "D3:2", "A2:2", "A2:2", "A2:2"]
+KALINKA = {
+    "title": "Калинка (припев)",
+    "composer": "И. Ларионов",
+    "rights": "Общественное достояние (1860). Мелодия припева по сборнику abc Джона Чемберса; бас — MIDI Teacher.",
+    "time": (2, 4),
+    "fifths": -1,
+    "tempo": 96,
+    "pickup": 4,
+    "short_end": True,
+    "rh": ["A4:4"] + KALINKA_A + ["D4:4 A4:4"] + KALINKA_A + ["D4:4"],
+    "lh": ["r:4"] + KALINKA_LA + ["D3:2"] + KALINKA_LA + ["D3:4"],
+}
+
+# Й. Брамс, «Колыбельная» (Wiegenlied, op. 49 №4). Мелодия по нотной вставке статьи
+# Википедии «Wiegenlied (Brahms)», транспонировано из ми-бемоль в до мажор, без форшлагов.
+BRAHMS = {
+    "title": "Колыбельная",
+    "composer": "Й. Брамс, op. 49 №4",
+    "rights": "Общественное достояние. Мелодия по нотной вставке Википедии, до мажор; бас — MIDI Teacher.",
+    "time": (3, 4),
+    "fifths": 0,
+    "tempo": 72,
+    "pickup": 4,
+    "short_end": True,
+    "rh": [
+        "[E4:8 E4:8]",
+        "G4:4. E4:8 E4:4", "G4:4 r:4 [E4:8 G4:8]", "C5:4 B4:4. A4:8", "A4:4 G4:4 [D4:8 E4:8]",
+        "F4:4 D4:4 [D4:8 E4:8]", "F4:4 r:4 [D4:8 F4:8]", "[B4:8 A4:8] G4:4 B4:4", "C5:4 r:4 [C4:8 C4:8]",
+        "C5:2 [A4:8 F4:8]", "G4:2 [E4:8 C4:8]", "F4:4 G4:4 A4:4", "G4:2 [C4:8 C4:8]",
+        "C5:2 [A4:8 F4:8]", "G4:2 [E4:8 C4:8]", "F4:4 E4:4 D4:4", "C4:2",
+    ],
+    "lh": [
+        "r:4",
+        "C3:2.", "C3:2.", "G2:2.", "C3:2.", "G2:2.", "G2:2.", "G2:2.", "C3:2.",
+        "F3:2.", "C3:2.", "G2:2.", "C3:2.", "F3:2.", "C3:2.", "G2:2.", "C3:2",
+    ],
+}
+
+# П. Чайковский, «Старинная французская песенка» (op. 39 №16), упрощённо: мелодия полностью,
+# в левой руке — басовые ноты. Источник: Mutopia Project №2080 (Schirmer, 1904).
+OFS_HEAD = ["[G4:8 A4:8 Bb4:8 C5:8]", "D5:4. D5:8", "[C5:8 D5:8 Eb5:8 C5:8]", "D5:4. D5:8",
+            "[C5:8 D5:8 Eb5:8 C5:8]", "[D5:8 Eb5:16 D5:16 C5:8 Bb4:8]", "A4:4.. G4:16"]
+OFS_BASS = ["G3:2"] * 6 + ["F#3:4 D3:4"]
+OLD_FRENCH = {
+    "title": "Старинная французская песенка",
+    "composer": "П. И. Чайковский, op. 39 №16",
+    "rights": "Общественное достояние. По изданию Mutopia Project №2080 (Schirmer, 1904), упрощённо: в левой руке бас.",
+    "time": (2, 4),
+    "fifths": -2,
+    "tempo": 70,
+    "pickup": 2,
+    "rh": ["D4:8"] + OFS_HEAD + ["G4:4. D4:8"] + OFS_HEAD + ["G4:2"]
+    + ["G4:4 G4:8 A4:8", "Bb4:4. Bb4:8", "C5:4 C5:4", "A4:4. A4:8", "D5:4. D5:8",
+       "[Eb5:8 F5:16 Eb5:16 D5:8 C5:8]", "Bb4:4 A4:8 G4:8", "F#4+A4:4. D4:8"]
+    + OFS_HEAD + ["G4:2"],
+    "lh": ["r:8"] + OFS_BASS + ["G3:4 G2:4"] + OFS_BASS + ["G3:2"]
+    + ["C3:2", "G2:2", "C3:2", "D3:2", "G2:2", "C3:2", "D3:2", "D3:2"]
+    + ["G3:2"] * 6 + ["C3:4 D3:4", "G2:2"],
+}
+
+# Менуэт соль минор, BWV Anh. 115 (приписывается Кр. Петцольду). Источник: Mutopia Project №76
+# (Bach-Gesellschaft). Без украшений; два низких си-бемоль (тт. 16 и 24) подняты на октаву.
+MINUET_GM = {
+    "title": "Менуэт соль минор, BWV Anh. 115",
+    "composer": "Кр. Петцольд (из «Нотной тетради Анны Магдалены Бах»)",
+    "rights": "Общественное достояние. По изданию Mutopia Project №76 (Bach-Gesellschaft), без украшений.",
+    "time": (3, 4),
+    "fifths": -2,
+    "tempo": 96,
+    "rh": [
+        "Bb5:4 A5:4 G5:4", "A5:4 D5:4 D5:4", "G5:4 [G4:8 A4:8 Bb4:8 C5:8]", "D5:2.",
+        "Eb5:4 [F5:8 Eb5:8 D5:8 C5:8]", "D5:4 [Eb5:8 D5:8 C5:8 Bb4:8]", "C5:4 [D5:8 C5:8 Bb4:8 C5:8]", "A4:2.",
+        "Bb5:4 A5:4 G5:4", "A5:4 D5:4 D5:4", "G5:4 [G4:8 A4:8 Bb4:8 C5:8]", "D5:2.",
+        "F5:4 [G5:8 F5:8 Eb5:8 D5:8]", "Eb5:4 [F5:8 Eb5:8 D5:8 C5:8]", "D5:4 G5:4 C5:4", "D4+F4+Bb4:2.",
+        "D5:4 [Bb4:8 C5:8 D5:8 E5:8]", "F5:4 G5:4 A5:4", "Bb5:4 [G5:8 A5:8 Bb5:8 G5:8]", "A5:4 [G5:8 A5:8] F5:4",
+        "[F4:8 G4:8 A4:8 Bb4:8 C5:8 D5:8]", "Eb5:4 D5:4 C5:4", "F5:4 Bb4:4 A4:4", "Bb4:2.",
+        "G4:4 [D5:8 C5:8] D5:4", "G4:4 [Eb5:8 D5:8] Eb5:4", "[G4:8 D5:8 F#4:8 C5:8 G4:8 Bb4:8]", "A4:2 r:4",
+        "[D4:8 E4:8 F#4:8 G4:8 A4:8 Bb4:8]", "C5:4 Bb4:4 A4:4", "[Bb4:8 C5:16 D5:16] G4:4 F#4:4", "Bb3+D4+G4:2.",
+    ],
+    "lh": [
+        "G3:2.", "F3:2.", "Eb3:2.", "D3:4 [D4:8 C4:8 Bb3:8 A3:8]",
+        "G3+Bb3:2 A3:4", "Bb3:2 G3:4", "A3:4 F#3:4 G3:4", "D3:4 [D4:8 C4:8 Bb3:8 A3:8]",
+        "G3:2.", "F3:2.", "Eb3:2.", "D3:4 [D4:8 C4:8 B3:8 A3:8]",
+        "B3+D4:2 G2:4", "C3:4 A2:4 F2:4", "Bb2:4 Eb2:4 F2+A2:4", "Bb2:4 Bb2:2",
+        "Bb2:2.", "A2:4 G2:4 F2:4", "G2:4 E2:4 C2:4", "F2:2 r:4",
+        "A2:4 G2:4 F2:4", "G2:4 F2:4 Eb2:4", "D2:4 Eb2:4 F2:4", "Bb2:4 D3:4 C3:4",
+        "B2+D3:2.", "C3:2.", "Bb2:4 A2:4 G2:4", "D3:4 [A2:8 G2:8 F#2:8 E2:8]",
+        "D2:2 r:4", "Eb3:4 D3:4 C3:4", "Bb2:4 C3:4 D3:4", "G3:4 G2:2",
+    ],
+}
+
+
+PIECES = [
+    ("ode-to-joy", ODE),
+    ("minuet-g-anh114", MINUET),
+    ("twinkle", TWINKLE),
+    ("frere-jacques", JACQUES),
+    ("au-clair-de-la-lune", LUNE),
+    ("vo-pole-bereza", BEREZA),
+    ("jingle-bells", BELLS),
+    ("kalinka", KALINKA),
+    ("brahms-lullaby", BRAHMS),
+    ("old-french-song", OLD_FRENCH),
+    ("minuet-gm-anh115", MINUET_GM),
+]
+
+
 def main() -> None:
     out = Path(__file__).resolve().parent.parent / "src" / "pieces"
     out.mkdir(parents=True, exist_ok=True)
-    for name, piece in [("ode-to-joy", ODE), ("minuet-g-anh114", MINUET)]:
+    for name, piece in PIECES:
         path = out / f"{name}.musicxml"
         path.write_text(build(piece), encoding="utf-8")
         print(f"{path.relative_to(out.parent.parent)}: {len(piece['rh'])} тактов")

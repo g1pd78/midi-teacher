@@ -142,6 +142,28 @@ describe("встроенные пьесы", () => {
     expect(parseFinger("")).toBeNull();
   });
 
+  it.each([
+    // файл, тактов, первые ноты правой руки, есть левая рука
+    ["twinkle", 12, [60, 60, 67, 67, 69, 69, 67]],
+    ["frere-jacques", 8, [60, 62, 64, 60, 60, 62, 64, 60]],
+    ["au-clair-de-la-lune", 16, [72, 72, 72, 74, 76, 74]],
+    ["vo-pole-bereza", 12, [76, 76, 76, 76, 74, 72, 72, 71, 69]],
+    ["jingle-bells", 16, [64, 64, 64, 64, 64, 64, 64, 67, 60, 62, 64]],
+    ["kalinka", 17, [69, 67, 64, 65, 67, 64, 65]],
+    ["brahms-lullaby", 17, [64, 64, 67, 64, 64, 67]],
+    ["old-french-song", 33, [62, 67, 69, 70, 72, 74]],
+    ["minuet-gm-anh115", 32, [82, 81, 79, 81, 74, 74, 79, 67, 69, 70, 72, 74]],
+  ])("встроенная пьеса %s: такты, мелодия, обе руки", (file, measures, head) => {
+    const { notes, structure } = load(`src/pieces/${file}.musicxml`);
+    expect(structure.measures).toBe(measures);
+    const right = notes.filter((n) => n.hand === "right").sort((a, b) => a.startMs - b.startMs || b.pitch - a.pitch);
+    const left = notes.filter((n) => n.hand === "left");
+    expect(right.slice(0, head.length).map((n) => n.pitch)).toEqual(head);
+    expect(left.length).toBeGreaterThan(3);
+    // Все ноты в пределах клавиатуры 61 клавиши (до большой — до пятой октавы).
+    for (const n of notes) expect(n.pitch).toBeGreaterThanOrEqual(36);
+  });
+
   it("подписи нот добавляются в MEI и отображаются", () => {
     const { mei } = load("src/pieces/ode-to-joy.musicxml");
     const named = addNoteNames(mei, (p) => p.toUpperCase());

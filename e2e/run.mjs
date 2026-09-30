@@ -334,6 +334,56 @@ try {
   );
   ok("экран «Прогресс» показывает пьесу и её фрагменты");
 
+  // --- Этап 5: теория, упражнения, разминка, «Занятие на сегодня», справочник ---
+  console.log("Сквозной тест: упражнения и теория");
+  // Плашка «Новое» в пьесе: «Понятно» отмечает карточку показанной.
+  await waitFor("к пьесам", () => click("Пьесы"));
+  await waitFor("«Менуэт соль минор»", () =>
+    js("const b = [...document.querySelectorAll('.piece-card')].find((b) => b.textContent.includes('Менуэт соль минор')); if (!b) return false; b.click(); return true;"),
+  );
+  const plaque = await waitFor("плашка теории", () => js("return document.querySelector('.theory-plaque')?.dataset.theory ?? '';"), 30000);
+  await js("[...document.querySelectorAll('.theory-plaque button')].find((b) => b.textContent.includes('Понятно')).click();");
+  await waitFor("следующая плашка", async () => (await js("return document.querySelector('.theory-plaque')?.dataset.theory ?? '';")) !== plaque);
+  const seen = (await invoke("get_state")).prefs.theorySeen;
+  if (!seen.includes(plaque)) throw new Error(`карточка ${plaque} не отмечена: ${seen}`);
+  ok(`плашка «Новое» в пьесе: карточка «${plaque}» отмечена показанной`);
+  await waitFor("к списку пьес", () => click("← Пьесы"));
+
+  await waitFor("вкладка «Упражнения»", () => click("Упражнения"));
+  await waitFor("первое упражнение открыто", () =>
+    js("const b = document.querySelector('[data-exercise=\"five-C-updown-right\"]'); if (!b || b.disabled) return false; b.click(); return true;"),
+  );
+  await waitFor("ноты упражнения", () => js("return !!document.querySelector('.score-page svg g.note');"), 30000);
+  const exFings = await js("return document.querySelectorAll('.score-page g.fing').length;");
+  if (exFings !== 9) throw new Error(`пальцев на стане упражнения: ${exFings}, ожидалось 9`);
+  // В темпе, ничего не играем: результат «не засчитано» записывается.
+  await waitFor("кнопка «Старт»", () => click("▶ Старт"));
+  await waitFor("итог упражнения", () => js("return document.querySelector('.score-scroll')?.dataset.exResult === 'failed';"), 30000);
+  const exStats = await invoke("exercise_stats");
+  const st = exStats.find((x) => x.exercise === "five-C-updown-right");
+  if (!st || st.attempts < 1 || st.passed) throw new Error(`результат упражнения: ${JSON.stringify(exStats)}`);
+  ok("упражнение: 9 нот с пальцами, сыграно в темпе, результат записан (не засчитано)");
+  await waitFor("к упражнениям", () => click("К упражнениям"));
+
+  await waitFor("главная", () => click("Главная"));
+  await waitFor("«Занятие на сегодня»", () => js("return !!document.querySelector('[data-today]');"));
+  const todayText = await js("return document.querySelector('[data-today]').innerText;");
+  if (!/Разминка/.test(todayText) || !/Тренажёр нот/.test(todayText) || !/Ода к радости|Менуэт/.test(todayText))
+    throw new Error(`«Занятие на сегодня»: ${todayText}`);
+  await waitFor("шаг «Разминка»", () =>
+    js("const b = [...document.querySelectorAll('.today-step')].find((b) => b.textContent.includes('Разминка')); if (!b) return false; b.click(); return true;"),
+  );
+  await waitFor("разминка началась", () => js("return /Разминка: 1 из \\d/.test(document.body.innerText);"), 15000);
+  ok("главная: «Занятие на сегодня», разминка дня открывается с главной");
+  await waitFor("из разминки", () => click("← Упражнения"));
+
+  await waitFor("вкладка «Справочник»", () => click("Справочник"));
+  await waitFor("карточка «Знаки при ключе»", () =>
+    js("const b = document.querySelector('[data-card=\"key-signature\"]'); if (!b) return false; b.click(); return true;"),
+  );
+  await waitFor("нотный пример карточки", () => js("return !!document.querySelector('.theory-example svg');"), 15000);
+  ok("справочник: карточка с нотным примером");
+
   console.log("Готово: все проверки пройдены");
 } catch (e) {
   console.error(`✗ ${e.message}`);
