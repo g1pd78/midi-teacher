@@ -654,5 +654,10 @@ export async function openUrl(url: string): Promise<void> {
     return;
   }
   const { openUrl } = await import("@tauri-apps/plugin-opener");
-  await openUrl(url);
+  try {
+    await openUrl(url);
+  } catch (e) {
+    console.error("openUrl", e);
+    window.alert(`Не удалось открыть браузер. Открой ссылку вручную:\n${url}`);
+  }
 }
