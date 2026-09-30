@@ -1,5 +1,5 @@
-# Разовый поиск нотных исходников для встроенной библиотеки (общественное достояние):
-# ABC-записи мелодий через поиск abcnotation.com. Результат печатается в лог. Удалить после использования.
+# Разовый поиск нотных исходников для встроенной библиотеки (общественное достояние).
+# Результат печатается в лог. Удалить после использования.
 name: Fetch sources
 
 on:
@@ -8,39 +8,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  abc:
+  mutopia:
     runs-on: ubuntu-latest
     steps:
-      - name: ABC tunes
+      - name: Minuet in G minor (BWV Anh. 115), keyboard
         run: |
-          cat > fetch.py <<'PY'
-          import html, re, time, urllib.parse, urllib.request
-          UA = {"User-Agent": "Mozilla/5.0 (educational app midi-teacher)"}
-          def get(url):
-              for _ in range(3):
-                  try:
-                      with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30) as r:
-                          return r.read().decode("utf-8", "replace")
-                  except Exception as e:
-                      print("  retry", e); time.sleep(3)
-              return ""
-          for q in ["Kalinka", "Vo pole", "Vo polye", "berezka", "birch tree russian", "Ach vy seni", "Akh vy seni",
-                    "V sadu li", "Marmotte", "Jingle Bells", "Ah vous dirai-je", "Wiegenlied Brahms"]:
-              time.sleep(1)
-              page = get("https://abcnotation.com/searchTunes?q=" + urllib.parse.quote(q) + "&f=c&o=a&s=0")
-              links = re.findall(r'href="(/tunePage\?a=[^"]+)"[^>]*>([^<]*)<', page)
-              print(f"=== «{q}»: {len(links)}")
-              seen = set()
-              for href, title in links[:12]:
-                  print("   ", html.unescape(title).strip(), href)
-              for href, title in links[:3]:
-                  if href in seen: continue
-                  seen.add(href)
-                  time.sleep(1)
-                  p = get("https://abcnotation.com" + html.unescape(href))
-                  m = re.search(r"<textarea[^>]*>(.*?)</textarea>", p, re.S) or re.search(r"<pre[^>]*>(.*?)</pre>", p, re.S)
-                  print(f"##### BEGIN {html.unescape(title).strip()} {href}")
-                  print(html.unescape(m.group(1)) if m else "(нет ABC в странице)")
-                  print("##### END")
-          PY
-          python3 fetch.py
+          url=https://www.mutopiaproject.org/ftp/BachJS/BWVAnh115/anna-magdalena-05/anna-magdalena-05.ly
+          echo "##### BEGIN $url"
+          curl -sL -A "Mozilla/5.0" "$url" | grep -v '^\s*$' | sed 's/^/| /'
+          echo "##### END"
