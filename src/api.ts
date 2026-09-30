@@ -115,10 +115,16 @@ export interface HandOverride {
 }
 
 /** Настройки одной пьесы. */
+export type PieceInstrument = "piano" | "guitar" | "bass";
+
 export interface PieceSetup {
   transpose: number;
   roles: TrackRole[] | null;
   handOverrides: HandOverride[];
+  /** На чём играем пьесу (по умолчанию фортепиано). */
+  instrument: PieceInstrument | null;
+  /** Стан для гитары/баса: 0 — выбрать самому (мелодия для гитары, бас для баса). */
+  part: number;
 }
 
 export interface UiPrefs {

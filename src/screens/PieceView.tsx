@@ -5,6 +5,7 @@ import {
   type AttemptRecord,
   type Converted,
   type MidiInfo,
+  type PieceInstrument,
   type PieceSetup,
   saveTextAs,
   type HandMode,
@@ -19,6 +20,10 @@ import {
   type UnitView,
 } from "../api";
 import { Piano } from "../components/Piano";
+import { Fretboard, type FretMark } from "../components/Fretboard";
+import { TabHighway, type HighwayNote } from "../components/TabHighway";
+import { FRETS, meiToTab, nearestPosition, tabStaff, type StringInstrument } from "../lib/tab";
+import { TUNINGS } from "../lib/guitar";
 import { TrackDialog } from "../components/TrackDialog";
 import { accompNotes, overrideFor, toggleOverride } from "../lib/midi";
 import { TheoryPlaque } from "../components/Theory";
@@ -62,7 +67,8 @@ export interface PieceSource {
   midi?: string;
 }
 
-const NO_SETUP: PieceSetup = { transpose: 0, roles: null, handOverrides: [] };
+const NO_SETUP: PieceSetup = { transpose: 0, roles: null, handOverrides: [], instrument: null, part: 0 };
+const INSTRUMENT_NAME: Record<PieceInstrument, string> = { piano: "Фортепиано", guitar: "Гитара", bass: "Бас" };
 const TRANSPOSE_MAX = 12;
 
 const HAND_COLOR = { right: "#5AA9FF", left: "#FFB454" } as const;
@@ -75,16 +81,17 @@ const SOLFEGE: Record<string, string> = { c: "до", d: "ре", e: "ми", f: "�
 const ACCID: Record<string, string> = { s: "♯", f: "♭", ss: "𝄪", ff: "𝄫" };
 const HAND_NAME: Record<PlayHands, string> = { right: "правая рука", left: "левая рука", both: "обе руки", none: "слушаем" };
 
-function verovioLayout(layout: "line" | "pages", width: number): Record<string, unknown> {
+function verovioLayout(layout: "line" | "pages", width: number, tab = false): Record<string, unknown> {
   const common = {
-    scale: 42,
+    // Цифры ладов в табулатуре мелкие — таб крупнее нот.
+    scale: tab ? 58 : 42,
     header: "none",
     footer: "none",
     svgViewBox: true,
     svgRemoveXlink: true,
     adjustPageHeight: true,
-    pageMarginTop: 60,
-    pageMarginBottom: 60,
+    pageMarginTop: tab ? 15 : 60,
+    pageMarginBottom: tab ? 15 : 60,
     pageMarginLeft: 40,
     pageMarginRight: 40,
     lyricSize: 2.5,
@@ -163,6 +170,12 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const setSetup = (patch: Partial<PieceSetup>) =>
     setPrefs({ pieceSetup: { ...prefs.pieceSetup, [source.id]: { ...setup, ...patch } } });
   const transpose = exercise ? 0 : setup.transpose;
+  // На чём играем: фортепиано или гитара/бас (табы и гриф).
+  const instrument: PieceInstrument = exercise ? "piano" : (setup.instrument ?? "piano");
+  const strInst: StringInstrument | null = instrument === "piano" ? null : instrument;
+  // Прогресс разучивания у гитары и баса свой.
+  const practiceId = strInst ? `${source.id}#${strInst}` : source.id;
+  const [guitarOn, setGuitarOn] = useState<boolean | null>(null);
   // Аппликатура своя для каждого тона: в другой тональности другие пальцы.
   const fingerKey = transpose ? `${source.id}@${transpose > 0 ? "+" : ""}${transpose}` : source.id;
   // MIDI: окно дорожек, результат перевода в ноты, правка рук.
@@ -238,7 +251,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const showWaterfall = preset ? preset.waterfall : p.waterfall;
   const hideRange = preset?.hide ?? false;
   // Аппликатура в ведущем режиме — на уровнях 0–2, в свободной игре — по переключателю.
-  const showFingers = editFingers || (unit ? level <= 2 : p.fingering);
+  const showFingers = !strInst && (editFingers || (unit ? level <= 2 : p.fingering));
   const range: Loop | null = unit ? { from: unit.from, to: unit.to } : loop;
   const rangeFrom = range?.from ?? 0;
   const rangeTo = range?.to ?? 0;
@@ -329,24 +342,32 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const layoutKey = p.layout === "pages" ? `pages-${width}` : "line";
   // Названия нот — только у рук, которые играет ученик: так строка нот ниже и крупнее.
   const staves = useMemo(() => (mei ? parseMei(mei).staves : 0), [mei]);
+  // Гитара/бас: одна партия в табулатуре (готовые табы из файла — как есть).
+  const fileTab = useMemo(() => (mei ? tabStaff(mei) : null), [mei]);
+  const partStaff = strInst ? (fileTab ?? Math.min(Math.max(1, staves), setup.part || (strInst === "bass" && staves >= 2 ? 2 : 1))) : 0;
+  const tab = useMemo(
+    () => (strInst && mei ? meiToTab(mei, partStaff, strInst, parseMei(mei).meter) : null),
+    [mei, strInst, partStaff],
+  );
+  const displayMei = tab?.mei ?? mei;
   const nameStaves = staves < 2 || hands === "both" || hands === "none" ? "all" : hands === "right" ? "1" : "2";
   const fingersKey = useMemo(() => fingers?.map((f) => `${f.id}:${f.finger}:${f.source[0]}`).join(",") ?? "", [fingers]);
   useEffect(() => {
-    if (!mei) return;
+    if (!displayMei) return;
     let alive = true;
-    let text = showNames
-      ? addNoteNames(mei, (pname, accid) => {
+    let text = showNames && !tab
+      ? addNoteNames(displayMei, (pname, accid) => {
           const base = naming === "solfege" ? SOLFEGE[pname] : pname.toUpperCase();
           return base + (accid ? (ACCID[accid] ?? "") : "");
         }, nameStaves === "all" ? undefined : new Set([Number(nameStaves)]))
-      : mei;
+      : displayMei;
     // Цифры пальцев (файл + правки + подбор) заменяют аппликатуру из файла.
     const sc = scoreRef.current;
-    if (fingers && sc) text = injectFingering(text, fingers, sc.notes);
-    renderScore(text, verovioLayout(p.layout, width))
+    if (fingers && sc && !tab) text = injectFingering(text, fingers, sc.notes);
+    renderScore(text, verovioLayout(p.layout, width, !!tab))
       .then((r) => {
         if (!alive) return;
-        const structure = parseMei(mei);
+        const structure = parseMei(displayMei);
         const notes = buildNotes(r.timemap, r.midi, structure);
         setPages(r.pages);
         setScore({
@@ -363,7 +384,44 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     };
     // width входит в layoutKey, fingers — в fingersKey
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mei, showNames, naming, layoutKey, fingersKey, nameStaves]);
+  }, [displayMei, showNames, naming, layoutKey, fingersKey, nameStaves]);
+
+  // Гитара/бас: остальные партии пьесы звучат аккомпанементом (ноты того же MEI).
+  const [otherNotes, setOtherNotes] = useState<PieceNoteIn[]>([]);
+  useEffect(() => {
+    setOtherNotes([]);
+    if (!tab || !mei || fileTab) return;
+    let alive = true;
+    renderScore(mei, verovioLayout("line", 1200))
+      .then((r) => {
+        if (!alive) return;
+        const all = buildNotes(r.timemap, r.midi, parseMei(mei));
+        const staffOf = parseMei(mei).staffOf;
+        setOtherNotes(all.filter((n) => staffOf.get(n.id) !== partStaff).map((n) => ({ ...toIn(n), id: `o-${n.id}`, hand: "accomp" })));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [tab, mei, fileTab, partStaff]);
+  // Всё, что играет приложение помимо ученика: аккомпанемент MIDI и другие партии для гитары/баса.
+  const accompAll = useMemo(() => [...accomp, ...otherNotes], [accomp, otherNotes]);
+  // Вход гитары: инструмент тюнера — как у пьесы; предупреждение, если вход выключен.
+  useEffect(() => {
+    if (!strInst) return;
+    let alive = true;
+    api
+      .guitarState()
+      .then((g) => {
+        if (!alive) return;
+        setGuitarOn(g.config.enabled);
+        if (g.config.instrument !== strInst) void api.guitarSet({ ...g.config, instrument: strInst });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [strInst]);
 
   // Аппликатура пьесы от ядра: ручные правки → файл → автоматический подбор.
   const fingerInput = useMemo(
@@ -372,18 +430,18 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     [notesKey],
   );
   useEffect(() => {
-    if (!fingerInput.length) return;
+    if (!fingerInput.length || strInst) return;
     api
       .fingeringGet(fingerKey, fingerInput)
       .then(setFingers)
       .catch(() => setFingers(null));
-  }, [fingerInput, fingerKey]);
+  }, [fingerInput, fingerKey, strInst]);
   const fingerOf = useMemo(() => new Map((fingers ?? []).map((f) => [f.id, f])), [fingers]);
   // Элементы нотной записи в пьесе — для плашек теории «Новое».
   const theoryFeatures = useMemo(
-    () => (mei && scoreRef.current ? detectFeatures(mei, scoreRef.current.structure, scoreRef.current.notes) : []),
+    () => (displayMei && scoreRef.current && !tab ? detectFeatures(displayMei, scoreRef.current.structure, scoreRef.current.notes) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mei, notesKey],
+    [displayMei, notesKey],
   );
   const waterfallFingers = useMemo(
     () => (showFingers ? new Map((fingers ?? []).map((f) => [f.id, { finger: f.finger, auto: f.source === "auto" }])) : null),
@@ -411,8 +469,8 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     if (!sc || !sc.notes.length || exercise) return;
     api
       .practiceOpen({
-        id: source.id,
-        title: source.title,
+        id: practiceId,
+        title: strInst ? `${source.title} (${INSTRUMENT_NAME[instrument].toLowerCase()})` : source.title,
         measures: sc.structure.measures,
         phraseEnds: phraseEnds(sc.notes, sc.structure, sc.starts, sc.endMs),
         measureHands: measureHands(sc.notes, sc.structure.measures),
@@ -422,7 +480,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         setPracticeError(null);
       })
       .catch((e) => setPracticeError(String(e)));
-  }, [notesKey, source]);
+  }, [notesKey, practiceId]);
 
   // Выбранный отрезок пропал (поменяли границы) — к текущему.
   useEffect(() => {
@@ -454,9 +512,9 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     setCurrent(null);
     resetMarks();
     const inRange = (n: { measure: number }) => !rangeFrom || (n.measure >= rangeFrom && n.measure <= rangeTo);
-    const selected = [...sc.notes.filter(inRange).map(toIn), ...(accompany ? accomp.filter(inRange) : [])];
+    const selected = [...sc.notes.filter(inRange).map(toIn), ...(accompany ? accompAll.filter(inRange) : [])];
     void api.pieceStart(selected, { hands, accompany, tempo, looping: !!rangeFrom });
-  }, [notesKey, hands, accompany, tempo, rangeFrom, rangeTo, rhythmMode, ready, run, resetMarks, accomp]);
+  }, [notesKey, hands, accompany, tempo, rangeFrom, rangeTo, rhythmMode, ready, run, resetMarks, accompAll]);
 
   // При переходе в режим ритма — остановить ожидание; при выходе — остановить ритм.
   useEffect(() => {
@@ -478,7 +536,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     setExResult(null);
     setToast(null);
     const beats = buildBeats(sc.starts, sc.endMs, sc.structure.meter, sc.tempoBpm);
-    await api.rhythmStart([...sc.notes.map(toIn), ...(accompany ? accomp : [])], beats, {
+    await api.rhythmStart([...sc.notes.map(toIn), ...(accompany ? accompAll : [])], beats, {
       hands,
       accompany,
       tempo,
@@ -489,7 +547,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
       beatMs: Math.round(beatDuration(sc.structure.meter, sc.tempoBpm)),
     });
     setPlaying(true);
-  }, [hands, accompany, tempo, countIn, metronome, loopMs, resetMarks, accomp]);
+  }, [hands, accompany, tempo, countIn, metronome, loopMs, resetMarks, accompAll]);
   const startRhythmRef = useRef(startRhythm);
   startRhythmRef.current = startRhythm;
 
@@ -500,7 +558,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
 
   // Смена настроек во время игры в темпе: в свободной игре — остановка,
   // в ведущем режиме (темп вырос, другой отрезок) — сразу заново.
-  const rhythmKey = `${hands}|${tempo}|${accompany}|${countIn}|${metronome}|${rangeFrom}-${rangeTo}|${notesKey}|${accomp.length}`;
+  const rhythmKey = `${hands}|${tempo}|${accompany}|${countIn}|${metronome}|${rangeFrom}-${rangeTo}|${notesKey}|${accompAll.length}`;
   const prevRhythmKey = useRef(rhythmKey);
   useEffect(() => {
     if (prevRhythmKey.current === rhythmKey) return;
@@ -534,7 +592,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     // Закрепляем отрезок: после «выучено» текущим станет следующий, а предложение относится к этому.
     if (unit && unitSel === null) setUnitSel(practice.units.indexOf(unit));
     api
-      .practiceRecord(source.id, attempt)
+      .practiceRecord(practiceId, attempt)
       .then(({ outcome, view }) => {
         setPractice(view);
         if (!outcome || !unit) return;
@@ -777,7 +835,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
 
   const applyFragments = (starts: number[] | null) =>
     api
-      .practiceSetFragments(source.id, starts)
+      .practiceSetFragments(practiceId, starts)
       .then((v) => {
         setUnitSel(null);
         setPractice(v);
@@ -851,7 +909,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const setLevel = (to: number) => {
     if (!unit) return;
     api
-      .practiceSetLevel(source.id, unit.from, unit.to, to)
+      .practiceSetLevel(practiceId, unit.from, unit.to, to)
       .then(setPractice)
       .catch((e) => setPracticeError(String(e)));
   };
@@ -963,7 +1021,30 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   for (const [n, h] of Object.entries(held)) highlight[Number(n)] = { color: deviceColor(h.device, devices), strength: 0.85 };
   if (wrongKey !== null) highlight[wrongKey] = { color: "#FF5C5C", strength: 0.9 };
 
-  const needed = notes.filter((n) => includes(n.hand)).map((n) => n.pitch);
+  // Гитара/бас: куда поставить палец (подсказка) и что звучит сейчас — на грифе.
+  const tuning = strInst ? TUNINGS[strInst] : [];
+  const fretMarks: FretMark[] = [];
+  if (tab && strInst) {
+    const frets = FRETS[strInst];
+    if (keyHints)
+      for (const id of cursorIds) {
+        const pos = tab.positions.get(id);
+        if (pos && !hits.has(id) && !noteStates.current.has(id))
+          fretMarks.push({ ...pos, color: HAND_COLOR.right, strength: 0.45, label: String(pos.fret) });
+      }
+    const hand = fretMarks.find((m) => m.fret > 0)?.fret ?? 3;
+    const show = (pitch: number, color: string, strength: number) => {
+      const exp = fretMarks.find((m) => tuning[m.string] + m.fret === pitch);
+      const pos = exp ?? nearestPosition(pitch, tuning, frets, hand);
+      if (pos) fretMarks.push({ string: pos.string, fret: pos.fret, color, strength });
+    };
+    for (const [n, h] of Object.entries(held)) show(Number(n), deviceColor(h.device, devices), 0.85);
+    if (wrongKey !== null) show(wrongKey, "#FF5C5C", 0.9);
+  }
+  const maxFret = tab ? Math.max(0, ...[...tab.positions.values()].map((p) => p.fret)) : 0;
+  const boardFrets = strInst ? Math.min(FRETS[strInst], Math.max(12, maxFret + 1)) : 12;
+
+  const needed = strInst ? [] : notes.filter((n) => includes(n.hand)).map((n) => n.pitch);
   const narrow = devices.inputs.filter(
     (d) => d.connected && d.settings.range && needed.some((x) => x < d.settings.range![0] || x > d.settings.range![1]),
   );
@@ -986,6 +1067,18 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
             .map((rect, k) => ({ rect, i, first: k === 0 })),
         )
       : [];
+
+  const highwayNotes: HighwayNote[] = useMemo(
+    () =>
+      tab
+        ? notes.flatMap((n) => {
+            const pos = tab.positions.get(n.id);
+            return pos ? [{ id: n.id, string: pos.string, fret: pos.fret, startMs: n.startMs, durMs: n.durMs }] : [];
+          })
+        : [],
+    [tab, notes],
+  );
+  const handLabel = strInst ? (hands === "none" ? "слушаем" : strInst === "bass" ? "бас" : "гитара") : HAND_NAME[hands];
 
   const progressText = rhythmMode
     ? playing
@@ -1070,6 +1163,25 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
           {exercise ? "← Упражнения" : "← Пьесы"}
         </button>
         <div className="piece-name">{source.title}</div>
+        {!exercise && (
+          <span className="segmented" title="На чём играть: фортепиано — ноты и клавиатура, гитара и бас — табы и гриф" data-instrument-select>
+            {(["piano", "guitar", "bass"] as PieceInstrument[]).map((k) => (
+              <button key={k} className={instrument === k ? "on" : ""} onClick={() => setSetup({ instrument: k === "piano" ? null : k })} data-piece-instrument={k}>
+                {INSTRUMENT_NAME[k]}
+              </button>
+            ))}
+          </span>
+        )}
+        {strInst && !fileTab && staves >= 2 && (
+          <span className="segmented" title="Какую партию пьесы играть">
+            <button className={partStaff === 1 ? "on" : ""} onClick={() => setSetup({ part: 1 })}>
+              Мелодия
+            </button>
+            <button className={partStaff === 2 ? "on" : ""} onClick={() => setSetup({ part: 2 })}>
+              Бас
+            </button>
+          </span>
+        )}
         {exercise ? (
           <span className="segmented">
             <button className={!rhythmMode ? "on" : ""} onClick={() => setExMode("wait")} title="Разобрать ноты: курсор ждёт">
@@ -1091,7 +1203,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         )}
         {!guided && !exercise && (
           <>
-            <span className="segmented" title="1 / 2 / 3">
+            {!strInst && <span className="segmented" title="1 / 2 / 3">
               <button className={hands === "right" ? "on" : ""} disabled={!hasRight} onClick={() => setPiece({ hands: "right" })}>
                 Правая
               </button>
@@ -1101,7 +1213,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
               <button className={hands === "both" ? "on" : ""} disabled={!hasLeft || !hasRight} onClick={() => setPiece({ hands: "both" })}>
                 Обе
               </button>
-            </span>
+            </span>}
             <span className="segmented">
               <button className={!rhythmMode ? "on" : ""} onClick={() => setPiece({ mode: "wait" })}>
                 Ожидание
@@ -1181,6 +1293,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
             setEditBounds((v) => !v);
           }}
           editFingers={editFingers}
+          fingersAvailable={!strInst}
           onEditFingers={() => {
             setEditBounds(false);
             setEditHands(false);
@@ -1188,7 +1301,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
           }}
           status={
             <>
-              {HAND_NAME[hands]}
+              {handLabel}
               {level > 0 && ` · серия ${Math.min(streakOf(unit), STREAK_TO_ADVANCE)} из ${STREAK_TO_ADVANCE}`}
               {rhythmMode && ` · темп ${percent(tempo)}`}
               {progressText && ` · ${progressText}`}
@@ -1253,11 +1366,17 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
             <span className="piece-progress">{progressText}</span>
           </div>
           <div className="piece-toggles secondary">
-            <Toggle label="Вторая рука звучит" on={p.accompany} disabled={hands === "both"} onChange={(v) => setPiece({ accompany: v })} />
+            <Toggle
+              label={strInst ? "Аккомпанемент" : "Вторая рука звучит"}
+              on={p.accompany}
+              disabled={!strInst && hands === "both"}
+              onChange={(v) => setPiece({ accompany: v })}
+            />
             <Toggle label="Падающие ноты" on={p.waterfall} onChange={(v) => setPiece({ waterfall: v })} />
-            <Toggle label="Названия нот" on={p.names} onChange={(v) => setPiece({ names: v })} />
-            <Toggle label="Аппликатура" on={p.fingering} onChange={(v) => setPiece({ fingering: v })} />
+            {!strInst && <Toggle label="Названия нот" on={p.names} onChange={(v) => setPiece({ names: v })} />}
+            {!strInst && <Toggle label="Аппликатура" on={p.fingering} onChange={(v) => setPiece({ fingering: v })} />}
             <button
+              hidden={!!strInst}
               className={`small${editFingers ? " primary" : ""}`}
               onClick={() => {
                 setEditHands(false);
@@ -1266,7 +1385,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
             >
               Пальцы…
             </button>
-            <Toggle label="Подсветка клавиш" on={p.keyHints} onChange={(v) => setPiece({ keyHints: v })} />
+            <Toggle label={strInst ? "Подсказки на грифе" : "Подсветка клавиш"} on={p.keyHints} onChange={(v) => setPiece({ keyHints: v })} />
             <Toggle label="Трудные такты" on={p.heat} onChange={(v) => setPiece({ heat: v })} />
             {pieceTools}
           </div>
@@ -1283,6 +1402,17 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
           Часть нот придётся играть на другом инструменте.
         </div>
       ))}
+      {strInst && guitarOn === false && (
+        <div className="notice info">
+          Вход гитары выключен — приложение не услышит {strInst === "bass" ? "бас" : "гитару"}. Включи «Слушать вход» на
+          вкладке «Гитара». Пока можно нажимать те же ноты на MIDI-клавиатуре.
+        </div>
+      )}
+      {tab && tab.folded > 0 && (
+        <div className="notice info">
+          {tab.folded} {tab.folded === 1 ? "нота перенесена" : "нот перенесено"} на октаву, чтобы лечь на гриф.
+        </div>
+      )}
       {editBounds && practice && (
         <div className="notice info guide-edit">
           <span>
@@ -1342,7 +1472,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
       <section className="paper piece-paper">
         <div
           ref={scrollRef}
-          className={`score-scroll ${p.layout}${showFingers ? "" : " hide-fing"}${editFingers ? " edit-fing" : ""}`}
+          className={`score-scroll ${p.layout}${showFingers ? "" : " hide-fing"}${editFingers ? " edit-fing" : ""}${tab ? " tab-score" : ""}`}
           // Для сквозных тестов: текущий шаг, какие клавиши он ждёт, уровень и отрезок.
           data-current-step={current ? current.index : ""}
           data-current-pitches={current ? current.required.join(",") : ""}
@@ -1381,7 +1511,20 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         {toast && <div className="toast">{toast}</div>}
       </section>
 
-      {showWaterfall && (
+      {showWaterfall && tab && strInst && (
+        <section className="waterfall-box">
+          <TabHighway
+            notes={highwayNotes}
+            strings={tuning.length}
+            getPos={getPos}
+            windowMs={WATERFALL_SEC * 1000 * tempo}
+            states={noteStates}
+            bars={score?.starts ?? []}
+            loop={loopMs}
+          />
+        </section>
+      )}
+      {showWaterfall && !tab && (
         <section className="waterfall-box">
           <Waterfall
             notes={notes}
@@ -1398,8 +1541,12 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         </section>
       )}
 
-      <section className="session-piano">
-        <Piano low={low} high={high} naming={naming} highlight={highlight} labels="c" />
+      <section className={`session-piano${tab ? " fretboard-box" : ""}`}>
+        {tab && strInst ? (
+          <Fretboard tuning={tuning} frets={boardFrets} naming={naming} marks={fretMarks} />
+        ) : (
+          <Piano low={low} high={high} naming={naming} highlight={highlight} labels="c" />
+        )}
       </section>
       <TheoryPlaque features={theoryFeatures} />
       {trackDialog && midiInfo && source.midi && (
@@ -1445,6 +1592,7 @@ function GuidePanel({
   onLevel,
   onEditBounds,
   editFingers,
+  fingersAvailable = true,
   onEditFingers,
   status,
   toggles,
@@ -1456,6 +1604,7 @@ function GuidePanel({
   onLevel: (l: number) => void;
   onEditBounds: () => void;
   editFingers: boolean;
+  fingersAvailable?: boolean;
   onEditFingers: () => void;
   status: React.ReactNode;
   toggles: React.ReactNode;
@@ -1486,9 +1635,11 @@ function GuidePanel({
         <button className={`small${editBounds ? " primary" : ""}`} onClick={onEditBounds}>
           Границы…
         </button>
-        <button className={`small${editFingers ? " primary" : ""}`} onClick={onEditFingers} title="Поправить аппликатуру">
-          Пальцы…
-        </button>
+        {fingersAvailable && (
+          <button className={`small${editFingers ? " primary" : ""}`} onClick={onEditFingers} title="Поправить аппликатуру">
+            Пальцы…
+          </button>
+        )}
       </div>
       <div className="guide-level">
         <span className="muted">

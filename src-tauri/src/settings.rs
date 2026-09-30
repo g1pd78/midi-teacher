@@ -36,6 +36,10 @@ pub struct PieceSetup {
     pub roles: Option<Vec<TrackRole>>,
     /// Ноты, переброшенные в другую руку вручную.
     pub hand_overrides: Vec<HandOverride>,
+    /// На чём играем: `piano` (по умолчанию), `guitar`, `bass`.
+    pub instrument: Option<String>,
+    /// Какой стан играть на гитаре/басе (0 — выбрать самому).
+    pub part: u8,
 }
 
 /// Настройки экрана пьесы.
