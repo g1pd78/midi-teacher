@@ -353,6 +353,14 @@ try {
   const seen = (await invoke("get_state")).prefs.theorySeen;
   if (!seen.includes(plaque)) throw new Error(`карточка ${plaque} не отмечена: ${seen}`);
   ok(`плашка «Новое» в пьесе: карточка «${plaque}» отмечена показанной`);
+  // «Подробнее» → Esc закрывает только окно карточки, пьеса остаётся открытой.
+  await js("[...document.querySelectorAll('.theory-plaque button')].find((b) => b.textContent.includes('Подробнее')).click();");
+  await waitFor("окно карточки", () => js("return !!document.querySelector('.theory-modal');"));
+  await js("document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));");
+  await waitFor("окно закрыто", () => js("return !document.querySelector('.theory-modal');"));
+  await sleep(300);
+  if (!(await js("return !!document.querySelector('.score-scroll');"))) throw new Error("Esc в окне карточки закрыл пьесу");
+  ok("Esc в окне «Подробнее» закрывает только окно");
   await waitFor("к списку пьес", () => click("← Пьесы"));
 
   await waitFor("вкладка «Упражнения»", () => click("Упражнения"));

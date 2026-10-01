@@ -102,6 +102,15 @@ function verovioLayout(layout: "line" | "pages", width: number, tab = false): Re
       { ...common, breaks: "auto", pageWidth: Math.max(1500, Math.round(width * 2)), pageHeight: 60000 };
 }
 
+// «Страницы»: ширина страницы в Verovio — ~2 единицы на пиксель окна, отсюда масштаб
+// ~1,24 от собственного размера SVG. Короткое упражнение (одна неполная строка) Verovio
+// обрезает по содержимому — без ограничения оно растянулось бы на всю ширину и стало огромным.
+const PAGE_ZOOM = 1.24;
+function capPageWidth(svg: string): string {
+  const m = /viewBox="0 0 ([\d.]+) /.exec(svg);
+  return m ? svg.replace("<svg", `<svg style="max-width:${Math.round(Number(m[1]) * PAGE_ZOOM)}px"`) : svg;
+}
+
 function formatTime(ms: number): string {
   const s = Math.round(ms / 1000);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -570,6 +579,15 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const startRhythmRef = useRef(startRhythm);
   startRhythmRef.current = startRhythm;
 
+  // Остановка замораживает транспорт: падающие ноты встают на месте, а не едут дальше.
+  useEffect(() => {
+    if (playing) return;
+    const t = transport.current;
+    if (!t || t.tempo === 0) return;
+    const now = clock.current.nowUs();
+    transport.current = { originUs: now, pos0: transportPos(t, now), tempo: 0 };
+  }, [playing]);
+
   const stopRhythm = useCallback(() => {
     void api.rhythmStop();
     setPlaying(false);
@@ -989,6 +1007,8 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         } else onBack();
       } else if (e.code === "Space" && rhythmMode) {
         e.preventDefault();
+        // Иначе кнопка с фокусом («■ Стоп» → «▶ Старт») нажмётся ещё раз при отпускании пробела.
+        if (document.activeElement instanceof HTMLButtonElement) document.activeElement.blur();
         if (playing) stopRhythm();
         else void startRhythm();
       } else if (e.key === "Enter" && suggestion) acceptSuggestion();
@@ -1505,7 +1525,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
           <div ref={contentRef} className="score-content" onClick={onScoreClick}>
             {!pages.length && !error && <div className="muted score-loading">Загрузка нот…</div>}
             {pages.map((svg, i) => (
-              <div key={i} className="score-page" dangerouslySetInnerHTML={{ __html: svg }} />
+              <div key={i} className="score-page" dangerouslySetInnerHTML={{ __html: p.layout === "pages" ? capPageWidth(svg) : svg }} />
             ))}
             {heatRects.map((h) => (
               <div

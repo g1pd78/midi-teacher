@@ -73,6 +73,10 @@ export interface AudioMeters {
   outputLatencyMs: number;
   lastCallbackFrames: number;
   xruns: number;
+  /** Сколько нот дошло до синтезатора с запуска. */
+  notesPlayed: number;
+  /** Пиковый уровень вывода, 0…1. */
+  level: number;
 }
 
 export interface AudioDevices {

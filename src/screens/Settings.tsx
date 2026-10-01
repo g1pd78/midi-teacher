@@ -132,7 +132,9 @@ function AppSoundSection() {
   return (
     <section className="card">
       <h2>Звук приложения</h2>
-      <p className="hint">Экранная клавиатура, а позже — вторая рука и метроном.</p>
+      <p className="hint">
+        Экранная клавиатура, вторая рука в пьесах, «Слушать» и аккомпанемент. Метроном всегда звучит из компьютера.
+      </p>
       <div className="field">
         <span>Куда</span>
         <select
@@ -163,8 +165,24 @@ function AppSoundSection() {
           </select>
         </div>
       )}
+      <div className="field">
+        <span>Проверка</span>
+        <span>
+          <button onClick={() => void testAppSound()}>▶ Проверить звук</button>{" "}
+          <span className="muted">до–ми–соль–до так, как звучит вторая рука</span>
+        </span>
+      </div>
     </section>
   );
+}
+
+/** Арпеджио через «звук приложения» с той же силой нажатия, что у второй руки. */
+async function testAppSound() {
+  for (const note of [60, 64, 67, 72]) {
+    await api.playNote(note, 70, true);
+    await new Promise((r) => setTimeout(r, 280));
+    await api.playNote(note, 0, false);
+  }
 }
 
 function SynthSection() {
@@ -205,6 +223,13 @@ function SynthSection() {
             accent={meters && audio.running ? latencyClass(meters.outputLatencyMs) : undefined}
           />
           <Stat label="Прерывания звука" value={meters ? String(meters.xruns) : "—"} />
+          <Stat label="Нот сыграно" value={meters ? String(meters.notesPlayed) : "—"} />
+          <div className="stat">
+            <div className="stat-label">Уровень</div>
+            <div className="vu synth-vu" title="Пиковый уровень звука, который уходит в колонки/наушники">
+              <div className="vu-bar" style={{ width: `${Math.round(Math.min(1, Math.sqrt(meters?.level ?? 0)) * 100)}%` }} />
+            </div>
+          </div>
           <Stat label="Звук рояля" value={audio.synth || "—"} wide />
           <Stat label="Аккомпанемент (GM)" value={audio.gm ?? "не загружен — аккомпанемент MIDI звучит роялем"} wide />
         </div>

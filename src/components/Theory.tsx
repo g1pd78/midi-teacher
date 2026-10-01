@@ -55,9 +55,14 @@ export function TheoryCardView({ card }: { card: TheoryCard }) {
 /** Окно с карточкой поверх экрана. */
 export function TheoryModal({ card, onClose }: { card: TheoryCard; onClose: () => void }) {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Перехват до обработчиков экрана: Esc закрывает только окно, а не пьесу под ним.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);
   return (
     <div className="theory-modal" onClick={onClose}>

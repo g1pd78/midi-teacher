@@ -91,6 +91,11 @@ pub struct AudioMeters {
     pub last_callback_frames: u32,
     /// Сколько раз звук прерывался (переполнение/опустошение буфера).
     pub xruns: u64,
+    /// Сколько нот дошло до синтезаторов (рояль + GM) с запуска — для проверки «нот нет или
+    /// их не слышно».
+    pub notes_played: u64,
+    /// Пиковый уровень вывода за последние доли секунды, 0…1.
+    pub level: f32,
 }
 
 /// Список устройств вывода для настроек.
@@ -195,6 +200,8 @@ struct Meters {
     latency_us: AtomicU32,
     frames: AtomicU32,
     xruns: AtomicU64,
+    notes: AtomicU64,
+    peak: AtomicU32,
 }
 
 impl AudioEngine {
@@ -357,6 +364,8 @@ impl AudioEngine {
             output_latency_ms: self.meters.latency_us.load(Ordering::Relaxed) as f32 / 1000.0,
             last_callback_frames: self.meters.frames.load(Ordering::Relaxed),
             xruns: self.meters.xruns.load(Ordering::Relaxed),
+            notes_played: self.meters.notes.load(Ordering::Relaxed),
+            level: f32::from_bits(self.meters.peak.load(Ordering::Relaxed)).min(1.0),
         }
     }
 }
@@ -947,6 +956,11 @@ impl Worker {
             };
             let mut gm_synth = gm.try_lock();
             while let Ok(ev) = events.try_recv() {
+                if let SynthEvent::Midi { msg, .. } | SynthEvent::Gm { msg, .. } = &ev {
+                    if matches!(msg, MidiMessage::NoteOn { velocity, .. } if *velocity > 0) {
+                        meters.notes.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
                 match ev {
                     SynthEvent::Midi { channel, msg } => synth.handle(channel, msg),
                     SynthEvent::AllNotesOff => {
@@ -975,6 +989,7 @@ impl Worker {
                 }
             }
             let gain = f32::from_bits(volume.load(Ordering::Relaxed));
+            let mut peak = 0.0f32;
 
             for block in data.chunks_mut(CHUNK * channels.max(1)) {
                 let n = block.len() / channels.max(1);
@@ -1007,6 +1022,7 @@ impl Worker {
                 for (i, frame) in block.chunks_mut(channels.max(1)).enumerate() {
                     let c = click.next() + mon[i] * mon_gain;
                     let (sl, sr) = (l[i] * gain + c, r[i] * gain + c);
+                    peak = peak.max(sl.abs()).max(sr.abs());
                     match frame.len() {
                         1 => frame[0] = T::from_sample(0.5 * (sl + sr)),
                         _ => {
@@ -1019,6 +1035,11 @@ impl Worker {
                     }
                 }
             }
+            // Пик плавно спадает (~0,3 с при буфере 10 мс), чтобы индикатор было видно.
+            let decayed = f32::from_bits(meters.peak.load(Ordering::Relaxed)) * 0.9;
+            meters
+                .peak
+                .store(peak.max(decayed).to_bits(), Ordering::Relaxed);
         };
 
         let err_fn = move |err: cpal::Error| match err.kind() {

@@ -524,6 +524,8 @@ export function createMock() {
       outputLatencyMs: 5.3 + Math.random() * 0.4,
       lastCallbackFrames: 128,
       xruns: 0,
+      notesPlayed: 0,
+      level: 0,
     }),
     list_audio_devices: () => state.audioDevices,
     set_input: ({ name, input }) => {

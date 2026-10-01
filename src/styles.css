@@ -1038,6 +1038,7 @@ code {
   width: 100%;
   height: auto;
   display: block;
+  margin: 0 auto;
 }
 .score-loading {
   padding: 30px;
@@ -1117,6 +1118,8 @@ code {
   display: flex;
   align-items: center;
   height: 100%;
+  /* Короткая строка (упражнение) — по центру; длинная прокручивается как раньше. */
+  margin: 0 auto;
 }
 .loop-rect {
   position: absolute;
@@ -2157,4 +2160,8 @@ button.link.piece-link:hover {
 }
 .tuner-recent b.last {
   color: var(--good);
+}
+.synth-vu {
+  margin-top: 8px;
+  min-width: 90px;
 }
