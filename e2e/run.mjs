@@ -112,10 +112,12 @@ try {
   ok("мастер пропущен, главный экран");
 
   // Имитация MIDI доходит до интерфейса.
-  await press(60);
-  await waitFor("название ноты на главном экране", () =>
-    js("return (document.querySelector('.now-name')?.textContent ?? '').includes('До первой октавы');"),
-  );
+  // Сразу после перезагрузки экран может ещё не подписаться на события MIDI — нажимаем, пока не увидим.
+  await waitFor("название ноты на главном экране", async () => {
+    await press(60);
+    await sleep(300);
+    return js("return (document.querySelector('.now-name')?.textContent ?? '').includes('До первой октавы');");
+  });
   ok("нажатие через имитацию MIDI показано на главном экране");
 
   await waitFor("вкладка тренажёра", () => click("Тренажёр нот"));
