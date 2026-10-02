@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useApp } from "./store";
 import { Header } from "./components/Header";
+import { Hotkeys } from "./components/Hotkeys";
 import { Home } from "./screens/Home";
 import { Exercises } from "./screens/Exercises";
 import { Guitar } from "./screens/Guitar";
@@ -23,6 +24,20 @@ export function App() {
   const [openPiece, setOpenPiece] = useState<string | null>(null);
   // Разминка по кнопке с главного экрана.
   const [warmupReq, setWarmupReq] = useState(false);
+  // Окно горячих клавиш: «?» или F1 на любом экране.
+  const [help, setHelp] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "?" || e.key === "F1") {
+        e.preventDefault();
+        setHelp(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     init().catch((e) => setError(String(e)));
@@ -34,7 +49,8 @@ export function App() {
 
   return (
     <div className="app">
-      <Header screen={screen} onNavigate={setScreen} />
+      <Header screen={screen} onNavigate={setScreen} onHelp={() => setHelp(true)} />
+      {help && <Hotkeys onClose={() => setHelp(false)} />}
       {screen === "home" && (
         <Home
           onNavigate={setScreen}

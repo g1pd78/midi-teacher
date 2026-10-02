@@ -2497,3 +2497,74 @@ button.link.piece-link:hover {
     font-size: 14px;
   }
 }
+
+/* Меню «⋯» в панели пьесы */
+.more-menu {
+  position: relative;
+}
+.more-menu > button {
+  padding: 5px 12px;
+  font-size: 16px;
+  line-height: 1;
+}
+.more-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 240px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+.more-pop[hidden] {
+  display: none;
+}
+
+/* Горячие клавиши */
+.header-nav .help-tab {
+  min-width: 34px;
+  font-weight: 700;
+}
+.hotkeys-card {
+  width: min(860px, 94vw);
+  max-height: 88vh;
+  overflow: auto;
+}
+.hotkeys-card h2 {
+  margin: 2px 0 12px;
+}
+.hotkeys-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 8px 28px;
+}
+.hotkeys-grid h3 {
+  margin: 10px 0 6px;
+  font-size: 15px;
+  color: var(--muted);
+}
+.hotkeys-grid td {
+  padding: 3px 10px 3px 0;
+  vertical-align: top;
+}
+.hotkeys-grid td:first-child {
+  white-space: nowrap;
+}
+kbd {
+  display: inline-block;
+  padding: 1px 7px;
+  font: 600 13px/1.5 inherit;
+  font-family: inherit;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  white-space: pre;
+}

@@ -25,6 +25,7 @@ import { TabHighway, type HighwayNote } from "../components/TabHighway";
 import { DrumHighway, type DrumLaneNote } from "../components/DrumHighway";
 import { DrumPads } from "../components/DrumPads";
 import { RecordTake } from "../components/RecordTake";
+import { MoreMenu } from "../components/MoreMenu";
 import { PASS_DYNAMICS, drumMei, drumPartFromMidi, dynamicsOf, evaluateDynamics } from "../lib/drums";
 import { FRETS, meiToTab, nearestPosition, tabStaff, type StringInstrument } from "../lib/tab";
 import { TUNINGS } from "../lib/guitar";
@@ -1326,14 +1327,6 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
             </span>
           </>
         )}
-        <span className="segmented">
-          <button className={p.layout === "line" ? "on" : ""} onClick={() => setPiece({ layout: "line" })}>
-            Строка
-          </button>
-          <button className={p.layout === "pages" ? "on" : ""} onClick={() => setPiece({ layout: "pages" })}>
-            Страницы
-          </button>
-        </span>
         {rhythmMode ? (
           <button className={playing ? "" : "primary"} onClick={() => (playing ? stopRhythm() : void startRhythm())} title="Пробел">
             {playing ? "■ Стоп" : startLabel}
@@ -1349,6 +1342,17 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
           beatsPerBar={score?.structure.meter.count ?? 4}
           onSaved={setToast}
         />
+        <MoreMenu title="Вид и инструменты пьесы">
+          <span className="segmented" data-layout-select>
+            <button className={p.layout === "line" ? "on" : ""} onClick={() => setPiece({ layout: "line" })}>
+              Строка
+            </button>
+            <button className={p.layout === "pages" ? "on" : ""} onClick={() => setPiece({ layout: "pages" })}>
+              Страницы
+            </button>
+          </span>
+          {pieceTools}
+        </MoreMenu>
       </div>
 
       {exercise ? (
@@ -1420,7 +1424,6 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
               {rhythmMode && <Toggle label="Отсчёт" on={p.countIn} onChange={(v) => setPiece({ countIn: v })} />}
               {rhythmMode && <Toggle label="Метроном" on={p.metronome} onChange={(v) => setPiece({ metronome: v })} />}
               <Toggle label="Трудные такты" on={p.heat} onChange={(v) => setPiece({ heat: v })} />
-              {pieceTools}
             </>
           }
         />
@@ -1495,7 +1498,6 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
             </button>
             <Toggle label={strInst ? "Подсказки на грифе" : "Подсветка клавиш"} on={p.keyHints} onChange={(v) => setPiece({ keyHints: v })} />
             <Toggle label="Трудные такты" on={p.heat} onChange={(v) => setPiece({ heat: v })} />
-            {pieceTools}
           </div>
         </>
       )}

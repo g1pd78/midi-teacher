@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import {
   api,
+  exportBackup,
+  importBackup,
   openUrl,
   pickSoundfont,
   type AudioBackend,
@@ -36,6 +38,8 @@ export function Settings() {
         <div className="settings-col">
           <SynthSection />
           <MonitorSection />
+          <BackupSection />
+          <AboutSection />
         </div>
       </div>
     </main>
@@ -395,3 +399,83 @@ function MonitorSection() {
     </section>
   );
 }
+
+const BUILDS_URL = "https://github.com/g1pd78/midi-teacher/actions/workflows/ci.yml?query=branch%3Aclaude%2Fpiano-learning-app-mmhm6f";
+
+/** Резервная копия: настройки, прогресс и треки студии — в один файл и обратно. */
+function BackupSection() {
+  const [msg, setMsg] = useState<string | null>(null);
+  const [restart, setRestart] = useState(false);
+  const save = async () => {
+    try {
+      const r = await exportBackup();
+      if (!r) return;
+      setMsg(`Сохранено: ${r.path} (прогресс ${r.info.progress ? "есть" : "нет"}, треков студии: ${r.info.songs}).`);
+    } catch (e) {
+      setMsg(`Не сохранено: ${e}`);
+    }
+  };
+  const load = async () => {
+    if (!window.confirm("Восстановить из резервной копии? Текущие настройки и прогресс будут заменены копией после перезапуска.")) return;
+    try {
+      const info = await importBackup();
+      if (!info) return;
+      const date = new Date(info.created * 1000).toLocaleString("ru-RU");
+      setMsg(`Копия от ${date} готова к восстановлению: треков студии ${info.songs}. Настройки и прогресс заменятся после перезапуска.`);
+      setRestart(info.settings || info.progress);
+    } catch (e) {
+      setMsg(`Не восстановлено: ${e}`);
+    }
+  };
+  return (
+    <section className="card" data-backup>
+      <h2>Резервная копия</h2>
+      <p className="hint">
+        Настройки, прогресс (тренажёр, пьесы, упражнения, барабаны) и треки студии — в один файл. Пригодится при
+        переустановке или на втором компьютере. Свои ноты и записи лежат в «{"Документы\\MIDI Teacher"}» — их копируй как
+        обычную папку.
+      </p>
+      <div className="studio-actions">
+        <button onClick={() => void save()} data-backup-save>
+          Сохранить копию…
+        </button>
+        <button onClick={() => void load()} data-backup-load>
+          Восстановить…
+        </button>
+        {restart && (
+          <button className="primary" onClick={() => void api.restartApp()}>
+            Перезапустить сейчас
+          </button>
+        )}
+      </div>
+      {msg && (
+        <p className="hint" data-backup-msg>
+          {msg}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** Версия: из какого коммита собрано приложение, и где брать новые сборки. */
+function AboutSection() {
+  const sha = __BUILD_SHA__;
+  const date = new Date(__BUILD_DATE__);
+  return (
+    <section className="card" data-about data-build={sha}>
+      <h2>О программе</h2>
+      <div className="stats">
+        <Stat label="Сборка" value={sha.slice(0, 7)} />
+        <Stat label="Дата сборки" value={date.toLocaleDateString("ru-RU")} />
+      </div>
+      <p className="hint">
+        Новые сборки появляются после каждого обновления: страница сборок → последний запуск с зелёной галочкой →
+        «Artifacts». Номер сборки там — первые символы коммита (как здесь).
+      </p>
+      <button onClick={() => void openUrl(BUILDS_URL)} data-builds>
+        Открыть страницу сборок
+      </button>
+    </section>
+  );
+}
+

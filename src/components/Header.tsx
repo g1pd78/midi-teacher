@@ -1,7 +1,15 @@
 import type { Screen } from "../App";
 import { deviceColor, useApp } from "../store";
 
-export function Header({ screen, onNavigate }: { screen: Screen; onNavigate: (s: Screen) => void }) {
+export function Header({
+  screen,
+  onNavigate,
+  onHelp,
+}: {
+  screen: Screen;
+  onNavigate: (s: Screen) => void;
+  onHelp: () => void;
+}) {
   const { devices, audio } = useApp();
   const connected = devices.inputs.filter((d) => d.connected);
   const problems = devices.inputs.filter((d) => d.available && d.error);
@@ -61,6 +69,9 @@ export function Header({ screen, onNavigate }: { screen: Screen; onNavigate: (s:
         </button>
         <button className={screen === "settings" ? "tab active" : "tab"} onClick={() => onNavigate("settings")}>
           Настройки
+        </button>
+        <button className="tab help-tab" data-help title="Горячие клавиши (?)" onClick={onHelp}>
+          ?
         </button>
       </nav>
     </header>

@@ -222,6 +222,16 @@ impl Store {
         Self::init(Connection::open(path)?)
     }
 
+    /// Целостный снимок базы в отдельный файл (для резервной копии), даже пока база открыта.
+    pub fn snapshot_to(&self, path: &Path) -> Result<()> {
+        if path.exists() {
+            std::fs::remove_file(path)?;
+        }
+        self.conn
+            .execute("VACUUM INTO ?1", [path.to_string_lossy().as_ref()])?;
+        Ok(())
+    }
+
     pub fn open_in_memory() -> Result<Self> {
         Self::init(Connection::open_in_memory()?)
     }
@@ -787,6 +797,24 @@ mod tests {
         assert!(levels[0].passed);
         assert!((levels[0].best_accuracy - 1.0).abs() < 1e-9);
         assert_eq!(levels[0].last_reaction_ms, 700);
+    }
+
+    #[test]
+    fn snapshot_keeps_progress() {
+        let mut store = Store::open_in_memory().unwrap();
+        let s = play(1, &[60, 62, 64, 65, 67, 60, 62, 64, 65, 67], 0, 700);
+        store
+            .record_session(ErrorMode::Wait, s.results(), &s.summary(), 9, 100)
+            .unwrap();
+        let path = std::env::temp_dir().join(format!("mt-snapshot-{}.db", std::process::id()));
+        store.snapshot_to(&path).unwrap();
+        // Повторный снимок поверх старого файла тоже работает.
+        store.snapshot_to(&path).unwrap();
+        let copy = Store::open(&path).unwrap();
+        assert_eq!(copy.unlocked_level().unwrap(), 2);
+        assert_eq!(copy.level_stats().unwrap().len(), 1);
+        drop(copy);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

@@ -429,6 +429,9 @@ export function createMock() {
       return r && r.notes > 0 ? { notes: r.notes, durationMs: Math.round(performance.now() - r.start) } : null;
     },
     record_take_play: () => undefined,
+    backup_export: () => ({ settings: true, progress: true, songs: Object.keys(songs).length, created: Math.round(Date.now() / 1000) }),
+    backup_import: () => ({ settings: true, progress: true, songs: 0, created: Math.round(Date.now() / 1000) }),
+    restart_app: () => location.reload(),
     studio_list: () => Object.values(songs).map((s) => ({ file: s.file, name: s.name, bpm: s.bpm, bars: s.bars, tracks: s.tracks.length, modified: 0 })),
     studio_load: ({ file }) => songs[file as string],
     studio_save: ({ song }) => {

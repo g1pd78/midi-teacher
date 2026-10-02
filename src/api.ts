@@ -701,6 +701,7 @@ export const api = {
   recordTakePlay: () => invoke<void>("record_take_play"),
   recordTakeSave: (name: string) => invoke<string>("record_take_save", { name }),
   recordTakeDiscard: () => invoke<void>("record_take_discard"),
+  restartApp: () => invoke<void>("restart_app"),
   studioList: () => invoke<SongSummary[]>("studio_list"),
   studioLoad: (file: string) => invoke<Song>("studio_load", { file }),
   studioSave: (song: Song) => invoke<Song>("studio_save", { song }),
@@ -762,6 +763,44 @@ export async function saveTextAs(name: string, content: string, ext: string, lab
   if (!path) return null;
   await api.saveTextFile(path, content);
   return path;
+}
+
+/** Сохранить резервную копию: диалог «Сохранить как», затем копия в выбранный файл. */
+export async function exportBackup(): Promise<{ path: string; info: BackupInfo } | null> {
+  const d = new Date();
+  const name = `MIDI Teacher ${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}.mtbackup`;
+  let path: string | null = name;
+  if (inTauri) {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    path = await save({ defaultPath: name, filters: [{ name: "Резервная копия MIDI Teacher", extensions: ["mtbackup"] }] });
+  }
+  if (!path) return null;
+  return { path, info: await invoke<BackupInfo>("backup_export", { path }) };
+}
+
+/** Восстановить из резервной копии (выбор файла в диалоге). */
+export async function importBackup(): Promise<BackupInfo | null> {
+  let path: string | null = "demo.mtbackup";
+  if (inTauri) {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const res = await open({
+      multiple: false,
+      filters: [
+        { name: "Резервная копия MIDI Teacher", extensions: ["mtbackup"] },
+        { name: "Все файлы", extensions: ["*"] },
+      ],
+    });
+    path = typeof res === "string" ? res : null;
+  }
+  if (!path) return null;
+  return invoke<BackupInfo>("backup_import", { path });
+}
+
+export interface BackupInfo {
+  settings: boolean;
+  progress: boolean;
+  songs: number;
+  created: number;
 }
 
 /** Перетаскивание файлов в окно приложения. */

@@ -10,7 +10,7 @@
 // Используется голый протокол W3C WebDriver поверх fetch — без WebdriverIO.
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -788,6 +788,54 @@ try {
     js("const o = [...document.querySelectorAll('[data-studio-track]')[arguments[0]].querySelectorAll('[data-takes] option')].map((o) => o.textContent); return o.find((t) => t.includes('к оригиналу')) ?? false;", [drumIdx]),
   );
   ok(`студия: трек из MIDI-песни, своя партия барабанов поверх — «${graded.trim()}»`);
+
+  console.log("Сквозной тест: доводка");
+  // Панель пьесы: редкое — в меню «⋯»; Esc закрывает только меню.
+  await waitFor("вкладка пьес", () => click("Пьесы"));
+  await waitFor("карточка «Оды к радости»", () =>
+    js("const b = [...document.querySelectorAll('.piece-card')].find((b) => b.textContent.includes('Ода к радости')); if (!b) return false; b.click(); return true;"),
+  );
+  await waitFor("ноты пьесы", () => js("return !!document.querySelector('.score-page svg g.note');"), 30000);
+  await js("document.querySelector('[data-more]').click();");
+  await waitFor("меню «⋯» открыто", () => js("return document.querySelector('.more-pop')?.hidden === false && !!document.querySelector('.more-pop [data-layout-select]');"));
+  const escape = () => js("window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));");
+  await escape();
+  await waitFor("меню закрыто, пьеса открыта", () => js("return document.querySelector('.more-pop')?.hidden === true && !!document.querySelector('.piece-bar');"));
+  // Горячие клавиши: «?» открывает окно, Esc закрывает его и не уводит из пьесы.
+  await js("window.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true }));");
+  await waitFor("окно горячих клавиш", () => js("return !!document.querySelector('[data-hotkeys] kbd');"));
+  await escape();
+  await waitFor("окно закрыто, пьеса открыта", () => js("return !document.querySelector('[data-hotkeys]') && !!document.querySelector('.piece-bar');"));
+  ok("панель пьесы: меню «⋯» и окно горячих клавиш, Esc закрывает только их");
+  await escape();
+  await waitFor("список пьес", () => js("return !!document.querySelector('.piece-card');"));
+
+  // «О программе»: номер сборки.
+  await waitFor("вкладка настроек", () => click("Настройки"));
+  const build = await waitFor("номер сборки", () => js("return document.querySelector('[data-about]')?.dataset.build ?? '';"));
+  if (build === "dev" || build.length < 7) throw new Error(`номер сборки: ${build}`);
+
+  // Резервная копия: сохранить → удалить трек → восстановить (трек сразу, настройки и база — при запуске).
+  const backupPath = join(profile, "копия.mtbackup");
+  const backupInfo = await invoke("backup_export", { path: backupPath });
+  const backup = JSON.parse(readFileSync(backupPath, "utf8"));
+  if (backup.kind !== "MIDI Teacher backup" || !backup.settings || !backup.progress || backupInfo.songs < 2)
+    throw new Error(`копия: ${JSON.stringify(backupInfo)}`);
+  const before = await invoke("studio_list");
+  const victim = before.find((x) => x.name === "E2E трек");
+  await invoke("studio_delete", { file: victim.file });
+  const restored = await invoke("backup_import", { path: backupPath });
+  const after = await invoke("studio_list");
+  if (!after.some((x) => x.name === "E2E трек") || restored.songs !== backupInfo.songs) throw new Error(`восстановление: ${JSON.stringify(after)}`);
+  const pending = [
+    join(profile, "config", "com.g1pd78.miditeacher", "settings.json.restore"),
+    join(profile, "data", "com.g1pd78.miditeacher", "progress.db.restore"),
+  ];
+  for (const p of pending) {
+    if (!existsSync(p)) throw new Error(`нет ${p}`);
+    rmSync(p);
+  }
+  ok(`сборка ${build.slice(0, 7)}; резервная копия: настройки, прогресс и ${backupInfo.songs} трека — сохранена и восстановлена`);
 
   console.log("Готово: все проверки пройдены");
 } catch (e) {

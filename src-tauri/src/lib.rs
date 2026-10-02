@@ -1,6 +1,7 @@
 //! Оболочка приложения: связывает ядро `mt-core` с интерфейсом через
 //! команды и события Tauri и хранит настройки.
 
+mod backup;
 mod guitar;
 mod library;
 mod midi_import;
@@ -214,6 +215,7 @@ pub fn run() {
             let config_dir = app.path().app_config_dir()?;
             std::fs::create_dir_all(&config_dir)?;
             let settings_path = config_dir.join("settings.json");
+            backup::apply_pending(&settings_path);
             let settings = AppSettings::load(&settings_path);
             log::info!("настройки: {}", settings_path.display());
 
@@ -221,6 +223,7 @@ pub fn run() {
             // Прогресс обучения. Если база недоступна, тренажёр работает без сохранения.
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
+            backup::apply_pending(&data_dir.join("progress.db"));
             let store = match Store::open(&data_dir.join("progress.db")) {
                 Ok(s) => Some(s),
                 Err(e) => {
@@ -229,6 +232,7 @@ pub fn run() {
                 }
             };
             let store = Arc::new(Mutex::new(store));
+            app.manage(backup::StoreHandle(store.clone()));
             let hub = Arc::new(TrainerHub::new(store.clone()));
             let practice_hub = Arc::new(PracticeHub::new(store));
             let practice_events = practice_hub.clone();
@@ -420,6 +424,9 @@ pub fn run() {
             midi_import::record_take_play,
             midi_import::record_take_save,
             midi_import::record_take_discard,
+            backup::backup_export,
+            backup::backup_import,
+            backup::restart_app,
             studio::studio_list,
             studio::studio_load,
             studio::studio_save,
