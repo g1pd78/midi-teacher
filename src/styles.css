@@ -2165,3 +2165,163 @@ button.link.piece-link:hover {
   margin-top: 8px;
   min-width: 90px;
 }
+
+/* --- Барабаны --- */
+.drum-pads {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  min-width: 320px;
+}
+.drum-pad-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  flex: 1;
+}
+.drum-pad {
+  --pad: var(--right-hand);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 44px;
+  border-radius: 10px;
+  border: 2px solid color-mix(in srgb, var(--pad) 45%, var(--line));
+  background: color-mix(in srgb, var(--pad) 10%, var(--panel));
+  transition: background 80ms, transform 60ms;
+  user-select: none;
+}
+.drum-pad.expected {
+  border-color: var(--pad);
+  background: color-mix(in srgb, var(--pad) 32%, var(--panel));
+}
+.drum-pad.held {
+  background: var(--pad);
+  color: #10131a;
+  transform: scale(0.97);
+}
+.drum-pad.wrong {
+  border-color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 40%, var(--panel));
+}
+.drum-pad-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+.drum-pad-key {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.session-piano.pads-box {
+  padding: 6px 8px;
+  background: var(--bg);
+}
+.drums-pads-row {
+  display: grid;
+  grid-template-columns: minmax(320px, 520px) 1fr;
+  gap: 20px;
+  align-items: stretch;
+  margin-top: 8px;
+}
+.drums-pads-row .drum-pads {
+  height: 150px;
+}
+.drums-pads-info .hint {
+  margin: 6px 0 10px;
+}
+.drum-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+}
+.drum-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  text-align: left;
+  padding: 10px 12px;
+}
+.drum-item.open {
+  border-color: var(--right-hand);
+}
+.drum-item.passed {
+  border-color: #2f5a45;
+}
+.drum-item.passed .drum-item-title {
+  color: var(--good);
+}
+.drum-item-title {
+  font-weight: 600;
+}
+.drum-item-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+.pad-wizard-ask {
+  font-size: 20px;
+  margin: 8px 0;
+}
+.pad-wizard-list {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0;
+  display: grid;
+  gap: 6px;
+}
+.pad-wizard-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0.6;
+}
+.pad-wizard-list li.current {
+  opacity: 1;
+  font-weight: 600;
+}
+.pad-wizard-list li.set {
+  opacity: 1;
+}
+.pad-wizard-list .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* --- Запись своей игры в пьесе --- */
+.record-take {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.rec-btn {
+  color: var(--bad);
+  font-weight: 700;
+  min-width: 38px;
+}
+.rec-btn.on {
+  background: var(--bad);
+  color: #fff;
+  border-color: var(--bad);
+  font-variant-numeric: tabular-nums;
+}
+.take-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+}

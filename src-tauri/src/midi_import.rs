@@ -3,7 +3,7 @@
 use crate::library::{library_dir, safe_path, unique_name};
 use mt_core::audio::AudioEngine;
 use mt_core::clock;
-use mt_core::devices::DeviceManager;
+use mt_core::devices::{DeviceManager, DRUM_CHANNEL};
 use mt_core::midi::MidiMessage;
 use mt_core::midifile::{self, ConvertOptions, Converted, MidiData, MidiInfo};
 use parking_lot::Mutex;
@@ -23,7 +23,8 @@ struct Recording {
     /// Первая доля записи (после отсчёта), мкс.
     start_us: u64,
     bpm: f64,
-    events: Vec<(u64, MidiMessage)>,
+    /// (время от первой доли, канал, сообщение).
+    events: Vec<(u64, u8, MidiMessage)>,
     notes: usize,
     /// Без метронома и отсчёта: сетка тактов начинается с первой ноты.
     free: bool,
@@ -35,6 +36,16 @@ pub struct MidiHub {
     preview_gen: AtomicU64,
     rec: Mutex<Option<Recording>>,
     rec_gen: AtomicU64,
+    /// Остановленная запись, которую можно прослушать, сохранить или выбросить.
+    take: Mutex<Option<Recording>>,
+}
+
+/// Дубль: сколько нот и длительность.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TakeInfo {
+    notes: usize,
+    duration_ms: u64,
 }
 
 #[derive(Serialize)]
@@ -54,11 +65,12 @@ impl MidiHub {
             preview_gen: AtomicU64::new(0),
             rec: Mutex::new(None),
             rec_gen: AtomicU64::new(0),
+            take: Mutex::new(None),
         }
     }
 
     /// Любое сообщение с входов: во время записи сохраняется.
-    pub fn on_midi(&self, msg: MidiMessage, time_us: u64) {
+    pub fn on_midi(&self, channel: u8, msg: MidiMessage, time_us: u64) {
         let mut guard = self.rec.lock();
         let Some(rec) = guard.as_mut() else { return };
         if time_us + EARLY_US < rec.start_us {
@@ -67,7 +79,8 @@ impl MidiHub {
         if matches!(msg, MidiMessage::NoteOn { .. }) {
             rec.notes += 1;
         }
-        rec.events.push((time_us.saturating_sub(rec.start_us), msg));
+        rec.events
+            .push((time_us.saturating_sub(rec.start_us), channel, msg));
     }
 
     fn stop_preview(&self) {
@@ -275,6 +288,10 @@ pub fn record_stop(
     if rec.free {
         align_to_first_note(&mut rec.events);
     }
+    save_recording(&app, &rec, &name).map(Some)
+}
+
+fn save_recording(app: &AppHandle, rec: &Recording, name: &str) -> Result<String, String> {
     let clean: String = name
         .chars()
         .map(|c| if "/\\:*?\"<>|".contains(c) { '-' } else { c })
@@ -285,18 +302,106 @@ pub fn record_stop(
     } else {
         clean
     };
-    let bytes = midifile::write_smf(&rec.events, rec.bpm, title);
-    let dir = library_dir(&app)?;
+    let bytes = midifile::write_smf_channels(&rec.events, rec.bpm, title);
+    let dir = library_dir(app)?;
     let file = unique_name(&dir, &format!("{title}.mid"));
     std::fs::write(dir.join(&file), bytes).map_err(|e| format!("запись не сохранена: {e}"))?;
-    Ok(Some(file))
+    Ok(file)
+}
+
+/// Остановить запись и оставить её дублем: прослушать, сохранить или выбросить.
+/// `None` — не было ни одной ноты.
+#[tauri::command]
+pub fn record_take_stop(hub: State<Arc<MidiHub>>) -> Option<TakeInfo> {
+    hub.stop_metronome();
+    let mut rec = hub.rec.lock().take()?;
+    if rec.notes == 0 {
+        return None;
+    }
+    if rec.free {
+        align_to_first_note(&mut rec.events);
+    }
+    let info = TakeInfo {
+        notes: rec.notes,
+        duration_ms: rec.events.iter().map(|e| e.0).max().unwrap_or(0) / 1000,
+    };
+    *hub.take.lock() = Some(rec);
+    Some(info)
+}
+
+/// Прослушать дубль: клавиши — «звуком приложения», пэды — барабанами GM.
+/// Остановить — `midi_preview_stop`.
+#[tauri::command]
+pub fn record_take_play(hub: State<Arc<MidiHub>>) -> Result<(), String> {
+    let Some(events) = hub.take.lock().as_ref().map(|r| r.events.clone()) else {
+        return Err("нет записи".into());
+    };
+    hub.stop_preview();
+    let gen = hub.preview_gen.load(Ordering::SeqCst);
+    let hub = Arc::clone(&hub);
+    thread::Builder::new()
+        .name("mt-take".into())
+        .spawn(move || {
+            let gm = hub.audio.has_gm();
+            hub.devices.set_extra_sound_demand(true);
+            let t0 = clock::now_us() + 50_000;
+            let mut sorted = events;
+            sorted.sort_by_key(|e| e.0);
+            for (t, ch, msg) in sorted {
+                loop {
+                    if hub.preview_gen.load(Ordering::SeqCst) != gen {
+                        break;
+                    }
+                    let due = t0 + t;
+                    let now = clock::now_us();
+                    if now >= due {
+                        break;
+                    }
+                    thread::sleep(Duration::from_micros((due - now).min(20_000)));
+                }
+                if hub.preview_gen.load(Ordering::SeqCst) != gen {
+                    break;
+                }
+                if ch == DRUM_CHANNEL {
+                    if gm {
+                        hub.audio.gm_send(DRUM_CHANNEL, None, msg);
+                    } else if let MidiMessage::NoteOn { velocity, .. } = msg {
+                        hub.audio.click(velocity >= 90);
+                    }
+                } else {
+                    hub.devices.play_app(msg);
+                }
+            }
+            hub.devices.all_app_notes_off();
+            hub.devices.set_extra_sound_demand(false);
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Сохранить дубль в библиотеку («Мои файлы»).
+#[tauri::command]
+pub fn record_take_save(
+    app: AppHandle,
+    hub: State<Arc<MidiHub>>,
+    name: String,
+) -> Result<String, String> {
+    let guard = hub.take.lock();
+    let rec = guard.as_ref().ok_or("нет записи")?;
+    save_recording(&app, rec, &name)
+}
+
+#[tauri::command]
+pub fn record_take_discard(hub: State<Arc<MidiHub>>) {
+    hub.stop_preview();
+    *hub.take.lock() = None;
 }
 
 /// Свободная запись (без щелчков): первая нота — начало первой доли.
-fn align_to_first_note(events: &mut [(u64, MidiMessage)]) {
+fn align_to_first_note(events: &mut [(u64, u8, MidiMessage)]) {
     let Some(first) = events
         .iter()
-        .find(|e| matches!(e.1, MidiMessage::NoteOn { .. }))
+        .find(|e| matches!(e.2, MidiMessage::NoteOn { .. }))
         .map(|e| e.0)
     else {
         return;
@@ -322,6 +427,7 @@ mod tests {
         let mut ev = vec![
             (
                 100,
+                0,
                 MidiMessage::ControlChange {
                     controller: 64,
                     value: 127,
@@ -329,12 +435,13 @@ mod tests {
             ),
             (
                 250_000,
+                0,
                 MidiMessage::NoteOn {
                     note: 60,
                     velocity: 90,
                 },
             ),
-            (900_000, MidiMessage::NoteOff { note: 60 }),
+            (900_000, 0, MidiMessage::NoteOff { note: 60 }),
         ];
         align_to_first_note(&mut ev);
         assert_eq!(

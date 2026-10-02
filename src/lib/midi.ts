@@ -59,12 +59,18 @@ export const ROLES: { role: TrackRole; label: string; title: string }[] = [
   { role: "left", label: "Левая", title: "Играю левой рукой (нижний стан)" },
   { role: "both", label: "Обе", title: "Фортепианная дорожка: приложение само разделит её на руки по высоте" },
   { role: "accompany", label: "Аккомп.", title: "Звучит как аккомпанемент, на стане не показывается" },
+  { role: "drums", label: "Барабаны", title: "Играю на пэдах: дорожка ударных — моя партия (инструмент «Барабаны»)" },
   { role: "off", label: "Выкл.", title: "Не звучит и не показывается" },
 ];
 
-/** Хотя бы одна дорожка должна попасть на стан. */
+/** Хотя бы одна дорожка должна попасть на стан (руки или барабаны). */
 export function hasPlayable(roles: TrackRole[]): boolean {
-  return roles.some((r) => r === "right" || r === "left" || r === "both");
+  return roles.some((r) => r === "right" || r === "left" || r === "both" || r === "drums");
+}
+
+/** Роли, которые можно выбрать дорожке: ударным — барабаны, аккомпанемент или выкл., остальным — без барабанов. */
+export function rolesFor(drums: boolean): typeof ROLES {
+  return ROLES.filter((r) => (drums ? r.role === "drums" || r.role === "accompany" || r.role === "off" : r.role !== "drums"));
 }
 
 export const KEY_NAMES_MAJOR: Record<number, string> = {

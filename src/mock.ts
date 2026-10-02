@@ -14,12 +14,15 @@ import type {
   FullState,
   InputSettings,
   MidiEvent,
+  PadBinding,
   PieceNoteIn,
   SoundRoute,
   TrainerLevel,
   TrainerTarget,
 } from "./api";
 import { createPracticeMock } from "./mockPractice";
+
+const PADS_DEVICE = "Пэды";
 import odeToJoy from "./pieces/ode-to-joy.musicxml?raw";
 
 type Listener = (payload: never) => void;
@@ -100,8 +103,10 @@ export function createMock() {
       appChannel,
       internalSoundNeeded:
         appRoute.kind === "internal" || connected.some(([, s]) => s.route.kind === "internal"),
+      pads,
     };
   };
+  let pads: PadBinding[] = [];
 
   type Body = { type: "noteOn"; note: number; velocity: number } | { type: "noteOff"; note: number };
   const send = (device: string, ev: Body) => {
@@ -385,6 +390,20 @@ export function createMock() {
       trim: 0,
       keyFifths: 0,
       tripletQuarters: 0,
+      handsAccompaniment: [],
+      meter: [4, 4],
+      // Демо-барабаны: рок-бит восьмыми на 4 такта.
+      drums: [0, 1, 2, 3].map(() => ({
+        perBeat: 4,
+        cells: 16,
+        hits: [
+          ...[0, 2, 4, 6, 8, 10, 12, 14].map((cell) => ({ cell, gm: 42, velocity: 80 })),
+          { cell: 0, gm: 36, velocity: 90 },
+          { cell: 8, gm: 36, velocity: 90 },
+          { cell: 4, gm: 38, velocity: 95 },
+          { cell: 12, gm: 38, velocity: 95 },
+        ],
+      })),
     }),
     midi_preview: () => undefined,
     midi_preview_stop: () => undefined,
@@ -402,6 +421,14 @@ export function createMock() {
       return save && r && r.notes > 0 ? `${name}.mid` : null;
     },
     save_text_file: () => undefined,
+    record_take_stop: () => {
+      const r = recording;
+      recording = null;
+      return r && r.notes > 0 ? { notes: r.notes, durationMs: Math.round(performance.now() - r.start) } : null;
+    },
+    record_take_play: () => undefined,
+    record_take_save: ({ name }) => `${name}.mid`,
+    record_take_discard: () => undefined,
     guitar_state: () => {
       const now = performance.now();
       const on = guitar.enabled;
@@ -549,6 +576,14 @@ export function createMock() {
       emit("audio", state.audio);
     },
     play_note: () => undefined,
+    set_drum_pads: ({ pads: next }) => {
+      pads = next as PadBinding[];
+      emit("devices", snapshot());
+    },
+    hit_drum: ({ drum, velocity }) => {
+      send(PADS_DEVICE, { type: "noteOn", note: drum as number, velocity: velocity as number });
+      setTimeout(() => emitMidi(PADS_DEVICE, { type: "noteOff", note: drum as number }), 150);
+    },
     rescan_devices: () => snapshot(),
     simulate_midi: () => undefined,
   };

@@ -537,6 +537,8 @@ export interface Evaluation {
   /** Ноты с самым большим отклонением: id и сдвиг. */
   worst: { id: string; deltaMs: number }[];
   passed: boolean;
+  /** Барабаны: акценты и тихие ноты. */
+  dynamics?: import("./drums").DynamicsEval;
 }
 
 export const PASS_ACCURACY = 0.95;

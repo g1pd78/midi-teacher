@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type MidiInfo, type TrackRole } from "../api";
-import { ROLES, hasPlayable, instrumentName, keyName } from "../lib/midi";
+import { hasPlayable, instrumentName, keyName, rolesFor } from "../lib/midi";
 import { keyLabel } from "../lib/notes";
 import { useApp } from "../store";
 
@@ -65,7 +65,8 @@ export function TrackDialog({
         </p>
         <p className="hint">
           Выбери, что играешь ты. «Обе» — приложение само разделит дорожку на руки по высоте (потом можно поправить
-          в режиме «Руки…»). Аккомпанемент звучит вместе с тобой, но на нотах не показывается.
+          в режиме «Руки…»). Аккомпанемент звучит вместе с тобой, но на нотах не показывается. «Барабаны» у ударных —
+          играешь их на пэдах (инструмент «Барабаны» у пьесы).
         </p>
         <div className="track-list">
           {info.tracks.map((t, i) => (
@@ -85,12 +86,11 @@ export function TrackDialog({
                 </span>
               </div>
               <div className="segmented track-roles">
-                {ROLES.map((r) => (
+                {rolesFor(t.drums).map((r) => (
                   <button
                     key={r.role}
                     className={roles[i] === r.role ? "on" : ""}
                     title={r.title}
-                    disabled={t.drums && r.role !== "off" && r.role !== "accompany"}
                     onClick={() => setRole(i, r.role)}
                     data-role={r.role}
                   >
@@ -101,7 +101,7 @@ export function TrackDialog({
             </div>
           ))}
         </div>
-        {!ok && <div className="notice warn">Выбери хотя бы одну дорожку для правой, левой или обеих рук.</div>}
+        {!ok && <div className="notice warn">Выбери хотя бы одну дорожку для правой, левой или обеих рук — или барабаны.</div>}
         <div className="summary-actions">
           <button onClick={onCancel}>Отмена</button>
           <button className="primary" disabled={!ok} onClick={() => onApply(roles)} data-apply>

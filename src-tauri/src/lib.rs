@@ -13,7 +13,9 @@ mod trainer;
 use crossbeam_channel::unbounded;
 use midi_import::MidiHub;
 use mt_core::audio::{AudioConfig, AudioDevices, AudioEngine, AudioMeters, AudioStatus};
-use mt_core::devices::{DeviceEvent, DeviceManager, DevicesSnapshot, InputSettings, SoundRoute};
+use mt_core::devices::{
+    DeviceEvent, DeviceManager, DevicesSnapshot, InputSettings, PadBinding, SoundRoute,
+};
 use mt_core::midi::MidiMessage;
 use mt_core::store::Store;
 use parking_lot::Mutex;
@@ -116,6 +118,19 @@ fn set_input(state: State<AppState>, name: String, input: InputSettings) {
 fn set_app_route(state: State<AppState>, route: SoundRoute, channel: u8) {
     state.devices.set_app_route(route, channel);
     state.save();
+}
+
+/// Пэды MIDI-клавиатуры как барабаны (мастер на вкладке «Барабаны»).
+#[tauri::command]
+fn set_drum_pads(state: State<AppState>, pads: Vec<PadBinding>) {
+    state.devices.set_pads(pads);
+    state.save();
+}
+
+/// Удар по экранному пэду: барабан звучит и засчитывается, как удар по настоящему.
+#[tauri::command]
+fn hit_drum(state: State<AppState>, drum: u8, velocity: u8) {
+    state.devices.hit_drum(drum, velocity);
 }
 
 #[tauri::command]
@@ -276,7 +291,7 @@ pub fn run() {
                     for ev in rx {
                         match ev {
                             DeviceEvent::Midi(e) => {
-                                midi_events.on_midi(e.msg, e.time_us);
+                                midi_events.on_midi(e.channel, e.msg, e.time_us);
                                 if let MidiMessage::NoteOn { note, velocity } = e.msg {
                                     trainer_hub.on_note_on(&handle, note, e.time_us);
                                     piece_events.on_note_on(note, e.time_us);
@@ -352,6 +367,8 @@ pub fn run() {
             list_audio_devices,
             set_input,
             set_app_route,
+            set_drum_pads,
+            hit_drum,
             set_audio_config,
             set_prefs,
             load_soundfont,
@@ -390,6 +407,10 @@ pub fn run() {
             midi_import::record_start,
             midi_import::record_status,
             midi_import::record_stop,
+            midi_import::record_take_stop,
+            midi_import::record_take_play,
+            midi_import::record_take_save,
+            midi_import::record_take_discard,
             midi_import::save_text_file,
             guitar::guitar_state,
             guitar::guitar_inputs,

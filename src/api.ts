@@ -42,6 +42,8 @@ export interface DevicesSnapshot {
   appRoute: SoundRoute;
   appChannel: number;
   internalSoundNeeded: boolean;
+  /** Пэды, назначенные барабанами. */
+  pads: PadBinding[];
 }
 
 export type AudioBackend = "auto" | "asio" | "system";
@@ -110,7 +112,7 @@ export interface PiecePrefs {
   waterfall: boolean;
 }
 
-export type TrackRole = "right" | "left" | "both" | "accompany" | "off";
+export type TrackRole = "right" | "left" | "both" | "accompany" | "drums" | "off";
 
 export interface HandOverride {
   /** Начало в долях сетки импорта (12 на четверть) до обрезки пустого начала. */
@@ -121,7 +123,18 @@ export interface HandOverride {
 }
 
 /** Настройки одной пьесы. */
-export type PieceInstrument = "piano" | "guitar" | "bass";
+/** Пэд MIDI-клавиатуры, назначенный барабаном (нота GM-ударных `drum`). */
+export interface PadBinding {
+  device: string;
+  channel: number;
+  note: number;
+  drum: number;
+}
+
+/** Имя устройства, от которого приходят удары по пэдам. */
+export const PADS_DEVICE = "Пэды";
+
+export type PieceInstrument = "piano" | "guitar" | "bass" | "drums";
 
 export interface PieceSetup {
   transpose: number;
@@ -181,9 +194,27 @@ export interface AccompNote {
   program: number | null;
 }
 
+/** Такт барабанной партии из MIDI: клеток на четверть 4 (шестнадцатые) или 3 (триоли). */
+export interface DrumMeasureIn {
+  perBeat: number;
+  cells: number;
+  hits: { cell: number; gm: number; velocity: number }[];
+}
+
+/** Дубль записи своей игры. */
+export interface TakeInfo {
+  notes: number;
+  durationMs: number;
+}
+
 export interface Converted {
   musicxml: string;
   accompaniment: AccompNote[];
+  /** Ноты рук как аккомпанемент — когда играешь барабаны. */
+  handsAccompaniment: AccompNote[];
+  /** Барабанная партия (роль «Барабаны»). */
+  drums: DrumMeasureIn[] | null;
+  meter: [number, number];
   bpm: number;
   measures: number;
   trim: number;
@@ -544,6 +575,8 @@ export const api = {
   listAudioDevices: () => invoke<AudioDevices>("list_audio_devices"),
   setInput: (name: string, input: InputSettings) => invoke<void>("set_input", { name, input }),
   setAppRoute: (route: SoundRoute, channel: number) => invoke<void>("set_app_route", { route, channel }),
+  setDrumPads: (pads: PadBinding[]) => invoke<void>("set_drum_pads", { pads }),
+  hitDrum: (drum: number, velocity: number) => invoke<void>("hit_drum", { drum, velocity }),
   setAudioConfig: (config: AudioConfig) => invoke<void>("set_audio_config", { config }),
   setPrefs: (prefs: UiPrefs) => invoke<void>("set_prefs", { prefs }),
   loadSoundfont: (path: string | null) => invoke<string>("load_soundfont", { path }),
@@ -587,6 +620,11 @@ export const api = {
     invoke<void>("record_start", { bpm, beatsPerBar, metronome, countIn }),
   recordStatus: () => invoke<RecordStatus>("record_status"),
   recordStop: (name: string, save: boolean) => invoke<string | null>("record_stop", { name, save }),
+  /** Остановить запись и оставить дублем (прослушать / сохранить / выбросить). */
+  recordTakeStop: () => invoke<TakeInfo | null>("record_take_stop"),
+  recordTakePlay: () => invoke<void>("record_take_play"),
+  recordTakeSave: (name: string) => invoke<string>("record_take_save", { name }),
+  recordTakeDiscard: () => invoke<void>("record_take_discard"),
   saveTextFile: (path: string, content: string) => invoke<void>("save_text_file", { path, content }),
   guitarState: () => invoke<GuitarState>("guitar_state"),
   guitarInputs: () => invoke<GuitarInput[]>("guitar_inputs"),

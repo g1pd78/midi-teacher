@@ -52,6 +52,40 @@ impl Default for InputSettings {
     }
 }
 
+/// Пэд MIDI-клавиатуры, назначенный барабаном: удар по нему звучит барабаном установки GM
+/// и приходит в приложение нотой GM-ударных `drum` (36 — бочка, 38 — малый…) от устройства «Пэды».
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PadBinding {
+    pub device: String,
+    pub channel: u8,
+    pub note: u8,
+    pub drum: u8,
+}
+
+/// Имя «устройства», от которого приходят удары по пэдам.
+pub const PADS_DEVICE: &str = "Пэды";
+/// Канал ударных General MIDI (10-й).
+pub const DRUM_CHANNEL: u8 = 9;
+
+/// Барабан, назначенный сообщению с входа (только нажатия и отпускания клавиш).
+pub fn pad_drum(
+    settings: &DeviceSettings,
+    device: &str,
+    channel: u8,
+    msg: MidiMessage,
+) -> Option<u8> {
+    let note = match msg {
+        MidiMessage::NoteOn { note, .. } | MidiMessage::NoteOff { note } => note,
+        _ => return None,
+    };
+    settings
+        .pads
+        .iter()
+        .find(|p| p.device == device && p.channel == channel && p.note == note)
+        .map(|p| p.drum)
+}
+
 /// Сохраняемые настройки устройств.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -61,6 +95,8 @@ pub struct DeviceSettings {
     pub app_route: SoundRoute,
     /// MIDI-канал (0–15) для звука приложения при выводе на внешний инструмент.
     pub app_channel: u8,
+    /// Пэды, назначенные барабанами.
+    pub pads: Vec<PadBinding>,
 }
 
 impl Default for DeviceSettings {
@@ -69,6 +105,7 @@ impl Default for DeviceSettings {
             inputs: BTreeMap::new(),
             app_route: SoundRoute::Internal,
             app_channel: 0,
+            pads: Vec::new(),
         }
     }
 }
@@ -113,6 +150,7 @@ pub struct DevicesSnapshot {
     pub app_channel: u8,
     /// Нужен ли сейчас встроенный синтезатор (иначе аудиоустройство освобождается).
     pub internal_sound_needed: bool,
+    pub pads: Vec<PadBinding>,
 }
 
 /// Куда отправить звук для события с входа.
@@ -194,6 +232,8 @@ pub fn internal_sound_needed(settings: &DeviceSettings, connected: &[String]) ->
         || connected
             .iter()
             .any(|name| route_target(settings, name) == Target::Synth)
+        // Барабаны пэдов звучат из компьютера.
+        || settings.pads.iter().any(|p| connected.contains(&p.device))
 }
 
 struct Shared {
@@ -210,6 +250,24 @@ impl Shared {
         let Some((channel, msg)) = midi::parse(bytes) else {
             return;
         };
+        let drum = pad_drum(&self.settings.read(), device, channel, msg);
+        if let Some(drum) = drum {
+            self.play_drum(drum, msg);
+            let msg = match msg {
+                MidiMessage::NoteOn { velocity, .. } => MidiMessage::NoteOn {
+                    note: drum,
+                    velocity,
+                },
+                _ => MidiMessage::NoteOff { note: drum },
+            };
+            let _ = self.events.try_send(DeviceEvent::Midi(MidiEvent {
+                device: PADS_DEVICE.to_string(),
+                channel: DRUM_CHANNEL,
+                msg,
+                time_us,
+            }));
+            return;
+        }
         {
             let settings = self.settings.read();
             match route_target(&settings, device) {
@@ -224,6 +282,25 @@ impl Shared {
             msg,
             time_us,
         }));
+    }
+
+    /// Барабан установки GM; без GM-банка — щелчок метронома, чтобы удар был хотя бы слышен.
+    fn play_drum(&self, drum: u8, msg: MidiMessage) {
+        let MidiMessage::NoteOn { velocity, .. } = msg else {
+            return;
+        };
+        if self.audio.has_gm() {
+            self.audio.gm_send(
+                DRUM_CHANNEL,
+                None,
+                MidiMessage::NoteOn {
+                    note: drum,
+                    velocity,
+                },
+            );
+        } else {
+            self.audio.click(velocity >= 90);
+        }
     }
 
     fn send_out(&self, port: &str, channel: u8, msg: MidiMessage) {
@@ -316,6 +393,41 @@ impl DeviceManager {
         self.rescan();
     }
 
+    /// Назначить пэды барабанами (пустой список — пэды снова звучат как клавиши).
+    pub fn set_pads(&self, pads: Vec<PadBinding>) {
+        self.shared.settings.write().pads = pads;
+        self.rescan();
+    }
+
+    /// Удар по барабану без пэда (экранные пэды, тесты): звучит и приходит как с «Пэдов»;
+    /// через 150 мс — отпускание, чтобы пэд на экране погас.
+    pub fn hit_drum(&self, drum: u8, velocity: u8) {
+        let msg = MidiMessage::NoteOn {
+            note: drum,
+            velocity: velocity.max(1),
+        };
+        self.shared.play_drum(drum, msg);
+        let send = |msg| {
+            let _ = self.shared.events.try_send(DeviceEvent::Midi(MidiEvent {
+                device: PADS_DEVICE.to_string(),
+                channel: DRUM_CHANNEL,
+                msg,
+                time_us: clock::now_us(),
+            }));
+        };
+        send(msg);
+        let events = self.shared.events.clone();
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(150));
+            let _ = events.try_send(DeviceEvent::Midi(MidiEvent {
+                device: PADS_DEVICE.to_string(),
+                channel: DRUM_CHANNEL,
+                msg: MidiMessage::NoteOff { note: drum },
+                time_us: clock::now_us(),
+            }));
+        });
+    }
+
     /// Держать встроенный вывод открытым независимо от маршрутов (для метронома).
     /// Звук нужен гитаре (отдельно от метронома, чтобы конец игры его не выключал).
     pub fn set_guitar_sound_demand(&self, on: bool) {
@@ -333,6 +445,28 @@ impl DeviceManager {
             .swap(on, std::sync::atomic::Ordering::Relaxed);
         if prev != on {
             self.rescan();
+        }
+    }
+
+    /// Снять все ноты и педаль звука приложения (после прослушивания записи).
+    pub fn all_app_notes_off(&self) {
+        let settings = self.shared.settings.read();
+        let channel = settings.app_channel;
+        match &settings.app_route {
+            SoundRoute::Internal => self.shared.audio.all_notes_off(),
+            SoundRoute::Output { port } => {
+                for controller in [midi::CC_SUSTAIN, 123] {
+                    self.shared.send_out(
+                        port,
+                        channel,
+                        MidiMessage::ControlChange {
+                            controller,
+                            value: 0,
+                        },
+                    );
+                }
+            }
+            SoundRoute::Silent => {}
         }
     }
 
@@ -435,6 +569,7 @@ impl DeviceManager {
             app_route: settings.app_route.clone(),
             app_channel: settings.app_channel,
             internal_sound_needed: needed,
+            pads: settings.pads.clone(),
         };
         drop(inputs);
 
@@ -562,6 +697,74 @@ mod tests {
             );
         }
         s
+    }
+
+    #[test]
+    fn pads_map_to_drums_only_for_their_device_channel_and_note() {
+        let s = DeviceSettings {
+            pads: vec![
+                PadBinding {
+                    device: "Keystation".into(),
+                    channel: 9,
+                    note: 36,
+                    drum: 36,
+                },
+                PadBinding {
+                    device: "Keystation".into(),
+                    channel: 9,
+                    note: 37,
+                    drum: 38,
+                },
+            ],
+            ..Default::default()
+        };
+        let hit = |device: &str, channel, note| {
+            pad_drum(
+                &s,
+                device,
+                channel,
+                MidiMessage::NoteOn {
+                    note,
+                    velocity: 100,
+                },
+            )
+        };
+        assert_eq!(hit("Keystation", 9, 37), Some(38));
+        assert_eq!(hit("Keystation", 9, 36), Some(36));
+        // Клавиша с тем же номером на канале клавиш — не пэд.
+        assert_eq!(hit("Keystation", 0, 37), None);
+        assert_eq!(hit("Digital Piano", 9, 37), None);
+        assert_eq!(
+            pad_drum(&s, "Keystation", 9, MidiMessage::NoteOff { note: 37 }),
+            Some(38)
+        );
+        assert_eq!(
+            pad_drum(
+                &s,
+                "Keystation",
+                9,
+                MidiMessage::ControlChange {
+                    controller: 1,
+                    value: 3
+                }
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn connected_pads_need_internal_sound() {
+        let mut s = settings_with(&[("Keystation", SoundRoute::Silent)]);
+        s.app_route = SoundRoute::Silent;
+        assert!(!internal_sound_needed(&s, &["Keystation".into()]));
+        s.pads = vec![PadBinding {
+            device: "Keystation".into(),
+            channel: 9,
+            note: 36,
+            drum: 36,
+        }];
+        assert!(internal_sound_needed(&s, &["Keystation".into()]));
+        assert!(!internal_sound_needed(&s, &[]));
     }
 
     #[test]

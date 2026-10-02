@@ -347,6 +347,11 @@ impl AudioEngine {
         self.status.read().clone()
     }
 
+    /// Загружен ли GM-банк (барабаны, инструменты аккомпанемента).
+    pub fn has_gm(&self) -> bool {
+        self.status.read().gm.is_some()
+    }
+
     /// Вход гитары/баса: состояние, тюнер, начала нот.
     pub fn guitar(&self) -> &Arc<GuitarShared> {
         &self.guitar

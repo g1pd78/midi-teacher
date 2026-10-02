@@ -541,6 +541,148 @@ try {
   if (!heard.length) throw new Error("распознанные ноты не показаны");
   ok(`гитара: «Ода к радости» в табах сыграна щипками через распознавание звука — ${plucks} нот, 0 ошибок`);
 
+  // --- Этап «Б»: барабаны на пэдах ---
+  console.log("Сквозной тест: барабаны");
+  await waitFor("вкладка «Барабаны»", () => click("Барабаны"));
+  await waitFor("мастер пэдов", () => js("const b = document.querySelector('[data-pad-wizard]'); if (!b) return false; b.click(); return true;"));
+  const padStep = () => js("return document.querySelector('[data-pad-step]')?.dataset.padStep ?? '';");
+  await waitFor("шаг «Бочка»", async () => (await padStep()) === "kick");
+  // Пэды имитированной клавиатуры — ноты 36–39 на 10-м канале.
+  const padHit = async (note, velocity = 100) => {
+    await invoke("simulate_midi", { device: "E2E", bytes: [0x99, note, velocity] });
+    await invoke("simulate_midi", { device: "E2E", bytes: [0x89, note, 0] });
+  };
+  for (const [note, next] of [[36, "snare"], [37, "hhClosed"], [38, "hhOpen"], [39, "tom"]]) {
+    await padHit(note);
+    await waitFor(`мастер: шаг «${next}»`, async () => (await padStep()) === next);
+  }
+  await padHit(36);
+  await waitFor("повтор пэда отклонён", () => js("return (document.querySelector('.pad-wizard .notice')?.textContent ?? '').includes('уже назначен');"));
+  await js("document.querySelector('[data-pad-save]').click();");
+  await waitFor("пэды сохранены", async () => (await invoke("get_state")).devices.pads.length === 4);
+  ok("мастер пэдов: 4 пэда назначены, повторный пэд отклонён");
+
+  // Экранный пэд: удар звучит и приходит от «Пэдов».
+  await waitFor("экранный пэд", () =>
+    js("const b = document.querySelector(\".drums [data-drum='snare']\"); if (!b) return false; b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); return true;"),
+  );
+  await waitFor("экранный пэд вспыхнул", () => js("return !!document.querySelector(\".drums [data-drum='snare'].held\");"), 3000);
+  ok("удар по экранному пэду приходит от устройства «Пэды»");
+
+  // Бот играет грув на пэдах в режиме ожидания: каждый нужный барабан — удар по назначенному пэду.
+  const padOf = { 36: 36, 38: 37, 42: 38, 46: 39 };
+  const done = () => js("return document.querySelector('.score-scroll')?.dataset.finished === '1';");
+  const playWait = async (label, hit) => {
+    let count = 0;
+    for (let i = 0; i < 200 && !(await done()); i++) {
+      const cur = await pitches();
+      if (!cur) {
+        await sleep(100);
+        continue;
+      }
+      const step = await stepNo();
+      for (const p of cur.split(",")) await hit(Number(p));
+      count++;
+      await waitFor(`${label}: переход с шага ${step}`, async () => (await stepNo()) !== step || (await done()), 8000);
+    }
+    const sum = await waitFor(`${label}: итог`, () => js("return document.querySelector('.summary')?.innerText;"), 10000);
+    const errors = await js("return document.querySelector('.summary .big')?.textContent;");
+    if (errors !== "0") throw new Error(`${label}: ошибок ${errors}\n${sum}`);
+    return count;
+  };
+  await waitFor("грув «Бочка и малый четвертями»", () =>
+    js("const b = document.querySelector(\"[data-exercise='drum-groove-quarters']\"); if (!b || b.disabled) return false; b.click(); return true;"),
+  );
+  await waitFor("ударный стан, дорожка и пэды", () =>
+    js("return !!document.querySelector('.score-page svg g.note') && !!document.querySelector('[data-drum-pads]') && !!document.querySelector('[data-drum-highway]');"),
+    30000,
+  );
+  await waitFor("режим ожидания", () => click("Ожидание"));
+  await waitFor("первый шаг — бочка (36)", async () => (await pitches()) === "36", 10000);
+  const grooveSteps = await playWait("грув", (p) => padHit(padOf[p]));
+  ok(`барабаны: грув сыгран на пэдах через назначение — ${grooveSteps} шагов, 0 ошибок`);
+
+  // Рудимент в темпе: ничего не играем — результат всё равно записан (не засчитан).
+  await waitFor("к барабанам", () => click("← Барабаны"));
+  await waitFor("рудимент «Одиночные восьмыми»", () =>
+    js("const b = document.querySelector(\"[data-exercise='drum-rud-singles8']\"); if (!b || b.disabled) return false; b.click(); return true;"),
+  );
+  await waitFor("ноты рудимента", () => js("return !!document.querySelector('.score-page svg g.note');"), 30000);
+  await waitFor("старт", () => click("▶ Старт"));
+  await waitFor("итог рудимента", () => js("return !!document.querySelector('.exercise-summary');"), 40000);
+  const drumStats = await invoke("exercise_stats");
+  if (!drumStats.some((st) => st.exercise === "drum-rud-singles8")) throw new Error("результат рудимента не записан");
+  ok("рудимент в темпе: итог показан, результат записан");
+  await waitFor("закрыть итог", () => js("const b = [...document.querySelectorAll('.exercise-summary button')].find((b) => b.textContent.includes('Закрыть') || b.textContent.includes('К упражнениям') || b.textContent.includes('←')); if (!b) return false; b.click(); return true;")).catch(() => {});
+
+  // Барабаны из MIDI: файл с фортепиано и ударными, ударные — «мои».
+  const smf0 = (events, ppq = 480) => {
+    const vlq = (v) => {
+      const out = [v & 0x7f];
+      while ((v >>= 7)) out.unshift((v & 0x7f) | 0x80);
+      return out;
+    };
+    const body = [0, 0xff, 0x51, 3, 0x07, 0xa1, 0x20, 0, 0xff, 0x58, 4, 4, 2, 24, 8];
+    let last = 0;
+    for (const [t, bytes] of [...events].sort((a, b) => a[0] - b[0] || (a[1][0] & 0xf0) - (b[1][0] & 0xf0))) {
+      body.push(...vlq(t - last), ...bytes);
+      last = t;
+    }
+    body.push(0, 0xff, 0x2f, 0);
+    const len = body.length;
+    return Buffer.from([
+      ...Buffer.from("MThd"), 0, 0, 0, 6, 0, 0, 0, 1, ppq >> 8, ppq & 0xff,
+      ...Buffer.from("MTrk"), (len >>> 24) & 0xff, (len >>> 16) & 0xff, (len >>> 8) & 0xff, len & 0xff,
+      ...body,
+    ]);
+  };
+  const ev = [];
+  const note = (t, ch, n, len = 100, v = 90) => ev.push([t, [0x90 | ch, n, v]], [t + len, [0x80 | ch, n, 0]]);
+  for (let bar = 0; bar < 2; bar++) {
+    const o = bar * 1920;
+    for (let i = 0; i < 8; i++) note(o + i * 240, 9, 42);
+    note(o, 9, 36);
+    note(o + 960, 9, 36);
+    note(o + 480, 9, 38);
+    note(o + 1440, 9, 38);
+    [60, 64, 67, 64].forEach((n, i) => note(o + i * 480, 0, n, 460, 70));
+  }
+  writeFileSync(join(docs, "MIDI Teacher", "Барабаны тест.mid"), smf0(ev));
+  await waitFor("вкладка пьес", () => click("Пьесы"));
+  await waitFor("MIDI с барабанами", () =>
+    js("const b = [...document.querySelectorAll('.piece-card')].find((b) => b.textContent.includes('Барабаны тест')); if (!b) return false; b.click(); return true;"),
+    20000,
+  );
+  await waitFor("окно дорожек", () => js("return !!document.querySelector('[data-track-dialog]');"), 20000);
+  await waitFor("ударные — «Барабаны»", () =>
+    js("const row = [...document.querySelectorAll('[data-track]')].find((r) => r.textContent.includes('Ударные')); const b = row && row.querySelector(\"[data-role='drums']\"); if (!b) return false; b.click(); return b.classList.contains('on') || true;"),
+  );
+  await js("document.querySelector('[data-apply]').click();");
+  await waitFor("инструмент «Барабаны»", () => js("const b = document.querySelector(\"[data-piece-instrument='drums']\"); if (!b) return false; b.click(); return true;"), 20000);
+  await waitFor("барабанная партия из MIDI", () => js("return !!document.querySelector('[data-drum-pads]') && !!document.querySelector('.score-page svg g.note');"), 30000);
+  await waitFor("режим «Свободно»", () => click("Свободно"));
+  await waitFor("режим ожидания", () => click("Ожидание"));
+  await waitFor("первый шаг — бочка и хэт", async () => (await pitches()).split(",").sort().join(",") === "36,42", 10000);
+  const midiSteps = await playWait("барабаны из MIDI", (p) => invoke("hit_drum", { drum: p, velocity: 100 }));
+  ok(`барабаны из MIDI: партия ударных сыграна на экранных пэдах — ${midiSteps} шагов, 0 ошибок`);
+
+  // Запись своей игры в пьесе: ● → удары → ■ → дубль → «Сохранить».
+  await js("document.querySelector('.summary-overlay button')?.click();");
+  await waitFor("кнопка записи", () => js("const b = document.querySelector(\"[data-record-take='off']\"); if (!b) return false; b.click(); return true;"));
+  await waitFor("запись идёт", () => js("return !!document.querySelector(\"[data-record-take='on']\");"));
+  for (const d of [36, 42, 38, 42]) {
+    await invoke("hit_drum", { drum: d, velocity: 100 });
+    await sleep(150);
+  }
+  await js("document.querySelector(\"[data-record-take='on']\").click();");
+  const takeNotes = await waitFor("дубль", () => js("return document.querySelector('[data-take]')?.dataset.take ?? '';"));
+  if (Number(takeNotes) !== 4) throw new Error(`в дубле ${takeNotes} нот вместо 4`);
+  await js("document.querySelector('[data-take-save]').click();");
+  const saved = await waitFor("запись сохранена", () => js("const t = document.querySelector('.toast')?.textContent ?? ''; return t.includes('сохранена') ? t : false;"));
+  const takeFile = saved.split(": ").pop().trim();
+  if (!existsSync(join(docs, "MIDI Teacher", takeFile))) throw new Error(`файла ${takeFile} нет в библиотеке`);
+  ok(`запись в пьесе: дубль из 4 ударов сохранён — ${takeFile}`);
+
   console.log("Готово: все проверки пройдены");
 } catch (e) {
   console.error(`✗ ${e.message}`);

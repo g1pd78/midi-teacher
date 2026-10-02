@@ -26,6 +26,8 @@ pub enum TrackRole {
     Both,
     /// Звучит (играет приложение), в нотах не показывается.
     Accompany,
+    /// Барабаны — партия ученика на пэдах (только для дорожки ударных).
+    Drums,
     Off,
 }
 
@@ -220,6 +222,15 @@ pub fn suggest_roles(data: &MidiData) -> Vec<TrackRole> {
     pianos.sort_by_key(|&i| std::cmp::Reverse(data.tracks[i].notes.len()));
     for &i in &melodic {
         roles[i] = TrackRole::Accompany;
+    }
+    // Только барабаны (например, запись игры на пэдах) — это и есть партия.
+    if melodic.is_empty() {
+        for (i, t) in data.tracks.iter().enumerate() {
+            if is_drums(t) {
+                roles[i] = TrackRole::Drums;
+            }
+        }
+        return roles;
     }
     match pianos.len() {
         0 => {
@@ -640,11 +651,34 @@ pub struct AccompNote {
     pub program: Option<u8>,
 }
 
+/// Удар барабанной партии: клетка такта, нота ударных GM, сила.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DrumHitOut {
+    pub cell: u32,
+    pub gm: u8,
+    pub velocity: u8,
+}
+
+/// Такт барабанной партии: клеток на четверть — 4 (шестнадцатые) или 3 (триоли).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DrumMeasure {
+    pub per_beat: u8,
+    pub cells: u32,
+    pub hits: Vec<DrumHitOut>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Converted {
     pub musicxml: String,
     pub accompaniment: Vec<AccompNote>,
+    /// Ноты рук как аккомпанемент — когда ученик играет барабаны, их играет приложение.
+    pub hands_accompaniment: Vec<AccompNote>,
+    /// Барабанная партия (дорожки с ролью «мои барабаны»), такты — те же, что у нот.
+    pub drums: Option<Vec<DrumMeasure>>,
+    pub meter: (u8, u8),
     pub bpm: f64,
     pub measures: u32,
     /// Сколько делений пустого начала отрезано (для сопоставления нот с файлом).
@@ -1012,14 +1046,23 @@ pub fn convert(data: &MidiData, opts: &ConvertOptions) -> Result<Converted> {
         .filter(|(_, r)| matches!(r, TrackRole::Right | TrackRole::Left | TrackRole::Both))
         .flat_map(|(t, _)| t.notes.iter())
         .collect();
-    if player_raw.is_empty() {
+    let drum_raw: Vec<&RawNote> = data
+        .tracks
+        .iter()
+        .zip(&roles)
+        .filter(|(_, r)| **r == TrackRole::Drums)
+        .flat_map(|(t, _)| t.notes.iter())
+        .collect();
+    if player_raw.is_empty() && drum_raw.is_empty() {
         return Err(anyhow!(
-            "нет дорожек для рук: назначь хотя бы одной роль «правая», «левая» или «обе»"
+            "нет партии для игры: назначь хотя бы одной дорожке роль «правая», «левая», «обе» или «барабаны»"
         ));
     }
     let ppq = data.ppq;
+    // Сетка (шестнадцатые или триоли) — по тому, что играет ученик.
     let onsets: Vec<f64> = player_raw
         .iter()
+        .chain(&drum_raw)
         .map(|n| n.tick as f64 / ppq as f64)
         .collect();
     let last_tick = data
@@ -1036,9 +1079,18 @@ pub fn convert(data: &MidiData, opts: &ConvertOptions) -> Result<Converted> {
     let mut accomp: Vec<QNote> = Vec::new();
     // Канал и инструмент дорожки для каждой ноты аккомпанемента (в том же порядке).
     let mut accomp_src: Vec<(u8, Option<u8>)> = Vec::new();
+    let mut drum_q: Vec<QNote> = Vec::new();
+    // Ноты рук с каналом и инструментом своей дорожки — аккомпанемент для барабанщика.
+    let mut hands_q: Vec<QNote> = Vec::new();
+    let mut hands_src: Vec<(u8, Option<u8>)> = Vec::new();
     for (t, role) in data.tracks.iter().zip(&roles) {
         let q = quantize(&t.notes, ppq, &grids);
+        if matches!(role, TrackRole::Right | TrackRole::Left | TrackRole::Both) {
+            hands_src.extend(std::iter::repeat_n((t.channel, t.program), q.len()));
+            hands_q.extend(q.iter().cloned());
+        }
         match role {
+            TrackRole::Drums => drum_q.extend(q),
             TrackRole::Right => right.extend(q),
             TrackRole::Left => left.extend(q),
             TrackRole::Both => {
@@ -1085,6 +1137,7 @@ pub fn convert(data: &MidiData, opts: &ConvertOptions) -> Result<Converted> {
         .iter()
         .chain(&left)
         .chain(&accomp)
+        .chain(&drum_q)
         .map(|n| n.start)
         .min()
         .unwrap_or(0);
@@ -1093,6 +1146,7 @@ pub fn convert(data: &MidiData, opts: &ConvertOptions) -> Result<Converted> {
         .iter()
         .chain(&left)
         .chain(&accomp)
+        .chain(&drum_q)
         .map(|n| n.end)
         .max()
         .unwrap_or(ml);
@@ -1108,12 +1162,19 @@ pub fn convert(data: &MidiData, opts: &ConvertOptions) -> Result<Converted> {
     shift(&mut right);
     shift(&mut left);
     shift(&mut accomp);
+    shift(&mut hands_q);
+    // Барабаны не транспонируются: высота — это номер барабана.
+    for n in drum_q.iter_mut() {
+        n.start -= trim;
+        n.end -= trim;
+    }
     // Сетки тоже сдвигаются на отрезанное начало.
     let grid_shift = (trim / DIV) as usize;
     let grids: Vec<i64> = grids.into_iter().skip(grid_shift).collect();
 
     let (key_fifths, minor) = match data.key {
         Some((sf, m)) => (sf.clamp(-7, 7), m),
+        None if player_raw.is_empty() => (0, false),
         None => detect_key(player_raw.iter().copied()),
     };
     let fifths = transpose_fifths(key_fifths, opts.transpose);
@@ -1172,21 +1233,29 @@ pub fn convert(data: &MidiData, opts: &ConvertOptions) -> Result<Converted> {
         escape(&title)
     );
     let ms_per_div = 60_000.0 / bpm / DIV as f64;
-    let accompaniment = accomp
-        .iter()
-        .zip(&accomp_src)
-        .map(|(n, &(channel, program))| AccompNote {
-            pitch: n.pitch,
-            start_ms: (n.start as f64 * ms_per_div).round() as u32,
-            dur_ms: ((n.end - n.start) as f64 * ms_per_div).round() as u32,
-            measure: (n.start / ml + 1) as u32,
-            channel,
-            program,
-        })
-        .collect();
+    let to_accomp = |notes: &[QNote], src: &[(u8, Option<u8>)]| -> Vec<AccompNote> {
+        notes
+            .iter()
+            .zip(src)
+            .map(|(n, &(channel, program))| AccompNote {
+                pitch: n.pitch,
+                start_ms: (n.start as f64 * ms_per_div).round() as u32,
+                dur_ms: ((n.end - n.start) as f64 * ms_per_div).round() as u32,
+                measure: (n.start / ml + 1) as u32,
+                channel,
+                program,
+            })
+            .collect()
+    };
+    let accompaniment = to_accomp(&accomp, &accomp_src);
+    let hands_accompaniment = to_accomp(&hands_q, &hands_src);
+    let drums = (!drum_q.is_empty()).then(|| drum_measures(&drum_q, &grids, ml, measures));
     Ok(Converted {
         musicxml,
         accompaniment,
+        hands_accompaniment,
+        drums,
+        meter: data.meter,
         bpm,
         measures: measures as u32,
         trim,
@@ -1195,10 +1264,56 @@ pub fn convert(data: &MidiData, opts: &ConvertOptions) -> Result<Converted> {
     })
 }
 
+/// Барабанная партия по тактам: сетка такта — триоли, если их большинство среди его
+/// четвертей (и такт делится на триольные клетки), иначе шестнадцатые.
+fn drum_measures(notes: &[QNote], grids: &[i64], ml: i64, measures: i64) -> Vec<DrumMeasure> {
+    (0..measures)
+        .map(|m| {
+            let (ms, me) = (m * ml, (m + 1) * ml);
+            let quarters = (ms / DIV) as usize..(me / DIV) as usize;
+            let triplets = quarters
+                .clone()
+                .filter(|&q| grids.get(q) == Some(&TRIPLET))
+                .count();
+            let per_beat: i64 = if triplets * 2 > quarters.len() && ml % TRIPLET == 0 {
+                3
+            } else {
+                4
+            };
+            let step = DIV / per_beat;
+            let cells = ml / step;
+            let mut hits: Vec<DrumHitOut> = notes
+                .iter()
+                .filter(|n| n.start >= ms && n.start < me)
+                .map(|n| DrumHitOut {
+                    cell: (((n.start - ms) as f64 / step as f64).round() as i64).min(cells - 1)
+                        as u32,
+                    gm: n.pitch,
+                    velocity: n.velocity,
+                })
+                .collect();
+            hits.sort_by_key(|h| (h.cell, h.gm));
+            hits.dedup_by_key(|h| (h.cell, h.gm));
+            DrumMeasure {
+                per_beat: per_beat as u8,
+                cells: cells as u32,
+                hits,
+            }
+        })
+        .collect()
+}
+
 // --- Запись своей игры ---
 
 /// Стандартный MIDI-файл (формат 0) из записанных событий: время в микросекундах от начала.
 pub fn write_smf(events: &[(u64, MidiMessage)], bpm: f64, name: &str) -> Vec<u8> {
+    let with_channel: Vec<(u64, u8, MidiMessage)> =
+        events.iter().map(|&(t, m)| (t, 0, m)).collect();
+    write_smf_channels(&with_channel, bpm, name)
+}
+
+/// То же с каналами: удары по пэдам пишутся на канал ударных (10-й), клавиши — на 1-й.
+pub fn write_smf_channels(events: &[(u64, u8, MidiMessage)], bpm: f64, name: &str) -> Vec<u8> {
     const PPQ: u64 = 480;
     let us_per_tick = 60_000_000.0 / bpm / PPQ as f64;
     let mut body: Vec<u8> = Vec::new();
@@ -1229,13 +1344,14 @@ pub fn write_smf(events: &[(u64, MidiMessage)], bpm: f64, name: &str) -> Vec<u8>
     vlq(0, &mut body);
     body.extend([0xff, 0x58, 0x04, 4, 2, 24, 8]);
     let mut last = 0u64;
-    let mut sorted: Vec<&(u64, MidiMessage)> = events.iter().collect();
+    let mut sorted: Vec<&(u64, u8, MidiMessage)> = events.iter().collect();
     sorted.sort_by_key(|e| e.0);
-    for (t, msg) in sorted {
+    for (t, ch, msg) in sorted {
+        let ch = ch & 0x0f;
         let bytes: Vec<u8> = match *msg {
-            MidiMessage::NoteOn { note, velocity } => vec![0x90, note, velocity.max(1)],
-            MidiMessage::NoteOff { note } => vec![0x80, note, 0],
-            MidiMessage::ControlChange { controller, value } => vec![0xb0, controller, value],
+            MidiMessage::NoteOn { note, velocity } => vec![0x90 | ch, note, velocity.max(1)],
+            MidiMessage::NoteOff { note } => vec![0x80 | ch, note, 0],
+            MidiMessage::ControlChange { controller, value } => vec![0xb0 | ch, controller, value],
         };
         let tick = (*t as f64 / us_per_tick).round() as u64;
         vlq(tick.saturating_sub(last), &mut body);
@@ -1413,6 +1529,72 @@ mod tests {
             .enumerate()
             .map(|(i, &p)| (start + i as u64 * step, step, p))
             .collect()
+    }
+
+    #[test]
+    fn drum_track_becomes_my_part_and_hands_play_along() {
+        // Рок-бит на два такта: хэт восьмыми, бочка на 1 и 3, малый на 2 и 4 (ppq 480).
+        let mut drums = Vec::new();
+        for bar in 0..2u64 {
+            let o = bar * 1920;
+            for i in 0..8 {
+                drums.push((o + i * 240, 60, 42));
+            }
+            drums.extend([
+                (o, 60, 36),
+                (o + 960, 60, 36),
+                (o + 480, 60, 38),
+                (o + 1440, 60, 38),
+            ]);
+        }
+        let bytes = smf(
+            480,
+            &[
+                ("Piano", 0, Some(0), scale(0, 960, &[60, 64, 67, 72])),
+                ("Drums", 9, None, drums),
+            ],
+            Some((0, false)),
+            (4, 4),
+        );
+        let data = parse(&bytes).unwrap();
+        let c = convert(
+            &data,
+            &ConvertOptions {
+                roles: vec![TrackRole::Both, TrackRole::Drums],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let d = c.drums.as_ref().expect("барабанная партия");
+        assert_eq!(d.len(), 2);
+        assert_eq!((d[0].per_beat, d[0].cells), (4, 16));
+        let cells = |gm: u8| {
+            d[0].hits
+                .iter()
+                .filter(|h| h.gm == gm)
+                .map(|h| h.cell)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(cells(42), vec![0, 2, 4, 6, 8, 10, 12, 14]);
+        assert_eq!(cells(36), vec![0, 8]);
+        assert_eq!(cells(38), vec![4, 12]);
+        // Барабаны не попадают в аккомпанемент, а руки — попадают в «аккомпанемент для барабанщика».
+        assert!(c.accompaniment.is_empty());
+        assert_eq!(c.hands_accompaniment.len(), 4);
+        assert_eq!(c.hands_accompaniment[1].start_ms, 1000);
+        assert_eq!(c.meter, (4, 4));
+
+        // Одни барабаны, без рук — тоже можно.
+        let only = convert(
+            &data,
+            &ConvertOptions {
+                roles: vec![TrackRole::Off, TrackRole::Drums],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(only.drums.unwrap().len(), 2);
+        assert!(only.hands_accompaniment.is_empty());
     }
 
     #[test]
@@ -1773,12 +1955,24 @@ mod tests {
             (4, 4),
         ))
         .unwrap();
+        // Одни ударные — это барабанная партия (например, запись игры на пэдах).
         let roles = suggest_roles(&data);
-        assert_eq!(roles, vec![TrackRole::Off]);
+        assert_eq!(roles, vec![TrackRole::Drums]);
         assert!(convert(
             &data,
             &ConvertOptions {
                 roles,
+                ..Default::default()
+            }
+        )
+        .unwrap()
+        .drums
+        .is_some());
+        // Ничего не выбрано для игры — понятная ошибка.
+        assert!(convert(
+            &data,
+            &ConvertOptions {
+                roles: vec![TrackRole::Off],
                 ..Default::default()
             }
         )

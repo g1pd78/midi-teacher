@@ -22,6 +22,10 @@ import {
 import { Piano } from "../components/Piano";
 import { Fretboard, type FretMark } from "../components/Fretboard";
 import { TabHighway, type HighwayNote } from "../components/TabHighway";
+import { DrumHighway, type DrumLaneNote } from "../components/DrumHighway";
+import { DrumPads } from "../components/DrumPads";
+import { RecordTake } from "../components/RecordTake";
+import { PASS_DYNAMICS, drumMei, drumPartFromMidi, dynamicsOf, evaluateDynamics } from "../lib/drums";
 import { FRETS, meiToTab, nearestPosition, tabStaff, type StringInstrument } from "../lib/tab";
 import { TUNINGS } from "../lib/guitar";
 import { TrackDialog } from "../components/TrackDialog";
@@ -68,7 +72,7 @@ export interface PieceSource {
 }
 
 const NO_SETUP: PieceSetup = { transpose: 0, roles: null, handOverrides: [], instrument: null, part: 0 };
-const INSTRUMENT_NAME: Record<PieceInstrument, string> = { piano: "Фортепиано", guitar: "Гитара", bass: "Бас" };
+const INSTRUMENT_NAME: Record<PieceInstrument, string> = { piano: "Фортепиано", guitar: "Гитара", bass: "Бас", drums: "Барабаны" };
 const TRANSPOSE_MAX = 12;
 
 const HAND_COLOR = { right: "#5AA9FF", left: "#FFB454" } as const;
@@ -160,6 +164,8 @@ export interface ExerciseContext {
   playlist?: { index: number; total: number };
   next?: { label: string; go: () => void } | null;
   onRecorded?: (ev: Evaluation) => void;
+  /** Барабанное упражнение: дорожка по барабанам и пэды вместо клавиатуры. */
+  instrument?: "drums";
 }
 
 export function PieceView({ source, onBack, exercise }: { source: PieceSource; onBack: () => void; exercise?: ExerciseContext }) {
@@ -180,10 +186,6 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     setPrefs({ pieceSetup: { ...prefs.pieceSetup, [source.id]: { ...setup, ...patch } } });
   const transpose = exercise ? 0 : setup.transpose;
   // На чём играем: фортепиано или гитара/бас (табы и гриф).
-  const instrument: PieceInstrument = exercise ? "piano" : (setup.instrument ?? "piano");
-  const strInst: StringInstrument | null = instrument === "piano" ? null : instrument;
-  // Прогресс разучивания у гитары и баса свой.
-  const practiceId = strInst ? `${source.id}#${strInst}` : source.id;
   const [guitarOn, setGuitarOn] = useState<boolean | null>(null);
   // Аппликатура своя для каждого тона: в другой тональности другие пальцы.
   const fingerKey = transpose ? `${source.id}@${transpose > 0 ? "+" : ""}${transpose}` : source.id;
@@ -191,6 +193,22 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const [midiInfo, setMidiInfo] = useState<MidiInfo | null>(null);
   const [trackDialog, setTrackDialog] = useState(false);
   const [converted, setConverted] = useState<Converted | null>(null);
+  // Барабаны у пьесы — только у MIDI с ролью «Барабаны»; MIDI из одних барабанов — сразу барабаны.
+  const wantDrums = setup.instrument === "drums";
+  const midiDrums = !!converted?.drums;
+  const drumsOnly = midiDrums && !converted?.handsAccompaniment.length;
+  const instrument: PieceInstrument = exercise
+    ? (exercise.instrument ?? "piano")
+    : drumsOnly
+      ? "drums"
+      : wantDrums && !(source.midi && (midiDrums || !converted))
+        ? "piano"
+        : (setup.instrument ?? "piano");
+  const strInst: StringInstrument | null = instrument === "guitar" || instrument === "bass" ? instrument : null;
+  // Барабаны: ударный стан, дорожка по барабанам, пэды вместо клавиатуры.
+  const drums = instrument === "drums";
+  // Прогресс разучивания у гитары, баса и барабанов свой.
+  const practiceId = instrument !== "piano" ? `${source.id}#${instrument}` : source.id;
   const [editHands, setEditHands] = useState(false);
 
   const [mei, setMei] = useState<string | null>(null);
@@ -255,7 +273,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const accompany = unit || exercise ? true : p.accompany;
   const countIn = p.countIn;
   const metronome = exercise ? exMetronome : p.metronome;
-  const showNames = preset ? preset.names : p.names;
+  const showNames = drums ? false : preset ? preset.names : p.names;
   const keyHints = preset ? preset.keyHints : p.keyHints;
   const showWaterfall = preset ? preset.waterfall : p.waterfall;
   const hideRange = preset?.hide ?? false;
@@ -305,6 +323,8 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
           .then((c) => {
             if (!alive) return null;
             setConverted(c);
+            if (c.drums && (wantDrums || !c.handsAccompaniment.length))
+              return drumMei(drumPartFromMidi(c.drums, c.bpm, c.meter), { title: source.title });
             return loadScore(c.musicxml, false);
           })
           .then((m) => alive && m && setMei(m))
@@ -322,7 +342,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     };
     // setup.roles и setup.handOverrides входят в rolesKey и overridesKey
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, transpose, rolesKey, overridesKey]);
+  }, [source, transpose, rolesKey, overridesKey, wantDrums]);
   useEffect(
     () => () => {
       void api.pieceStop();
@@ -332,7 +352,11 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     [source],
   );
   // Аккомпанемент из MIDI: звучит вместе с учеником, на нотах не показывается.
-  const accomp = useMemo(() => (converted ? accompNotes(converted.accompaniment) : []), [converted]);
+  // Играешь барабаны — руки тоже звучат аккомпанементом.
+  const accomp = useMemo(
+    () => (converted ? accompNotes(drums ? [...converted.accompaniment, ...converted.handsAccompaniment] : converted.accompaniment) : []),
+    [converted, drums],
+  );
 
   // Размер области нот: ширина — для раскладки страниц, полный размер — для рамок тактов.
   const [boxSize, setBoxSize] = useState("");
@@ -446,16 +470,16 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     [notesKey],
   );
   useEffect(() => {
-    if (!fingerInput.length || strInst) return;
+    if (!fingerInput.length || strInst || drums) return;
     api
       .fingeringGet(fingerKey, fingerInput)
       .then(setFingers)
       .catch(() => setFingers(null));
-  }, [fingerInput, fingerKey, strInst]);
+  }, [fingerInput, fingerKey, strInst, drums]);
   const fingerOf = useMemo(() => new Map((fingers ?? []).map((f) => [f.id, f])), [fingers]);
   // Элементы нотной записи в пьесе — для плашек теории «Новое».
   const theoryFeatures = useMemo(
-    () => (displayMei && scoreRef.current && !tab ? detectFeatures(displayMei, scoreRef.current.structure, scoreRef.current.notes) : []),
+    () => (displayMei && scoreRef.current && !tab && !drums ? detectFeatures(displayMei, scoreRef.current.structure, scoreRef.current.notes) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [displayMei, notesKey],
   );
@@ -486,7 +510,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     api
       .practiceOpen({
         id: practiceId,
-        title: strInst ? `${source.title} (${INSTRUMENT_NAME[instrument].toLowerCase()})` : source.title,
+        title: instrument !== "piano" ? `${source.title} (${INSTRUMENT_NAME[instrument].toLowerCase()})` : source.title,
         measures: sc.structure.measures,
         phraseEnds: phraseEnds(sc.notes, sc.structure, sc.starts, sc.endMs),
         measureHands: measureHands(sc.notes, sc.structure.measures),
@@ -660,6 +684,11 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
       if (fg) fingerMap.set(n.id, fg);
     }
     const ev = evaluate(hitLog.current, s.requiredNotes, s.extras, score.notes, fingerMap, tempo);
+    // Барабаны: акценты и тихие ноты — по силе удара относительно обычных ударов.
+    if (drums && displayMei) {
+      ev.dynamics = evaluateDynamics(hitLog.current, dynamicsOf(displayMei));
+      ev.passed = ev.passed && ev.dynamics.share >= PASS_DYNAMICS;
+    }
     setExResult(ev);
     api
       .exerciseRecord({
@@ -1060,6 +1089,18 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   for (const [n, h] of Object.entries(held)) highlight[Number(n)] = { color: deviceColor(h.device, devices), strength: 0.85 };
   if (wrongKey !== null) highlight[wrongKey] = { color: "#FF5C5C", strength: 0.9 };
 
+  // Барабаны: какие пэды бить сейчас, какой пэд клавиатуры назначен барабану.
+  const padHints = new Set<number>();
+  if (drums && keyHints)
+    for (const id of cursorIds) {
+      const n = noteById.get(id);
+      if (n && !hits.has(id) && !noteStates.current.has(id)) padHints.add(n.pitch);
+    }
+  const padLabels = useMemo(
+    () => new Map((devices.pads ?? []).map((pb) => [pb.drum, `пэд ${pb.note}`])),
+    [devices.pads],
+  );
+
   // Гитара/бас: куда поставить палец (подсказка) и что звучит сейчас — на грифе.
   const tuning = strInst ? TUNINGS[strInst] : [];
   const fretMarks: FretMark[] = [];
@@ -1083,7 +1124,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const maxFret = tab ? Math.max(0, ...[...tab.positions.values()].map((p) => p.fret)) : 0;
   const boardFrets = strInst ? Math.min(FRETS[strInst], Math.max(12, maxFret + 1)) : 12;
 
-  const needed = strInst ? [] : notes.filter((n) => includes(n.hand)).map((n) => n.pitch);
+  const needed = strInst || drums ? [] : notes.filter((n) => includes(n.hand)).map((n) => n.pitch);
   const narrow = devices.inputs.filter(
     (d) => d.connected && d.settings.range && needed.some((x) => x < d.settings.range![0] || x > d.settings.range![1]),
   );
@@ -1107,6 +1148,13 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         )
       : [];
 
+  // Барабаны: удары для дорожки с акцентами и тихими нотами из партии.
+  const drumLaneNotes: DrumLaneNote[] = useMemo(() => {
+    if (!drums || !displayMei) return [];
+    const dyn = dynamicsOf(displayMei);
+    return notes.map((n) => ({ id: n.id, pitch: n.pitch, startMs: n.startMs, accent: dyn.get(n.id) === "accent", ghost: dyn.get(n.id) === "ghost" }));
+  }, [drums, displayMei, notes]);
+
   const highwayNotes: HighwayNote[] = useMemo(
     () =>
       tab
@@ -1117,7 +1165,17 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         : [],
     [tab, notes],
   );
-  const handLabel = strInst ? (hands === "none" ? "слушаем" : strInst === "bass" ? "бас" : "гитара") : HAND_NAME[hands];
+  const handLabel = drums
+    ? hands === "none"
+      ? "слушаем"
+      : "барабаны"
+    : strInst
+      ? hands === "none"
+        ? "слушаем"
+        : strInst === "bass"
+          ? "бас"
+          : "гитара"
+      : HAND_NAME[hands];
 
   const progressText = rhythmMode
     ? playing
@@ -1156,7 +1214,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const setTranspose = (t: number) => setSetup({ transpose: Math.max(-TRANSPOSE_MAX, Math.min(TRANSPOSE_MAX, t)) });
   const pieceTools = exercise ? null : (
     <>
-      <span className="transpose" title="Транспонирование: сдвиг всей пьесы на полутоны">
+      {!drums && <span className="transpose" title="Транспонирование: сдвиг всей пьесы на полутоны">
         Тон
         <button className="small" onClick={() => setTranspose(transpose - 1)} disabled={transpose <= -TRANSPOSE_MAX} data-transpose-down>
           −
@@ -1170,7 +1228,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
             как в файле
           </button>
         )}
-      </span>
+      </span>}
       {source.midi && (
         <>
           <button className="small" onClick={openTracks} data-tracks>
@@ -1178,7 +1236,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
           </button>
           <button
             className={`small${editHands ? " primary" : ""}`}
-            disabled={!converted}
+            disabled={!converted || drums}
             onClick={() => {
               setEditFingers(false);
               setEditBounds(false);
@@ -1199,14 +1257,19 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     <main className={`piece${showWaterfall ? " with-waterfall" : ""}`}>
       <div className="piece-bar">
         <button className="ghost" onClick={onBack} title="Esc">
-          {exercise ? "← Упражнения" : "← Пьесы"}
+          {drums && exercise ? "← Барабаны" : exercise ? "← Упражнения" : "← Пьесы"}
         </button>
         <div className="piece-name">{source.title}</div>
         {!exercise && (
           <span className="segmented" title="На чём играть: фортепиано — ноты и клавиатура, гитара и бас — табы и гриф" data-instrument-select>
-            {(["piano", "guitar", "bass"] as PieceInstrument[]).map((k) => (
-              <button key={k} className={instrument === k ? "on" : ""} onClick={() => setSetup({ instrument: k === "piano" ? null : k })} data-piece-instrument={k}>
-                {INSTRUMENT_NAME[k]}
+            {(drumsOnly ? ["drums"] : ["piano", "guitar", "bass", ...(midiDrums ? ["drums"] : [])]).map((k) => (
+              <button
+                key={k}
+                className={instrument === k ? "on" : ""}
+                onClick={() => setSetup({ instrument: k === "piano" ? null : (k as PieceInstrument) })}
+                data-piece-instrument={k}
+              >
+                {INSTRUMENT_NAME[k as PieceInstrument]}
               </button>
             ))}
           </span>
@@ -1242,7 +1305,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         )}
         {!guided && !exercise && (
           <>
-            {!strInst && <span className="segmented" title="1 / 2 / 3">
+            {!strInst && !drums && <span className="segmented" title="1 / 2 / 3">
               <button className={hands === "right" ? "on" : ""} disabled={!hasRight} onClick={() => setPiece({ hands: "right" })}>
                 Правая
               </button>
@@ -1280,6 +1343,12 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
             Заново
           </button>
         )}
+        <RecordTake
+          title={source.title}
+          bpm={Math.round((score?.tempoBpm ?? 100) * tempo)}
+          beatsPerBar={score?.structure.meter.count ?? 4}
+          onSaved={setToast}
+        />
       </div>
 
       {exercise ? (
@@ -1313,10 +1382,10 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
             <span className="piece-progress">{progressText}</span>
           </div>
           <div className="piece-toggles secondary">
-            <Toggle label="Падающие ноты" on={p.waterfall} onChange={(v) => setPiece({ waterfall: v })} />
-            <Toggle label="Названия нот" on={p.names} onChange={(v) => setPiece({ names: v })} />
-            <Toggle label="Аппликатура" on={p.fingering} onChange={(v) => setPiece({ fingering: v })} />
-            <Toggle label="Подсветка клавиш" on={p.keyHints} onChange={(v) => setPiece({ keyHints: v })} />
+            <Toggle label={drums ? "Дорожка" : "Падающие ноты"} on={p.waterfall} onChange={(v) => setPiece({ waterfall: v })} />
+            {!drums && <Toggle label="Названия нот" on={p.names} onChange={(v) => setPiece({ names: v })} />}
+            {!drums && <Toggle label="Аппликатура" on={p.fingering} onChange={(v) => setPiece({ fingering: v })} />}
+            <Toggle label={drums ? "Подсветка пэдов" : "Подсветка клавиш"} on={p.keyHints} onChange={(v) => setPiece({ keyHints: v })} />
           </div>
         </>
       ) : guided && unit && practice ? (
@@ -1332,7 +1401,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
             setEditBounds((v) => !v);
           }}
           editFingers={editFingers}
-          fingersAvailable={!strInst}
+          fingersAvailable={!strInst && !drums}
           onEditFingers={() => {
             setEditBounds(false);
             setEditHands(false);
@@ -1563,7 +1632,19 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
           />
         </section>
       )}
-      {showWaterfall && !tab && (
+      {showWaterfall && drums && (
+        <section className="waterfall-box">
+          <DrumHighway
+            notes={drumLaneNotes}
+            getPos={getPos}
+            windowMs={WATERFALL_SEC * 1000 * tempo}
+            states={noteStates}
+            bars={score?.starts ?? []}
+            loop={loopMs}
+          />
+        </section>
+      )}
+      {showWaterfall && !tab && !drums && (
         <section className="waterfall-box">
           <Waterfall
             notes={notes}
@@ -1580,8 +1661,16 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         </section>
       )}
 
-      <section className={`session-piano${tab ? " fretboard-box" : ""}`}>
-        {tab && strInst ? (
+      <section className={`session-piano${tab ? " fretboard-box" : ""}${drums ? " pads-box" : ""}`}>
+        {drums ? (
+          <DrumPads
+            expected={padHints}
+            held={new Set(Object.keys(held).map(Number))}
+            wrong={wrongKey}
+            labels={padLabels}
+            onHit={(d) => void api.hitDrum(d.gm, 100)}
+          />
+        ) : tab && strInst ? (
           <Fretboard tuning={tuning} frets={boardFrets} naming={naming} marks={fretMarks} />
         ) : (
           <Piano low={low} high={high} naming={naming} highlight={highlight} labels="c" />
@@ -1899,6 +1988,9 @@ function ExerciseSummary({
   if (ev.accuracy < PASS_ACCURACY) reasons.push(`точность от ${percent(PASS_ACCURACY)}`);
   if (ev.timingSdMs > PASS_TIMING_SD_MS) reasons.push(`ровнее ритм (разброс до ±${PASS_TIMING_SD_MS} мс)`);
   if (tempo < 0.999) reasons.push("темп от 100%");
+  const dyn = ev.dynamics;
+  const dynTotal = dyn ? dyn.accents.total + dyn.ghosts.total : 0;
+  if (dyn && dynTotal && dyn.sensitive && dyn.share < PASS_DYNAMICS) reasons.push("акценты громче, тихие ноты тише");
   const maxV = Math.max(1, ...ev.byFinger.map((b) => b.velocity));
   return (
     <div className="summary-overlay">
@@ -1913,11 +2005,32 @@ function ExerciseSummary({
             <div className={`big ${ev.timingSdMs <= PASS_TIMING_SD_MS ? "good" : ""}`}>±{ev.timingSdMs} мс</div>
             <div className="muted">ровность ритма</div>
           </div>
-          <div>
-            <div className="big">{percent(ev.loudness)}</div>
-            <div className="muted">ровность громкости</div>
-          </div>
+          {dyn && dynTotal ? (
+            <div data-dynamics={`${dyn.accents.hit + dyn.ghosts.hit}/${dynTotal}`}>
+              <div className={`big ${dyn.sensitive && dyn.share >= PASS_DYNAMICS ? "good" : ""}`}>
+                {dyn.sensitive ? percent(dyn.share) : "—"}
+              </div>
+              <div className="muted">сила удара</div>
+            </div>
+          ) : (
+            <div>
+              <div className="big">{percent(ev.loudness)}</div>
+              <div className="muted">ровность громкости</div>
+            </div>
+          )}
         </div>
+        {dyn && dynTotal > 0 && (
+          <p className="hint">
+            {dyn.sensitive
+              ? [
+                  dyn.accents.total ? `Акценты громче остальных: ${dyn.accents.hit} из ${dyn.accents.total}.` : "",
+                  dyn.ghosts.total ? `Тихие ноты тише остальных: ${dyn.ghosts.hit} из ${dyn.ghosts.total}.` : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")
+              : "Пэды передают одну и ту же силу удара — акценты и тихие ноты не оцениваются."}
+          </p>
+        )}
         {!ev.passed && reasons.length > 0 && <p className="hint">Для зачёта нужно: {reasons.join(", ")}.</p>}
         {ev.passed && <p className="hint">Следующее упражнение открыто.</p>}
         {ev.crossingMs !== null && ev.otherMs !== null && ev.crossingMs > ev.otherMs + 20 && (
