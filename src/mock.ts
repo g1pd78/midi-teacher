@@ -16,6 +16,7 @@ import type {
   MidiEvent,
   PadBinding,
   PieceNoteIn,
+  Song,
   SoundRoute,
   TrainerLevel,
   TrainerTarget,
@@ -107,6 +108,7 @@ export function createMock() {
     };
   };
   let pads: PadBinding[] = [];
+  const songs: Record<string, Song> = {};
 
   type Body = { type: "noteOn"; note: number; velocity: number } | { type: "noteOff"; note: number };
   const send = (device: string, ev: Body) => {
@@ -427,6 +429,44 @@ export function createMock() {
       return r && r.notes > 0 ? { notes: r.notes, durationMs: Math.round(performance.now() - r.start) } : null;
     },
     record_take_play: () => undefined,
+    studio_list: () => Object.values(songs).map((s) => ({ file: s.file, name: s.name, bpm: s.bpm, bars: s.bars, tracks: s.tracks.length, modified: 0 })),
+    studio_load: ({ file }) => songs[file as string],
+    studio_save: ({ song }) => {
+      const s = { ...(song as Song) };
+      if (!s.file) s.file = `${s.name}.json`;
+      songs[s.file] = s;
+      return s;
+    },
+    studio_delete: ({ file }) => {
+      delete songs[file as string];
+    },
+    studio_from_midi: () => ({
+      file: "",
+      name: "Демо-песня",
+      bpm: 100,
+      meter: [4, 4],
+      bars: 4,
+      source: "demo.mid",
+      tracks: [
+        {
+          id: "t1", name: "Фортепиано", kind: "keys", program: 0, volume: 0.8, mute: false, solo: false, active: 0, grid: 0, strength: 1,
+          takes: [{ id: "orig", name: "Оригинал", original: true, accuracy: null, cc: [], notes: [60, 62, 64, 65, 67, 65, 64, 62].map((p, i) => ({ startMs: i * 600, durMs: 550, pitch: p, velocity: 80 })) }],
+        },
+        {
+          id: "t2", name: "Барабаны", kind: "drums", program: null, volume: 0.8, mute: false, solo: false, active: 0, grid: 0, strength: 1,
+          takes: [{ id: "orig", name: "Оригинал", original: true, accuracy: null, cc: [], notes: Array.from({ length: 16 }, (_, i) => ({ startMs: i * 600, durMs: 100, pitch: i % 2 ? 38 : 36, velocity: 90 })) }],
+        },
+      ],
+    }),
+    studio_play: ({ fromBar, song }) => {
+      const s = song as Song;
+      const fromMs = ((fromBar as number) - 1) * (60000 / s.bpm) * s.meter[0];
+      const startUs = Math.round((performance.now() - start) * 1000) + 300000;
+      return { originUs: startUs - fromMs * 1000, fromMs, startUs };
+    },
+    studio_stop: () => ({ notes: [0, 500, 1000, 1500].map((t, i) => ({ startMs: t, durMs: 400, pitch: 60 + i * 2, velocity: 90 })), cc: [] }),
+    studio_export_midi: ({ song }) => `${(song as Song).name}.mid`,
+    studio_export_wav: ({ song }) => `Треки/${(song as Song).name}.wav`,
     record_take_save: ({ name }) => `${name}.mid`,
     record_take_discard: () => undefined,
     guitar_state: () => {

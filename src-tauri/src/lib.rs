@@ -8,6 +8,7 @@ mod piece;
 mod practice;
 mod rhythm;
 mod settings;
+mod studio;
 mod trainer;
 
 use crossbeam_channel::unbounded;
@@ -31,7 +32,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 use trainer::TrainerHub;
 
-struct AppState {
+pub(crate) struct AppState {
     devices: Arc<DeviceManager>,
     audio: AudioEngine,
     settings: Mutex<AppSettings>,
@@ -284,7 +285,13 @@ pub fn run() {
             ));
             let rhythm_events = rhythm_hub.clone();
             let midi_hub = Arc::new(MidiHub::new(devices.clone(), audio.clone()));
+            let studio_hub = Arc::new(studio::StudioHub::new(
+                devices.clone(),
+                audio.clone(),
+                app.handle().clone(),
+            ));
             let midi_events = midi_hub.clone();
+            let studio_events = studio_hub.clone();
             thread::Builder::new()
                 .name("mt-events".into())
                 .spawn(move || {
@@ -292,6 +299,7 @@ pub fn run() {
                         match ev {
                             DeviceEvent::Midi(e) => {
                                 midi_events.on_midi(e.channel, e.msg, e.time_us);
+                                studio_events.on_midi(e.msg, e.time_us);
                                 if let MidiMessage::NoteOn { note, velocity } = e.msg {
                                     trainer_hub.on_note_on(&handle, note, e.time_us);
                                     piece_events.on_note_on(note, e.time_us);
@@ -359,6 +367,7 @@ pub fn run() {
             app.manage(rhythm_hub);
             app.manage(practice_hub);
             app.manage(midi_hub);
+            app.manage(studio_hub);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -411,6 +420,15 @@ pub fn run() {
             midi_import::record_take_play,
             midi_import::record_take_save,
             midi_import::record_take_discard,
+            studio::studio_list,
+            studio::studio_load,
+            studio::studio_save,
+            studio::studio_delete,
+            studio::studio_from_midi,
+            studio::studio_play,
+            studio::studio_stop,
+            studio::studio_export_midi,
+            studio::studio_export_wav,
             midi_import::save_text_file,
             guitar::guitar_state,
             guitar::guitar_inputs,

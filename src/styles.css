@@ -2325,3 +2325,175 @@ button.link.piece-link:hover {
   border-radius: 10px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
 }
+
+/* --- Студия --- */
+.studio {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: auto;
+}
+.studio-actions {
+  display: flex;
+  gap: 10px;
+  margin: 10px 0;
+}
+.studio-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  background: var(--panel-2);
+  border-radius: 10px;
+}
+.studio-form input[type="number"] {
+  width: 70px;
+}
+.studio-midi-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.studio-songs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+}
+.studio-song {
+  display: flex;
+  gap: 6px;
+}
+.studio-song-open {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  text-align: left;
+}
+.studio.editor {
+  gap: 10px;
+}
+.studio-bar,
+.studio-transport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.studio-bar input[type="number"],
+.studio-transport input[type="number"] {
+  width: 64px;
+}
+.studio-title {
+  font-size: 18px;
+  font-weight: 700;
+  min-width: 200px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+.studio-title:focus {
+  border-color: var(--line);
+}
+.studio-bar .spacer {
+  flex: 1;
+}
+.studio-pos {
+  font-variant-numeric: tabular-nums;
+  min-width: 130px;
+  color: var(--muted);
+}
+.punch-fields {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.studio-timeline {
+  width: 100%;
+  border-radius: 10px;
+  cursor: pointer;
+  display: block;
+}
+.studio-tracks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.studio-track {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+.studio-track.selected {
+  border-color: var(--right-hand);
+}
+.studio-track-name {
+  width: 170px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+.studio-vol input {
+  width: 90px;
+}
+.studio-strength {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.studio-strength input {
+  width: 70px;
+}
+.studio-track button.on {
+  background: var(--right-hand);
+  color: #10131a;
+}
+.studio-track button.warn-on {
+  background: var(--warn);
+}
+.studio-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.studio-toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+}
+.toast.studio-toast {
+  position: fixed;
+  top: auto;
+  left: auto;
+  bottom: 20px;
+  right: 20px;
+  transform: none;
+  border-radius: 10px;
+  max-width: 520px;
+}
+/* Вкладок много: на узком окне — компактнее, чтобы шапка помещалась в строку. */
+@media (max-width: 1500px) {
+  .header {
+    gap: 10px;
+  }
+  .header-nav .tab {
+    padding: 6px 9px;
+    font-size: 14px;
+  }
+}

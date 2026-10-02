@@ -201,6 +201,80 @@ export interface DrumMeasureIn {
   hits: { cell: number; gm: number; velocity: number }[];
 }
 
+// --- Студия: свой трек из дорожек ---
+
+export interface SongNote {
+  startMs: number;
+  durMs: number;
+  pitch: number;
+  velocity: number;
+}
+
+export interface SongCc {
+  atMs: number;
+  controller: number;
+  value: number;
+}
+
+export interface Take {
+  id: string;
+  name: string;
+  notes: SongNote[];
+  cc: SongCc[];
+  /** Точность к оригиналу песни 0–1. */
+  accuracy: number | null;
+  /** Партия из файла песни. */
+  original: boolean;
+}
+
+export type TrackKind = "keys" | "drums" | "guitar" | "bass" | "other";
+
+export interface SongTrack {
+  id: string;
+  name: string;
+  kind: TrackKind;
+  /** Инструмент GM; null у клавишных — рояль приложения. */
+  program: number | null;
+  volume: number;
+  mute: boolean;
+  solo: boolean;
+  takes: Take[];
+  active: number;
+  /** 0 — как сыграно, 4/8/16 — четверти/восьмые/шестнадцатые, 12 — триоли. */
+  grid: number;
+  strength: number;
+}
+
+export interface Song {
+  file: string;
+  name: string;
+  bpm: number;
+  meter: [number, number];
+  bars: number;
+  tracks: SongTrack[];
+  source: string | null;
+}
+
+export interface SongSummary {
+  file: string;
+  name: string;
+  bpm: number;
+  bars: number;
+  tracks: number;
+  modified: number;
+}
+
+export interface PlayInfo {
+  originUs: number;
+  fromMs: number;
+  startUs: number;
+}
+
+export interface Recorded {
+  notes: SongNote[];
+  cc: SongCc[];
+}
+
 /** Дубль записи своей игры. */
 export interface TakeInfo {
   notes: number;
@@ -541,6 +615,8 @@ export type MidiEvent = { device: string; channel: number; timeUs: number } & (
 );
 
 export interface Events {
+  /** «ended» — трек доигран до конца. */
+  studio: string;
   midi: MidiEvent;
   devices: DevicesSnapshot;
   audio: AudioStatus;
@@ -625,6 +701,16 @@ export const api = {
   recordTakePlay: () => invoke<void>("record_take_play"),
   recordTakeSave: (name: string) => invoke<string>("record_take_save", { name }),
   recordTakeDiscard: () => invoke<void>("record_take_discard"),
+  studioList: () => invoke<SongSummary[]>("studio_list"),
+  studioLoad: (file: string) => invoke<Song>("studio_load", { file }),
+  studioSave: (song: Song) => invoke<Song>("studio_save", { song }),
+  studioDelete: (file: string) => invoke<void>("studio_delete", { file }),
+  studioFromMidi: (id: string) => invoke<Song>("studio_from_midi", { id }),
+  studioPlay: (song: Song, fromBar: number, record: { track: number; punch: [number, number] | null } | null, metronome: boolean, countIn: boolean) =>
+    invoke<PlayInfo>("studio_play", { song, fromBar, record, metronome, countIn }),
+  studioStop: () => invoke<Recorded | null>("studio_stop"),
+  studioExportMidi: (song: Song) => invoke<string>("studio_export_midi", { song }),
+  studioExportWav: (song: Song) => invoke<string>("studio_export_wav", { song }),
   saveTextFile: (path: string, content: string) => invoke<void>("save_text_file", { path, content }),
   guitarState: () => invoke<GuitarState>("guitar_state"),
   guitarInputs: () => invoke<GuitarInput[]>("guitar_inputs"),

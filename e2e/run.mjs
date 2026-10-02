@@ -683,6 +683,112 @@ try {
   if (!existsSync(join(docs, "MIDI Teacher", takeFile))) throw new Error(`файла ${takeFile} нет в библиотеке`);
   ok(`запись в пьесе: дубль из 4 ударов сохранён — ${takeFile}`);
 
+  // --- Студия: свой трек из дорожек ---
+  console.log("Сквозной тест: студия");
+  const setValue = (selector, value, event = "input") =>
+    js(
+      "const [sel, v, ev] = arguments; const el = document.querySelector(sel); if (!el) return false;" +
+        "const proto = el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;" +
+        "Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, String(v));" +
+        "el.dispatchEvent(new Event(ev, { bubbles: true })); return true;",
+      [selector, value, event],
+    );
+  const studioMode = () => js("return document.querySelector('[data-studio-mode]')?.dataset.studioMode ?? '';");
+  const studioToast = (text) => waitFor(`сообщение «${text}»`, () => js("const t = document.querySelector('.studio-toast')?.textContent ?? ''; return t.includes(arguments[0]) ? t : false;", [text]), 15000);
+  // Запись: ждём конца отсчёта, играем, останавливаем.
+  const recordTake = async (label, playFn) => {
+    await js("document.querySelector('[data-studio-record]').click();");
+    await waitFor(`${label}: идёт запись`, async () => (await studioMode()) === "record");
+    await waitFor(`${label}: отсчёт идёт`, () => js("return document.querySelector('[data-studio-pos]')?.dataset.counting === '1';"), 10000);
+    await waitFor(`${label}: отсчёт закончился`, () => js("return document.querySelector('[data-studio-pos]')?.dataset.counting === '0';"), 10000);
+    await playFn();
+    await js("document.querySelector('[data-studio-stop]').click();");
+    await waitFor(`${label}: запись остановлена`, async () => (await studioMode()) === "idle");
+  };
+  await waitFor("вкладка «Студия»", () => click("Студия"));
+  await waitFor("новый трек", () => js("const b = document.querySelector('[data-studio-new]'); if (!b) return false; b.click(); return true;"));
+  await waitFor("название трека", () => setValue("[data-song-name]", "E2E трек"));
+  // Короткий трек: 2 такта, темп 120 — отсчёт 2 с.
+  await setValue(".studio-form input[type='number']", 120);
+  await js("const n = document.querySelectorAll('.studio-form input[type=number]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(n[1], '2'); n[1].dispatchEvent(new Event('input', { bubbles: true }));");
+  await js("document.querySelector('[data-studio-create]').click();");
+  await waitFor("редактор трека", async () => (await studioMode()) === "idle");
+  // Дорожка 1 — клавишные: до–ре–ми–фа четвертями.
+  await recordTake("клавишные", async () => {
+    for (const note of [60, 62, 64, 65]) {
+      await invoke("simulate_midi", { device: "E2E", bytes: [0x90, note, 90] });
+      await sleep(400);
+      await invoke("simulate_midi", { device: "E2E", bytes: [0x80, note, 0] });
+      await sleep(100);
+    }
+  });
+  await studioToast("нот 4");
+  // Дорожка 2 — барабаны на пэдах (экранные пэды).
+  await js("document.querySelector(\"[data-add-track='drums']\").click();");
+  await waitFor("дорожка барабанов выбрана", () => js("return document.querySelectorAll('[data-studio-track]').length === 2 && document.querySelectorAll('[data-studio-track] input[type=radio]')[1].checked;"));
+  await recordTake("барабаны", async () => {
+    for (const d of [36, 42, 38, 42, 36, 42]) {
+      await invoke("hit_drum", { drum: d, velocity: 100 });
+      await sleep(250);
+    }
+  });
+  await studioToast("нот 6");
+  // Перезапись такта 2 на клавишных: новый дубль, склеенный с прежним.
+  await js("document.querySelectorAll('[data-studio-track] input[type=radio]')[0].click();");
+  await js("document.querySelector('[data-punch]').click();");
+  await waitFor("поля куска", () => setValue("[data-punch-from]", 2));
+  await setValue("[data-punch-to]", 2);
+  await recordTake("кусок", async () => {
+    // Такт 1 звучит (вход), запись — со второго такта.
+    await waitFor("такт 2", () => js("return (document.querySelector('[data-studio-pos]')?.dataset.studioPos ?? '').startsWith('2:');"), 10000);
+    await invoke("simulate_midi", { device: "E2E", bytes: [0x90, 72, 90] });
+    await sleep(300);
+    await invoke("simulate_midi", { device: "E2E", bytes: [0x80, 72, 0] });
+    await sleep(200);
+  });
+  const takeNames = await waitFor("дубль куска", () =>
+    js("const o = [...document.querySelectorAll('[data-studio-track]')[0].querySelectorAll('[data-takes] option')].map((o) => o.textContent); return o.some((t) => t.includes('такты 2–2')) ? o : false;"),
+  );
+  await js("document.querySelector('[data-punch]').click();");
+  // Сетка на клавишных и воспроизведение до конца.
+  await setValue("[data-studio-track='0'] [data-grid]", 8, "change");
+  await js("document.querySelector('[data-studio-play]').click();");
+  await waitFor("играет", async () => (await studioMode()) === "play");
+  await waitFor("доиграл до конца", async () => (await studioMode()) === "idle", 20000);
+  // Экспорт.
+  await js("document.querySelector('[data-export-midi]').click();");
+  const midiMsg = await studioToast("MIDI сохранён");
+  const midiFile = midiMsg.split(": ").pop().trim();
+  const midiInfo = await invoke("midi_inspect", { id: midiFile });
+  if (midiInfo.tracks.length !== 2 || !midiInfo.tracks.some((t) => t.drums)) throw new Error(`дорожки MIDI: ${JSON.stringify(midiInfo.tracks)}`);
+  await js("document.querySelector('[data-export-wav]').click();");
+  const wavMsg = await studioToast("WAV сохранён");
+  const wavPath = wavMsg.replace(/^.*WAV сохранён: /, "").trim();
+  if (!existsSync(wavPath)) throw new Error(`нет файла ${wavPath}`);
+  await sleep(800);
+  const songs = await invoke("studio_list");
+  const mine = songs.find((x) => x.name === "E2E трек");
+  if (!mine || mine.tracks !== 2) throw new Error(`трек не сохранён: ${JSON.stringify(songs)}`);
+  ok(`студия: трек с нуля — клавишные и барабаны, кусок (${takeNames.length} дубля), сетка, MIDI (${midiInfo.tracks.length} дорожки) и WAV`);
+
+  // Трек из MIDI-песни: дорожки с «Оригиналом», своя партия поверх — с оценкой.
+  await js("[...document.querySelectorAll('button')].find((b) => b.textContent.includes('← Треки')).click();");
+  await waitFor("из MIDI-песни", () => js("const b = document.querySelector('[data-studio-from-midi]'); if (!b) return false; b.click(); return true;"));
+  await waitFor("песня в списке", () => js("const b = document.querySelector(\"[data-studio-midi='Барабаны тест']\"); if (!b) return false; b.click(); return true;"), 10000);
+  await waitFor("дорожки песни", () => js("return document.querySelectorAll('[data-studio-track]').length === 2;"), 10000);
+  const drumIdx = await js("return [...document.querySelectorAll('[data-studio-track]')].findIndex((r) => r.textContent.includes('Барабаны'));");
+  await js("document.querySelectorAll('[data-studio-track] input[type=radio]')[arguments[0]].click();", [drumIdx]);
+  await recordTake("барабаны поверх песни", async () => {
+    for (let i = 0; i < 4; i++) {
+      await invoke("hit_drum", { drum: 36, velocity: 100 });
+      await sleep(500);
+    }
+  });
+  const graded = await waitFor("оценка дубля", () =>
+    js("const o = [...document.querySelectorAll('[data-studio-track]')[arguments[0]].querySelectorAll('[data-takes] option')].map((o) => o.textContent); return o.find((t) => t.includes('к оригиналу')) ?? false;", [drumIdx]),
+  );
+  ok(`студия: трек из MIDI-песни, своя партия барабанов поверх — «${graded.trim()}»`);
+
   console.log("Готово: все проверки пройдены");
 } catch (e) {
   console.error(`✗ ${e.message}`);

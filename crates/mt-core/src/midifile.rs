@@ -361,6 +361,46 @@ pub fn track_voice(data: &MidiData, track: usize) -> Option<(u8, Option<u8>)> {
 
 /// Ноты дорожки для прослушивания: первые `secs` секунд от её первой ноты,
 /// как (начало мс, длительность мс, высота, сила).
+/// Дорожка файла целиком, со временем в миллисекундах от начала файла (для студии).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FileTrack {
+    pub name: String,
+    pub channel: u8,
+    pub program: Option<u8>,
+    pub drums: bool,
+    /// (начало мс, длительность мс, высота, сила).
+    pub notes: Vec<(f64, f64, u8, u8)>,
+}
+
+/// Все дорожки файла с нотами в миллисекундах: темп, размер и дорожки.
+pub fn file_tracks(data: &MidiData) -> (f64, (u8, u8), Vec<FileTrack>) {
+    let ms_per_tick = data.tempo_us as f64 / 1000.0 / data.ppq as f64;
+    let tracks = data
+        .tracks
+        .iter()
+        .filter(|t| !t.notes.is_empty())
+        .map(|t| FileTrack {
+            name: t.name.clone(),
+            channel: t.channel,
+            program: t.program,
+            drums: is_drums(t),
+            notes: t
+                .notes
+                .iter()
+                .map(|n| {
+                    (
+                        n.tick as f64 * ms_per_tick,
+                        ((n.end - n.tick) as f64 * ms_per_tick).max(20.0),
+                        n.pitch,
+                        n.velocity.max(1),
+                    )
+                })
+                .collect(),
+        })
+        .collect();
+    (bpm(data), data.meter, tracks)
+}
+
 pub fn track_preview(data: &MidiData, track: usize, secs: f64) -> Vec<(u32, u32, u8, u8)> {
     let Some(t) = data.tracks.get(track) else {
         return Vec::new();
