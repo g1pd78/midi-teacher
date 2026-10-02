@@ -8,8 +8,8 @@ use mt_core::fingering::{self, FingerNote, Fingering};
 use mt_core::piece::{HandMode, MeasureErrors};
 use mt_core::practice::{self, Hands, Outcome, Pass, PracticeView, UnitState};
 use mt_core::store::{
-    AttemptRecord, ExerciseResult, ExerciseStat, PieceActivity, PieceMeta, PieceRecord, Store,
-    TodayStatus, PLAY_BUCKET_SECS,
+    AttemptRecord, ExerciseAttempt, ExerciseResult, ExerciseStat, PieceActivity, PieceMeta,
+    PieceRecord, Store, TodayStatus, PLAY_BUCKET_SECS,
 };
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -340,6 +340,15 @@ pub fn fingering_set(
         )
     })?;
     Ok(fingers_for(hub.store.lock().as_ref(), &piece, &notes))
+}
+
+#[tauri::command]
+pub fn exercise_history(
+    hub: State<Arc<PracticeHub>>,
+    prefix: String,
+    since: i64,
+) -> Result<Vec<ExerciseAttempt>, String> {
+    hub.with_store(|s| s.exercise_history(&prefix, since))
 }
 
 #[tauri::command]

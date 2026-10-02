@@ -64,6 +64,7 @@ export function createPracticeMock() {
       exercise,
       attempts: rs.length,
       passed: rs.some((r) => r.passed),
+      passes: rs.filter((r) => r.passed).length,
       bestAccuracy: Math.max(...rs.map((r) => r.accuracy)),
       lastAt: rs[rs.length - 1].at,
       lastTimingSdMs: rs[rs.length - 1].timingSdMs,
@@ -193,6 +194,10 @@ export function createPracticeMock() {
         exResults.push({ ...result, at: Date.now() / 1000 });
         return exStats();
       },
+      exercise_history: ({ prefix, since }: { prefix: string; since: number }) =>
+        exResults
+          .filter((r) => r.exercise.startsWith(prefix) && r.at >= since)
+          .map((r) => ({ exercise: r.exercise, finishedAt: r.at, accuracy: r.accuracy, passed: r.passed })),
       warmup_done: () => {
         warmupAt = Date.now() / 1000;
       },
@@ -200,7 +205,7 @@ export function createPracticeMock() {
         const last = [...pieces.values()].sort((a, b) => b.openedAt - a.openedAt)[0];
         return {
           warmupDone: warmupAt >= dayStart,
-          exercises: exResults.filter((r) => r.at >= dayStart).length,
+          exercises: exResults.filter((r) => r.at >= dayStart && !/^(read|rhythm)-/.test(r.exercise)).length,
           trainerSessions: 0,
           pieceAttempts: [...pieces.values()].reduce((n, r) => n + r.attempts.filter((a) => a.at >= dayStart).length, 0),
           lastPiece: last ? [last.meta.id, last.meta.title] : null,

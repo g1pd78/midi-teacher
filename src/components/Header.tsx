@@ -50,7 +50,7 @@ export function Header({
           Упражнения
         </button>
         <button className={screen === "trainer" ? "tab active" : "tab"} onClick={() => onNavigate("trainer")}>
-          Тренажёр нот
+          Тренажёры
         </button>
         <button className={screen === "guitar" ? "tab active" : "tab"} onClick={() => onNavigate("guitar")}>
           Гитара

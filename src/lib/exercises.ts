@@ -9,7 +9,7 @@ import type { ScoreNote } from "./score";
 
 // --- Тональности и гаммы ---
 
-const LETTERS = ["c", "d", "e", "f", "g", "a", "b"];
+export const LETTERS = ["c", "d", "e", "f", "g", "a", "b"];
 const LETTER_SEMI: Record<string, number> = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
 const SHARP_ORDER = "fcgdaeb";
 const FLAT_ORDER = "beadgcf";
@@ -121,6 +121,8 @@ export interface ExerciseScore {
   bpm: number;
   right?: ExNote[];
   left?: ExNote[];
+  /** Нотоносцы: фортепианная система (по умолчанию) или один стан — скрипичный (правая) или басовый (левая). */
+  staves?: "grand" | "treble" | "bass";
 }
 
 /** Последовательность нот одной длительности; последняя растягивается до конца такта. */
@@ -167,10 +169,16 @@ function measures(notes: ExNote[]): ExNote[][] {
 /** MEI упражнения: фортепианная система, 4/4, знаки при ключе, пальцы. */
 export function exerciseMei(score: ExerciseScore): string {
   const alters = keyAlters(score.fifths);
-  const staves: { n: number; hand: "right" | "left"; ms: ExNote[][] }[] = [
-    { n: 1, hand: "right", ms: measures(score.right ?? []) },
-    { n: 2, hand: "left", ms: measures(score.left ?? []) },
-  ];
+  const layout = score.staves ?? "grand";
+  const staves: { n: number; hand: "right" | "left"; ms: ExNote[][] }[] =
+    layout === "treble"
+      ? [{ n: 1, hand: "right", ms: measures(score.right ?? []) }]
+      : layout === "bass"
+        ? [{ n: 1, hand: "left", ms: measures(score.left ?? []) }]
+        : [
+            { n: 1, hand: "right", ms: measures(score.right ?? []) },
+            { n: 2, hand: "left", ms: measures(score.left ?? []) },
+          ];
   const count = Math.max(...staves.map((s) => s.ms.length));
   let id = 0;
   const body: string[] = [];
@@ -195,7 +203,7 @@ export function exerciseMei(score: ExerciseScore): string {
         const [dur, dots] = DUR[n.eighths] ?? ["4", 0];
         const nid = `x${++id}`;
         const xml = `<note xml:id="${nid}" pname="${letter}" oct="${oct}" dur="${dur}"${dots ? ` dots="${dots}"` : ""}${acc}/>`;
-        fings.push(`<fing startid="#${nid}" staff="${s.n}" place="${s.hand === "right" ? "above" : "below"}">${n.finger}</fing>`);
+        if (n.finger) fings.push(`<fing startid="#${nid}" staff="${s.n}" place="${s.hand === "right" ? "above" : "below"}">${n.finger}</fing>`);
         // Восьмые — группами по четыре (полтакта) под одним ребром.
         if (n.eighths === 1) {
           if (!beam || pos % 4 === 0) {
@@ -221,10 +229,15 @@ export function exerciseMei(score: ExerciseScore): string {
     `<?xml version="1.0" encoding="UTF-8"?>` +
     `<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.0"><music><body><mdiv><score>` +
     `<scoreDef key.sig="${sig}" meter.count="4" meter.unit="4" midi.bpm="${score.bpm}">` +
-    `<staffGrp symbol="brace" bar.thru="true">` +
-    `<staffDef n="1" lines="5" clef.shape="G" clef.line="2"/>` +
-    `<staffDef n="2" lines="5" clef.shape="F" clef.line="4"/>` +
-    `</staffGrp></scoreDef><section>${body.join("")}</section></score></mdiv></body></music></mei>`
+    (layout === "treble"
+      ? `<staffGrp><staffDef n="1" lines="5" clef.shape="G" clef.line="2"/></staffGrp>`
+      : layout === "bass"
+        ? `<staffGrp><staffDef n="1" lines="5" clef.shape="F" clef.line="4"/></staffGrp>`
+        : `<staffGrp symbol="brace" bar.thru="true">` +
+          `<staffDef n="1" lines="5" clef.shape="G" clef.line="2"/>` +
+          `<staffDef n="2" lines="5" clef.shape="F" clef.line="4"/>` +
+          `</staffGrp>`) +
+    `</scoreDef><section>${body.join("")}</section></score></mdiv></body></music></mei>`
   );
 }
 
@@ -460,13 +473,15 @@ export interface ExerciseStatView {
   exercise: string;
   attempts: number;
   passed: boolean;
+  /** Сколько попыток засчитано. */
+  passes?: number;
   bestAccuracy: number;
   lastAt: number;
   lastTimingSdMs: number;
   lastLoudness: number;
 }
 
-function seeded(seed: number) {
+export function seeded(seed: number) {
   let s = seed >>> 0 || 1;
   return () => {
     s ^= s << 13;

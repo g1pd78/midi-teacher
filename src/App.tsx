@@ -11,7 +11,7 @@ import { Pieces } from "./screens/Pieces";
 import { Progress } from "./screens/Progress";
 import { Reference } from "./screens/Reference";
 import { Settings } from "./screens/Settings";
-import { Trainer } from "./screens/Trainer";
+import { Trainers, type TrainerSection } from "./screens/Trainers";
 import { Wizard } from "./screens/Wizard";
 
 export type Screen = "home" | "pieces" | "exercises" | "trainer" | "guitar" | "drums" | "studio" | "reference" | "progress" | "settings";
@@ -24,6 +24,9 @@ export function App() {
   const [openPiece, setOpenPiece] = useState<string | null>(null);
   // Разминка по кнопке с главного экрана.
   const [warmupReq, setWarmupReq] = useState(false);
+  // «Тренажёры»: открытый раздел и запуск текущей ступени с главной.
+  const [trainerSection, setTrainerSection] = useState<TrainerSection>("notes");
+  const [drillReq, setDrillReq] = useState(false);
   // Окно горячих клавиш: «?» или F1 на любом экране.
   const [help, setHelp] = useState(false);
   useEffect(() => {
@@ -59,7 +62,20 @@ export function App() {
               setWarmupReq(true);
               setScreen("exercises");
             },
-            trainer: () => setScreen("trainer"),
+            trainer: () => {
+              setTrainerSection("notes");
+              setScreen("trainer");
+            },
+            reading: () => {
+              setTrainerSection("reading");
+              setDrillReq(true);
+              setScreen("trainer");
+            },
+            rhythm: () => {
+              setTrainerSection("rhythm");
+              setDrillReq(true);
+              setScreen("trainer");
+            },
             piece: (id) => {
               setOpenPiece(id);
               setScreen("pieces");
@@ -77,7 +93,14 @@ export function App() {
         />
       )}
       {screen === "exercises" && <Exercises startWarmup={warmupReq} onWarmupStarted={() => setWarmupReq(false)} />}
-      {screen === "trainer" && <Trainer />}
+      {screen === "trainer" && (
+        <Trainers
+          section={trainerSection}
+          onSection={setTrainerSection}
+          autoStart={drillReq}
+          onAutoStarted={() => setDrillReq(false)}
+        />
+      )}
       {screen === "reference" && <Reference />}
       {screen === "guitar" && <Guitar />}
       {screen === "drums" && <Drums />}

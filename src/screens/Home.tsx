@@ -8,7 +8,7 @@ import { api, type TodayStatus } from "../api";
 import { dayStartSecs } from "./Exercises";
 
 const SECTIONS: { title: string; text: string; stage: string; screen?: Screen }[] = [
-  { title: "Тренажёр нот", text: "Учимся узнавать ноты на нотном стане", stage: "Этап 1", screen: "trainer" },
+  { title: "Тренажёры", text: "Ноты на стане, чтение с листа, ритм", stage: "Этап 1", screen: "trainer" },
   { title: "Пьесы", text: "Разучивание по фрагментам: от подсказок до игры по памяти", stage: "Этап 2", screen: "pieces" },
   { title: "Упражнения", text: "Гаммы, арпеджио, пять пальцев, разминка дня", stage: "Этап 5", screen: "exercises" },
   { title: "Справочник", text: "Длительности, знаки, ключи", stage: "Этап 5", screen: "reference" },
@@ -18,17 +18,27 @@ const SECTIONS: { title: string; text: string; stage: string; screen?: Screen }[
 export interface TodayActions {
   warmup: () => void;
   trainer: () => void;
+  reading: () => void;
+  rhythm: () => void;
   piece: (id: string | null) => void;
 }
 
-/** «Занятие на сегодня»: разминка → тренажёр нот → пьеса. */
+/** Сколько мелодий с листа и ритмов — в занятии на день. */
+const READ_PER_DAY = 2;
+const RHYTHM_PER_DAY = 1;
+
+/** «Занятие на сегодня»: разминка → тренажёр нот → чтение с листа → ритм → пьеса. */
 function Today({ actions }: { actions: TodayActions }) {
   const [st, setSt] = useState<TodayStatus | null>(null);
+  const [drills, setDrills] = useState({ read: 0, rhythm: 0 });
   useEffect(() => {
     api
       .todayStatus(dayStartSecs())
       .then(setSt)
       .catch(() => setSt(null));
+    Promise.all([api.exerciseHistory("read-", dayStartSecs()), api.exerciseHistory("rhythm-", dayStartSecs())])
+      .then(([r, h]) => setDrills({ read: r.length, rhythm: h.length }))
+      .catch(() => {});
   }, []);
   if (!st) return null;
   const steps = [
@@ -43,6 +53,20 @@ function Today({ actions }: { actions: TodayActions }) {
       title: "Тренажёр нот",
       text: st.trainerSessions ? `Серий сегодня: ${st.trainerSessions}` : "Одна серия из 20 нот",
       go: actions.trainer,
+    },
+    {
+      done: drills.read >= READ_PER_DAY,
+      title: "Чтение с листа",
+      text: drills.read
+        ? `Мелодий сегодня: ${drills.read}${drills.read < READ_PER_DAY ? ` из ${READ_PER_DAY}` : ""}`
+        : `${READ_PER_DAY} новые мелодии`,
+      go: actions.reading,
+    },
+    {
+      done: drills.rhythm >= RHYTHM_PER_DAY,
+      title: "Ритм",
+      text: drills.rhythm ? `Ритмов сегодня: ${drills.rhythm}` : "Простучать один ритм",
+      go: actions.rhythm,
     },
     {
       done: st.pieceAttempts > 0,

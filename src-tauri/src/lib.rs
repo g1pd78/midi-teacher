@@ -306,8 +306,9 @@ pub fn run() {
                                 studio_events.on_midi(e.msg, e.time_us);
                                 if let MidiMessage::NoteOn { note, velocity } = e.msg {
                                     trainer_hub.on_note_on(&handle, note, e.time_us);
-                                    piece_events.on_note_on(note, e.time_us);
-                                    rhythm_events.on_note_on(note, velocity, e.time_us);
+                                    let pads = e.device == mt_core::devices::PADS_DEVICE;
+                                    piece_events.on_note_on(note, pads, e.time_us);
+                                    rhythm_events.on_note_on(note, velocity, pads, e.time_us);
                                     practice_events.on_note_on(e.time_us);
                                 }
                                 let _ = handle.emit("midi", e);
@@ -411,6 +412,7 @@ pub fn run() {
             practice::fingering_set,
             practice::exercise_stats,
             practice::exercise_record,
+            practice::exercise_history,
             practice::warmup_done,
             practice::today_status,
             midi_import::midi_inspect,

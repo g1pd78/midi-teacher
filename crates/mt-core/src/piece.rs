@@ -33,6 +33,47 @@ pub enum HandMode {
     None,
 }
 
+/// Высота нот ритмических упражнений: строка правой руки и строка левой.
+pub const RHYTHM_RIGHT: u8 = 72;
+pub const RHYTHM_LEFT: u8 = 48;
+
+/// Как нажатие сопоставляется с нотами: по высоте или только по ритму.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum KeyMap {
+    /// Обычная игра: нужна та же клавиша.
+    #[default]
+    Exact,
+    /// Ритм одной строкой: подходит любая клавиша или пэд.
+    AnyKey,
+    /// Ритм двумя руками: клавиши от до первой октавы — правая, ниже — левая;
+    /// пэды: бочка и низкие томы — левая, остальные — правая.
+    ByHand,
+}
+
+impl KeyMap {
+    /// Высота, которую увидит сессия. `from_pads` — нажатие пришло с пэдов (нота GM-ударных).
+    pub fn apply(self, pitch: u8, from_pads: bool) -> u8 {
+        match self {
+            KeyMap::Exact => pitch,
+            KeyMap::AnyKey => RHYTHM_RIGHT,
+            KeyMap::ByHand => {
+                let left = if from_pads {
+                    // 35/36 — бочка, 41/43 — напольные томы, 45/47 — низкие томы.
+                    matches!(pitch, 35 | 36 | 41 | 43 | 45 | 47)
+                } else {
+                    pitch < 60
+                };
+                if left {
+                    RHYTHM_LEFT
+                } else {
+                    RHYTHM_RIGHT
+                }
+            }
+        }
+    }
+}
+
 impl HandMode {
     pub fn includes(self, hand: Hand) -> bool {
         match self {
@@ -108,6 +149,7 @@ pub struct PieceConfig {
     pub tempo: f32,
     /// Повторять по кругу (выбранные такты): после последнего шага — снова первый.
     pub looping: bool,
+    pub key_map: KeyMap,
 }
 
 impl Default for PieceConfig {
@@ -117,6 +159,7 @@ impl Default for PieceConfig {
             accompany: true,
             tempo: 0.8,
             looping: false,
+            key_map: KeyMap::Exact,
         }
     }
 }
@@ -245,6 +288,10 @@ impl PieceSession {
 
     pub fn steps(&self) -> &[Step] {
         &self.steps
+    }
+
+    pub fn key_map(&self) -> KeyMap {
+        self.cfg.key_map
     }
 
     pub fn index(&self) -> usize {
@@ -470,6 +517,20 @@ impl PieceSession {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn key_map_by_rhythm() {
+        use super::{KeyMap, RHYTHM_LEFT, RHYTHM_RIGHT};
+        assert_eq!(KeyMap::Exact.apply(61, false), 61);
+        assert_eq!(KeyMap::AnyKey.apply(30, false), RHYTHM_RIGHT);
+        assert_eq!(KeyMap::AnyKey.apply(36, true), RHYTHM_RIGHT);
+        assert_eq!(KeyMap::ByHand.apply(60, false), RHYTHM_RIGHT);
+        assert_eq!(KeyMap::ByHand.apply(59, false), RHYTHM_LEFT);
+        // Пэды: бочка и низкие томы — левая, малый и тарелки — правая.
+        assert_eq!(KeyMap::ByHand.apply(36, true), RHYTHM_LEFT);
+        assert_eq!(KeyMap::ByHand.apply(38, true), RHYTHM_RIGHT);
+        assert_eq!(KeyMap::ByHand.apply(42, true), RHYTHM_RIGHT);
+    }
+
     use super::*;
 
     fn note(id: &str, pitch: u8, start: u32, dur: u32, hand: Hand, measure: u32) -> PieceNote {
@@ -674,6 +735,7 @@ mod tests {
                 accompany: true,
                 tempo: 1.0,
                 looping: false,
+                key_map: KeyMap::Exact,
             },
         );
         let a = s.start(0);
@@ -721,6 +783,7 @@ mod tests {
                 accompany: false,
                 tempo: 0.5,
                 looping: false,
+                key_map: KeyMap::Exact,
             },
         );
         s.start(0);
@@ -747,6 +810,7 @@ mod tests {
                 accompany: true,
                 tempo: 1.0,
                 looping: false,
+                key_map: KeyMap::Exact,
             },
         );
         let a = s.start(0);
@@ -809,6 +873,7 @@ mod tests {
                 accompany: true,
                 tempo: 1.0,
                 looping: false,
+                key_map: KeyMap::Exact,
             },
         );
         s.start(0);

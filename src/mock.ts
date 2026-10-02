@@ -111,11 +111,14 @@ export function createMock() {
   const songs: Record<string, Song> = {};
 
   type Body = { type: "noteOn"; note: number; velocity: number } | { type: "noteOff"; note: number };
+  // Ритм «любой клавишей» / «по рукам»: как KeyMap в ядре.
+  let keyMap = "exact";
+  const mapKey = (note: number) => (keyMap === "anyKey" ? 72 : keyMap === "byHand" ? (note < 60 ? 48 : 72) : note);
   const send = (device: string, ev: Body) => {
     if (ev.type === "noteOn") {
       judge(ev.note);
-      judgePiece(ev.note);
-      judgeRhythm(ev.note, ev.velocity);
+      judgePiece(mapKey(ev.note));
+      judgeRhythm(mapKey(ev.note), ev.velocity);
       practice.onNote();
       if (recording) recording.notes++;
     }
@@ -330,7 +333,8 @@ export function createMock() {
     clock_now: () => nowUs(),
     rhythm_start: ({ notes, config }) => {
       stopRhythmMock();
-      const cfg = config as unknown as { hands: string; tempo: number; loopRange: [number, number] | null; countIn: boolean; beatMs: number; beatsPerMeasure: number };
+      const cfg = config as unknown as { hands: string; tempo: number; loopRange: [number, number] | null; countIn: boolean; beatMs: number; beatsPerMeasure: number; keyMap?: string };
+      keyMap = cfg.keyMap ?? "exact";
       const [a, b] = cfg.loopRange ?? [0, Infinity];
       const all = (notes as unknown as PieceNoteIn[]).filter((n) => n.startMs >= a && n.startMs < b);
       const mine = all.filter((n) => mineOf(cfg.hands, n)).sort((x, y) => x.startMs - y.startMs);
@@ -541,7 +545,8 @@ export function createMock() {
         if (last && n.startMs - last.onset <= 15) last.notes.push(n);
         else steps.push({ onset: n.startMs, notes: [n] });
       }
-      const cfg = config as unknown as { hands: string; looping: boolean };
+      const cfg = config as unknown as { hands: string; looping: boolean; keyMap?: string };
+      keyMap = cfg.keyMap ?? "exact";
       piece = { steps, hands: cfg.hands, looping: cfg.looping, pass: 0, index: 0, pressed: new Set(), errors: 0, started: performance.now() };
       setTimeout(() => pieceActivate(0), 0);
       return steps.length;
@@ -628,7 +633,12 @@ export function createMock() {
       setTimeout(() => emitMidi(PADS_DEVICE, { type: "noteOff", note: drum as number }), 150);
     },
     rescan_devices: () => snapshot(),
-    simulate_midi: () => undefined,
+    simulate_midi: ({ device, bytes }) => {
+      const [st, note, vel] = bytes as unknown as number[];
+      if ((st & 0xf0) === 0x90 && vel > 0) send(String(device), { type: "noteOn", note, velocity: vel });
+      else if ((st & 0xf0) === 0x80 || (st & 0xf0) === 0x90) send(String(device), { type: "noteOff", note });
+      return undefined;
+    },
   };
 
   return {

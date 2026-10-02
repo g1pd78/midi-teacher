@@ -24,6 +24,16 @@ const COLORS = {
 /** Строки сверху вниз — как на стане: тарелки, томы, малый, бочка. */
 const ORDER: DrumDef["id"][] = ["crash", "ride", "hhOpen", "hhClosed", "tom", "snare", "floorTom", "kick"];
 
+/** Строка дорожки: барабан или строка ритма (правая/левая рука). */
+export interface Lane {
+  id: string;
+  name: string;
+  color: string;
+  cymbal?: boolean;
+  /** Какие высоты нот идут в эту строку. */
+  pitches: number[];
+}
+
 /** Барабаны, которые есть в партии, в порядке строк дорожки. */
 export function drumLanes(notes: { pitch: number }[]): DrumDef[] {
   const used = new Set(notes.map((n) => drumOfGm(n.pitch)?.id).filter(Boolean));
@@ -41,6 +51,7 @@ export function DrumHighway({
   states,
   bars,
   loop,
+  lanes: customLanes,
 }: {
   notes: DrumLaneNote[];
   getPos: () => number;
@@ -48,10 +59,12 @@ export function DrumHighway({
   states: React.MutableRefObject<Map<string, NoteState>>;
   bars: number[];
   loop?: [number, number] | null;
+  /** Свои строки (ритм); без них — барабаны партии. */
+  lanes?: Lane[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const props = useRef({ notes, getPos, windowMs, bars, loop });
-  props.current = { notes, getPos, windowMs, bars, loop };
+  const props = useRef({ notes, getPos, windowMs, bars, loop, customLanes });
+  props.current = { notes, getPos, windowMs, bars, loop, customLanes };
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -59,8 +72,15 @@ export function DrumHighway({
     let raf = 0;
     const draw = () => {
       raf = requestAnimationFrame(draw);
-      const { notes, getPos, windowMs, bars, loop } = props.current;
-      const lanes = drumLanes(notes);
+      const { notes, getPos, windowMs, bars, loop, customLanes } = props.current;
+      const lanes: Lane[] = customLanes ?? drumLanes(notes).map((d) => ({ id: d.id, name: d.name, color: d.color, cymbal: d.cymbal, pitches: [d.gm] }));
+      const laneOf = (pitch: number) => {
+        if (!customLanes) {
+          const d = drumOfGm(pitch);
+          return d ? lanes.findIndex((l) => l.id === d.id) : -1;
+        }
+        return lanes.findIndex((l) => l.pitches.includes(pitch));
+      };
       const dpr = window.devicePixelRatio || 1;
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
@@ -77,7 +97,6 @@ export function DrumHighway({
       const nowX = labelW + Math.round((w - labelW) * 0.08);
       const pos = getPos();
       const xOf = (ms: number) => nowX + ((ms - pos) / windowMs) * (w - nowX);
-      const row = new Map(lanes.map((d, i) => [d.id, i]));
       const yOf = (i: number) => i * rowH + rowH / 2;
 
       ctx.font = `600 ${Math.round(Math.min(14, rowH * 0.42))}px Inter, "Segoe UI", sans-serif`;
@@ -100,8 +119,9 @@ export function DrumHighway({
 
       const r0 = Math.min(13, rowH * 0.36);
       for (const n of notes) {
-        const d = drumOfGm(n.pitch);
-        if (!d) continue;
+        const li = laneOf(n.pitch);
+        if (li < 0) continue;
+        const d = lanes[li];
         const x = xOf(n.startMs);
         if (x > w + r0 || x < labelW - r0) continue;
         const state = states.current.get(n.id);
@@ -112,7 +132,7 @@ export function DrumHighway({
         const outside = loop && (n.startMs < loop[0] || n.startMs >= loop[1]);
         ctx.globalAlpha = outside ? 0.2 : x < nowX && !state ? 0.45 : 1;
         const r = n.accent ? r0 * 1.2 : n.ghost ? r0 * 0.65 : r0;
-        const y = yOf(row.get(d.id)!);
+        const y = yOf(li);
         ctx.fillStyle = color;
         ctx.beginPath();
         if (d.cymbal) {

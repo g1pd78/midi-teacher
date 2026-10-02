@@ -120,7 +120,7 @@ try {
   });
   ok("нажатие через имитацию MIDI показано на главном экране");
 
-  await waitFor("вкладка тренажёра", () => click("Тренажёр нот"));
+  await waitFor("вкладка тренажёров", () => click("Тренажёры"));
   await waitFor("список ступеней", () => js("return document.querySelectorAll('.level').length;")).then((n) => {
     if (n !== 9) throw new Error(`ступеней ${n}, ожидалось 9`);
   });
@@ -788,6 +788,103 @@ try {
     js("const o = [...document.querySelectorAll('[data-studio-track]')[arguments[0]].querySelectorAll('[data-takes] option')].map((o) => o.textContent); return o.find((t) => t.includes('к оригиналу')) ?? false;", [drumIdx]),
   );
   ok(`студия: трек из MIDI-песни, своя партия барабанов поверх — «${graded.trim()}»`);
+
+  console.log("Сквозной тест: чтение с листа и ритм");
+  const scroll = (attr) => js(`return document.querySelector('.score-scroll')?.dataset.${attr} ?? '';`, []);
+  // Бот в темпе: по часам транспорта нажимает каждую ноту в её момент (имитация MIDI-входа).
+  const playInTempo = async (pitchOf = (p) => p) => {
+    const transportAttr = await waitFor("часы транспорта", () => scroll("transport"), 10000);
+    const [originUs, pos0, tempo] = transportAttr.split(",").map(Number);
+    const notes = (await scroll("onsets")).split(",").map((x) => x.split(":").map(Number)).sort((a, b) => a[0] - b[0]);
+    // Сдвиг часов приложения относительно часов теста.
+    const t0 = Date.now();
+    const appUs = await invoke("clock_now");
+    const rtt = Date.now() - t0;
+    const localOf = (us) => t0 + rtt / 2 + (us - appUs) / 1000;
+    for (const [ms, pitch] of notes) {
+      const at = localOf(originUs + ((ms - pos0) / tempo) * 1000);
+      const wait = at - Date.now() - 4;
+      if (wait > 0) await sleep(wait);
+      await invoke("simulate_midi", { device: "E2E", bytes: [0x90, pitchOf(pitch), 100] });
+      await invoke("simulate_midi", { device: "E2E", bytes: [0x80, pitchOf(pitch), 0] });
+    }
+  };
+  await waitFor("вкладка тренажёров", () => click("Тренажёры"));
+  await waitFor("раздел «Чтение с листа»", () => js("const b = document.querySelector(\"[data-trainer-section='reading']\"); if (!b) return false; b.click(); return true;"));
+  await waitFor("ступень 1", () => js("const b = document.querySelector(\"[data-read-level='1']\"); if (!b || b.disabled) return false; b.click(); return true;"));
+  await waitFor("мелодия на стане", () => js("return !!document.querySelector('.score-page svg g.note');"), 30000);
+  if ((await js("return document.querySelector('[data-ex-mode]')?.dataset.exMode;")) !== "wait") throw new Error("чтение с листа открывается не в режиме ожидания");
+  // «▶ Послушать»: играет само, «■ Стоп» — обратно в ожидание.
+  await js("document.querySelector('[data-listen]').click();");
+  await waitFor("прослушивание идёт", async () => (await scroll("listening")) === "1" && (await scroll("playing")) === "1", 10000);
+  await sleep(1500);
+  await js("document.querySelector('[data-listen]').click();");
+  await waitFor("снова ожидание", async () => (await scroll("listening")) === "0" && (await js("return document.querySelector('[data-ex-mode]')?.dataset.exMode;")) === "wait", 10000);
+  // Ожидание: бот играет по курсору.
+  for (let i = 0; i < 100 && !(await scroll("exResult")); i++) {
+    const cur = await pitches();
+    if (!cur) {
+      await sleep(100);
+      continue;
+    }
+    const step = await stepNo();
+    for (const p of cur.split(",")) await press(Number(p));
+    await waitFor(`чтение: шаг ${step}`, async () => (await stepNo()) !== step || !!(await scroll("exResult")), 8000);
+  }
+  if ((await waitFor("итог мелодии", () => scroll("exResult"), 10000)) !== "passed") throw new Error("мелодия в ожидании не засчитана");
+  // Та же мелодия в темпе.
+  await js("[...document.querySelectorAll('[data-wait-result] button')].find((b) => b.textContent === 'В темпе').click();");
+  await waitFor("режим «в темпе»", () => js("return document.querySelector('[data-ex-mode]')?.dataset.exMode === 'rhythm';"));
+  await js("document.querySelector('.score-scroll')?.removeAttribute('data-transport');");
+  await waitFor("старт", () => click("▶ Старт"));
+  await playInTempo();
+  const readTempo = await waitFor("итог в темпе", () => js("return document.querySelector('.exercise-summary')?.innerText ?? '';"), 20000);
+  const readStats = await invoke("exercise_stats");
+  const passesOf = (id) => readStats.find((x) => x.exercise === id)?.passes ?? 0;
+  if (passesOf("read-1-wait") !== 1 || passesOf("read-1") !== 1) throw new Error(`чтение: зачёты ${JSON.stringify(readStats.filter((x) => x.exercise.startsWith("read-")))}\n${readTempo}`);
+  ok("чтение с листа: мелодия ступени 1 — «Послушать», засчитана в ожидании и в темпе");
+  // «Новая мелодия» — другая мелодия той же ступени.
+  const onsets1 = await scroll("onsets");
+  await js("[...document.querySelectorAll('.exercise-summary button')].find((b) => b.textContent === 'Новая мелодия').click();");
+  await waitFor("новая мелодия", async () => (await scroll("onsets")) && (await scroll("onsets")) !== onsets1, 20000);
+  await waitFor("к тренажёрам", () => click("← Тренажёры"));
+
+  // Ритм одной строкой: любая клавиша.
+  await waitFor("раздел «Ритм»", () => js("const b = document.querySelector(\"[data-trainer-section='rhythm']\"); if (!b) return false; b.click(); return true;"));
+  if (!(await js("return document.querySelector(\"[data-category='rhythm-hands']\")?.classList.contains('locked');"))) throw new Error("«Две руки» открыты сразу");
+  await waitFor("ритм, ступень 1", () => js("const b = document.querySelector(\"[data-rhythm-level='rhythm-line-1']\"); if (!b || b.disabled) return false; b.click(); return true;"));
+  await waitFor("ритм на стане и пэды ритма", () => js("return !!document.querySelector('.score-page svg g.note') && !!document.querySelector('[data-rhythm-pad]');"), 30000);
+  await js("document.querySelector('.score-scroll')?.removeAttribute('data-transport');");
+  await waitFor("старт", () => click("▶ Старт"));
+  await playInTempo(() => 55 + Math.floor(Math.random() * 20)); // любые клавиши
+  await waitFor("итог ритма", () => js("return !!document.querySelector('.exercise-summary');"), 20000);
+  const lineRes = await scroll("exResult");
+  const lineText = await js("return document.querySelector('.exercise-summary').innerText;");
+  if (lineRes !== "passed") throw new Error(`ритм одной строкой не засчитан:\n${lineText}`);
+  ok("ритм одной строкой: простучан случайными клавишами, засчитан");
+  await waitFor("к тренажёрам", () => click("← Тренажёры"));
+
+  // Две руки: открыть (три ступени одной строки засчитаны), стучать по рукам.
+  for (let l = 1; l <= 3; l++)
+    for (let k = 0; k < 3; k++)
+      await invoke("exercise_record", { result: { exercise: `rhythm-line-${l}`, tempo: 1, accuracy: 1, timingSdMs: 10, loudness: 1, passed: true } });
+  await waitFor("в главную и обратно", () => click("Главная"));
+  await waitFor("тренажёры", () => click("Тренажёры"));
+  await waitFor("две руки открыты", () => js("const b = document.querySelector(\"[data-rhythm-level='rhythm-hands-1']\"); if (!b || b.disabled) return false; b.click(); return true;"), 10000);
+  await waitFor("две строки и два пэда", () => js("return document.querySelectorAll('[data-rhythm-pad]').length === 2 && !!document.querySelector('.score-page svg g.note');"), 30000);
+  await waitFor("старт", () => click("▶ Старт"));
+  // Правая строка — клавиши от до первой октавы и выше, левая — ниже.
+  await playInTempo((p) => (p === 72 ? 64 + Math.floor(Math.random() * 12) : 40 + Math.floor(Math.random() * 12)));
+  await waitFor("итог двух рук", () => js("return !!document.querySelector('.exercise-summary');"), 20000);
+  if ((await scroll("exResult")) !== "passed") throw new Error(`две руки не засчитаны:\n${await js("return document.querySelector('.exercise-summary').innerText;")}`);
+  ok("ритм двумя руками: правая и левая по разным клавишам, засчитан");
+  await waitFor("к тренажёрам", () => click("← Тренажёры"));
+  await waitFor("главная", () => click("Главная"));
+  const doneSteps = await waitFor("занятие на сегодня", () =>
+    js("const d = [...document.querySelectorAll('.today-step.done b')].map((b) => b.textContent); return d.length ? d.join('|') : false;"),
+  );
+  if (!doneSteps.includes("Чтение с листа") || !doneSteps.includes("Ритм")) throw new Error(`«Занятие на сегодня», сделано: ${doneSteps}`);
+  ok("главная: шаги «Чтение с листа» и «Ритм» отмечены сделанными");
 
   console.log("Сквозной тест: доводка");
   // Панель пьесы: редкое — в меню «⋯»; Esc закрывает только меню.

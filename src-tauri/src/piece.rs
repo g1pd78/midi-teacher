@@ -28,9 +28,9 @@ impl PieceHub {
         }
     }
 
-    pub fn on_note_on(self: &Arc<Self>, pitch: u8, time_us: u64) {
+    pub fn on_note_on(self: &Arc<Self>, pitch: u8, from_pads: bool, time_us: u64) {
         let actions = match self.session.lock().as_mut() {
-            Some(s) => s.on_note_on(pitch, time_us),
+            Some(s) => s.on_note_on(s.key_map().apply(pitch, from_pads), time_us),
             None => return,
         };
         self.run(actions);

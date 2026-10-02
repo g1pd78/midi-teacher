@@ -1677,7 +1677,7 @@ button.link.piece-link:hover {
   font-size: 18px;
 }
 .today-step {
-  flex: 1 1 220px;
+  flex: 1 1 170px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -2567,4 +2567,77 @@ kbd {
   border-bottom-width: 2px;
   border-radius: 5px;
   white-space: pre;
+}
+
+/* Тренажёры: разделы, ступени чтения и ритма */
+.trainer-tabs {
+  margin-bottom: 4px;
+}
+.trainer-tabs button {
+  padding: 6px 16px;
+}
+.drum-item.current {
+  box-shadow: 0 0 0 1px var(--right-hand) inset;
+}
+
+/* Пэды ритма */
+.rhythm-pads {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  height: 100%;
+  min-height: 90px;
+}
+.rhythm-pads.two {
+  grid-template-columns: 1fr 1fr;
+}
+.rhythm-pad {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  transition: background 0.06s, border-color 0.06s;
+}
+.rhythm-pad b {
+  font-size: 18px;
+}
+.rhythm-pad span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.rhythm-pad.lane-R.lit {
+  background: rgba(90, 169, 255, 0.35);
+  border-color: var(--right-hand);
+}
+.rhythm-pad.lane-L.lit {
+  background: rgba(255, 180, 84, 0.35);
+  border-color: var(--left-hand);
+}
+.day-bar.stacked {
+  flex-direction: column-reverse;
+  justify-content: flex-start;
+}
+.day-bar.stacked > div {
+  min-height: 0;
+}
+.day-bar > div.on.rhythm {
+  background: var(--left-hand);
+}
+.drill-bars {
+  height: 90px;
+}
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--right-hand);
+  vertical-align: -1px;
+}
+.legend-dot.rhythm {
+  background: var(--left-hand);
 }

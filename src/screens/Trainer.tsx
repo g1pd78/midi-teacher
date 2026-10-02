@@ -31,7 +31,7 @@ function percent(x: number): string {
   return `${Math.round(x * 100)}%`;
 }
 
-export function Trainer() {
+export function Trainer({ tabs }: { tabs?: React.ReactNode }) {
   const [overview, setOverview] = useState<TrainerOverview | null>(null);
   const [session, setSession] = useState<SessionView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,8 +55,8 @@ export function Trainer() {
     }
   };
 
-  if (error) return <main className="trainer"><div className="notice warn">{error}</div></main>;
-  if (!overview) return <main className="trainer"><div className="muted">Загрузка…</div></main>;
+  if (error) return <main className="trainer">{tabs}<div className="notice warn">{error}</div></main>;
+  if (!overview) return <main className="trainer">{tabs}<div className="muted">Загрузка…</div></main>;
 
   if (session) {
     const level = overview.levels.find((l) => l.id === session.level)!;
@@ -78,7 +78,7 @@ export function Trainer() {
       />
     );
   }
-  return <TrainerLevels overview={overview} onStart={start} />;
+  return <TrainerLevels overview={overview} onStart={start} tabs={tabs} />;
 }
 
 function TrainerSettings() {
@@ -127,7 +127,7 @@ function TrainerSettings() {
   );
 }
 
-function TrainerLevels({ overview, onStart }: { overview: TrainerOverview; onStart: (level: number) => void }) {
+function TrainerLevels({ overview, onStart, tabs }: { overview: TrainerOverview; onStart: (level: number) => void; tabs?: React.ReactNode }) {
   const { prefs } = useApp();
   const stats = new Map(overview.levelStats.map((s) => [s.level, s]));
 
@@ -145,6 +145,7 @@ function TrainerLevels({ overview, onStart }: { overview: TrainerOverview; onSta
 
   return (
     <main className="trainer">
+      {tabs}
       <section className="card trainer-intro">
         <div>
           <h1>Тренажёр нот</h1>

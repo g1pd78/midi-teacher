@@ -38,9 +38,9 @@ impl RhythmHub {
         }
     }
 
-    pub fn on_note_on(&self, pitch: u8, velocity: u8, time_us: u64) {
+    pub fn on_note_on(&self, pitch: u8, velocity: u8, from_pads: bool, time_us: u64) {
         let actions = match self.session.lock().as_mut() {
-            Some(s) => s.on_note_on(pitch, velocity, time_us),
+            Some(s) => s.on_note_on(s.key_map().apply(pitch, from_pads), velocity, time_us),
             None => return,
         };
         self.run(actions);

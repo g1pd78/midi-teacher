@@ -122,10 +122,22 @@ pub struct ExerciseStat {
     pub exercise: String,
     pub attempts: u32,
     pub passed: bool,
+    /// Сколько попыток засчитано.
+    pub passes: u32,
     pub best_accuracy: f64,
     pub last_at: i64,
     pub last_timing_sd_ms: f64,
     pub last_loudness: f64,
+}
+
+/// Одна попытка упражнения — для статистики по дням.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExerciseAttempt {
+    pub exercise: String,
+    pub finished_at: i64,
+    pub accuracy: f64,
+    pub passed: bool,
 }
 
 /// Что сделано за сегодня (с начала местных суток).
@@ -587,7 +599,8 @@ impl Store {
         let mut stmt = self.conn.prepare(
             "SELECT r.exercise, COUNT(*), MAX(r.passed), MAX(r.accuracy), MAX(r.finished_at),
                     (SELECT timing_sd_ms FROM exercise_results WHERE exercise = r.exercise ORDER BY id DESC LIMIT 1),
-                    (SELECT loudness FROM exercise_results WHERE exercise = r.exercise ORDER BY id DESC LIMIT 1)
+                    (SELECT loudness FROM exercise_results WHERE exercise = r.exercise ORDER BY id DESC LIMIT 1),
+                    SUM(r.passed)
              FROM exercise_results r GROUP BY r.exercise",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -599,6 +612,24 @@ impl Store {
                 last_at: r.get(4)?,
                 last_timing_sd_ms: r.get(5)?,
                 last_loudness: r.get(6)?,
+                passes: r.get(7)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Попытки упражнений с id на `prefix` (например, «read-») начиная с момента `since_secs`.
+    pub fn exercise_history(&self, prefix: &str, since_secs: i64) -> Result<Vec<ExerciseAttempt>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT exercise, finished_at, accuracy, passed FROM exercise_results
+             WHERE substr(exercise, 1, length(?1)) = ?1 AND finished_at >= ?2 ORDER BY id",
+        )?;
+        let rows = stmt.query_map(params![prefix, since_secs], |r| {
+            Ok(ExerciseAttempt {
+                exercise: r.get(0)?,
+                finished_at: r.get(1)?,
+                accuracy: r.get(2)?,
+                passed: r.get(3)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -641,7 +672,11 @@ impl Store {
             .optional()?;
         Ok(TodayStatus {
             warmup_done: warmup_at >= day_start_secs,
-            exercises: count("SELECT COUNT(*) FROM exercise_results WHERE finished_at >= ?1")?,
+            // Чтение с листа и ритм — отдельные шаги занятия, не разминка.
+            exercises: count(
+                "SELECT COUNT(*) FROM exercise_results WHERE finished_at >= ?1
+                   AND exercise NOT LIKE 'read-%' AND exercise NOT LIKE 'rhythm-%'",
+            )?,
             trainer_sessions: count(
                 "SELECT COUNT(*) FROM trainer_sessions WHERE finished_at >= ?1",
             )?,
@@ -974,7 +1009,18 @@ mod tests {
         stats.sort_by(|a, b| a.exercise.cmp(&b.exercise));
         assert_eq!(stats.len(), 2);
         assert!(stats[0].passed && stats[0].attempts == 2 && stats[0].best_accuracy == 1.0);
+        assert_eq!((stats[0].passes, stats[1].passes), (1, 0));
         assert!(!stats[1].passed);
+
+        // Чтение с листа: в историю по префиксу, но не в счётчик разминки.
+        store
+            .record_exercise(&res("read-1-wait", 0.95, true), 400)
+            .unwrap();
+        let hist = store.exercise_history("read-", 0).unwrap();
+        assert_eq!(hist.len(), 1);
+        assert!(hist[0].passed && hist[0].finished_at == 400);
+        assert!(store.exercise_history("read-", 401).unwrap().is_empty());
+        assert_eq!(store.exercise_history("five-", 0).unwrap().len(), 1);
 
         let t = store.today(150).unwrap();
         assert_eq!(

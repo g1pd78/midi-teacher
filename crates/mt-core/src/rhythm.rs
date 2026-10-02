@@ -8,7 +8,7 @@
 //! Время пьесы (`pos`, мс) связано с реальным временем (`t_us`, мкс) через темп:
 //! `pos = pos0 + (t_us − origin_us) / 1000 · tempo`.
 
-use crate::piece::{HandMode, MeasureErrors, PieceNote};
+use crate::piece::{HandMode, KeyMap, MeasureErrors, PieceNote};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -44,6 +44,7 @@ pub struct RhythmConfig {
     /// Долей в такте и длительность доли (мс пьесы) — для отсчёта.
     pub beats_per_measure: u32,
     pub beat_ms: u32,
+    pub key_map: KeyMap,
 }
 
 impl Default for RhythmConfig {
@@ -57,6 +58,7 @@ impl Default for RhythmConfig {
             loop_range: None,
             beats_per_measure: 4,
             beat_ms: 600,
+            key_map: KeyMap::Exact,
         }
     }
 }
@@ -235,6 +237,10 @@ impl RhythmSession {
 
     pub fn is_finished(&self) -> bool {
         self.finished
+    }
+
+    pub fn key_map(&self) -> KeyMap {
+        self.cfg.key_map
     }
 
     fn tempo(&self) -> f64 {
@@ -621,6 +627,7 @@ mod tests {
             loop_range: None,
             beats_per_measure: 4,
             beat_ms: 500,
+            key_map: KeyMap::Exact,
         }
     }
 

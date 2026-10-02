@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type PieceProgress, type Progress as ProgressData, type TrainerOverview } from "../api";
+import { api, type ExerciseAttempt, type PieceProgress, type Progress as ProgressData, type TrainerOverview } from "../api";
+import type { ExerciseStatView } from "../lib/exercises";
+import { READ_LEVELS, readLevelPassed } from "../lib/reading";
+import { RHYTHM_LEVELS, rhythmLevelPassed } from "../lib/rhythm";
 import { LEVELS, minutesByDay } from "../lib/practice";
 import { keyLabel } from "../lib/notes";
 import { useApp } from "../store";
@@ -102,6 +105,11 @@ export function Progress({ onOpenPiece }: { onOpenPiece: (id: string) => void })
       <section className="card">
         <h2 className="section-h">Тренажёр нот</h2>
         {trainer ? <TrainerStats overview={trainer} naming={naming} /> : <p className="muted">Загрузка…</p>}
+      </section>
+
+      <section className="card" data-progress-drills>
+        <h2 className="section-h">Чтение с листа и ритм</h2>
+        <DrillStats />
       </section>
     </main>
   );
@@ -236,6 +244,85 @@ function TrainerStats({ overview, naming }: { overview: TrainerOverview; naming:
         ) : null,
       )}
       {!notes.length && <p className="muted">Серий пока не было.</p>}
+    </>
+  );
+}
+
+const DRILL_DAYS = 14;
+
+/** Чтение с листа и ритм: пройденные ступени, попытки по дням за две недели. */
+function DrillStats() {
+  const [stats, setStats] = useState<ExerciseStatView[] | null>(null);
+  const [hist, setHist] = useState<{ read: ExerciseAttempt[]; rhythm: ExerciseAttempt[] } | null>(null);
+  useEffect(() => {
+    const since = Math.floor(Date.now() / 1000) - DRILL_DAYS * 86400;
+    api.exerciseStats().then(setStats).catch(() => setStats([]));
+    Promise.all([api.exerciseHistory("read-", since), api.exerciseHistory("rhythm-", since)])
+      .then(([read, rhythm]) => setHist({ read, rhythm }))
+      .catch(() => setHist({ read: [], rhythm: [] }));
+  }, []);
+  if (!stats || !hist) return <p className="muted">Загрузка…</p>;
+  const readPassed = READ_LEVELS.filter((l) => readLevelPassed(stats, l.id)).length;
+  const rhythmPassed = RHYTHM_LEVELS.filter((l) => rhythmLevelPassed(stats, l)).length;
+  const days = Array.from({ length: DRILL_DAYS }, (_, i) => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - (DRILL_DAYS - 1 - i));
+    const from = d.getTime() / 1000;
+    const to = from + 86400;
+    const inDay = (a: ExerciseAttempt) => a.finishedAt >= from && a.finishedAt < to;
+    return { date: d, read: hist.read.filter(inDay), rhythm: hist.rhythm.filter(inDay) };
+  });
+  const max = Math.max(4, ...days.map((d) => d.read.length + d.rhythm.length));
+  const acc = (list: ExerciseAttempt[]) => (list.length ? Math.round((list.reduce((s, a) => s + a.accuracy, 0) / list.length) * 100) : null);
+  const readAcc = acc(hist.read);
+  const rhythmAcc = acc(hist.rhythm);
+  return (
+    <>
+      <div className="progress-totals">
+        <div>
+          <b>
+            {readPassed} из {READ_LEVELS.length}
+          </b>
+          <span className="muted">ступеней чтения пройдено</span>
+        </div>
+        <div>
+          <b>
+            {hist.read.filter((a) => a.passed).length} из {hist.read.length}
+          </b>
+          <span className="muted">мелодий засчитано за 2 недели{readAcc !== null ? ` · в среднем ${readAcc}%` : ""}</span>
+        </div>
+        <div>
+          <b>
+            {rhythmPassed} из {RHYTHM_LEVELS.length}
+          </b>
+          <span className="muted">ступеней ритма пройдено</span>
+        </div>
+        <div>
+          <b>
+            {hist.rhythm.filter((a) => a.passed).length} из {hist.rhythm.length}
+          </b>
+          <span className="muted">ритмов засчитано за 2 недели{rhythmAcc !== null ? ` · в среднем ${rhythmAcc}%` : ""}</span>
+        </div>
+      </div>
+      <div className="day-bars drill-bars">
+        {days.map((d) => (
+          <div
+            key={d.date.getTime()}
+            className="day"
+            title={`${d.date.toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}: мелодий ${d.read.length}, ритмов ${d.rhythm.length}`}
+          >
+            <div className="day-bar stacked">
+              <div className="on rhythm" style={{ height: `${(d.rhythm.length / max) * 100}%` }} />
+              <div className="on" style={{ height: `${(d.read.length / max) * 100}%` }} />
+            </div>
+            <span className="day-label">{d.date.getDate()}</span>
+          </div>
+        ))}
+      </div>
+      <p className="hint">
+        <span className="legend-dot read" /> мелодии с листа · <span className="legend-dot rhythm" /> ритмы. Ступени — во вкладке «Тренажёры».
+      </p>
     </>
   );
 }

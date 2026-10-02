@@ -382,11 +382,15 @@ export interface PieceNoteIn {
 /** Руки ученика в сессии; `none` — приложение играет всё (прослушивание). */
 export type PlayHands = HandMode | "none";
 
+/** Как нажатие сопоставляется с нотами: по высоте, любой клавишей (ритм) или по рукам (ритм двумя руками). */
+export type KeyMap = "exact" | "anyKey" | "byHand";
+
 export interface PieceConfig {
   hands: PlayHands;
   accompany: boolean;
   tempo: number;
   looping: boolean;
+  keyMap?: KeyMap;
 }
 
 export interface RhythmConfig {
@@ -398,6 +402,15 @@ export interface RhythmConfig {
   loopRange: [number, number] | null;
   beatsPerMeasure: number;
   beatMs: number;
+  keyMap?: KeyMap;
+}
+
+/** Одна попытка упражнения (для статистики по дням). */
+export interface ExerciseAttempt {
+  exercise: string;
+  finishedAt: number;
+  accuracy: number;
+  passed: boolean;
 }
 
 export type Grade = "perfect" | "good" | "poor";
@@ -686,6 +699,7 @@ export const api = {
   exerciseStats: () => invoke<ExerciseStatView[]>("exercise_stats"),
   exerciseRecord: (result: { exercise: string; tempo: number; accuracy: number; timingSdMs: number; loudness: number; passed: boolean }) =>
     invoke<ExerciseStatView[]>("exercise_record", { result }),
+  exerciseHistory: (prefix: string, since: number) => invoke<ExerciseAttempt[]>("exercise_history", { prefix, since }),
   warmupDone: () => invoke<void>("warmup_done"),
   todayStatus: (dayStart: number) => invoke<TodayStatus>("today_status", { dayStart }),
   midiInspect: (id: string) => invoke<MidiInfo>("midi_inspect", { id }),
