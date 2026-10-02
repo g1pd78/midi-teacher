@@ -10,6 +10,7 @@ import { createMock } from "./mock";
 import type { PieceMetaIn } from "./lib/practice";
 import type { Finger, FingerNoteIn } from "./lib/fingering";
 import type { ExerciseStatView } from "./lib/exercises";
+import type { LeadSong } from "./lib/songs";
 
 export interface TodayStatus {
   warmupDone: boolean;
@@ -153,6 +154,8 @@ export interface UiPrefs {
   piece: PiecePrefs;
   theorySeen: string[];
   pieceSetup: Record<string, PieceSetup>;
+  /** Свои песни по буквам аккордов (раздел «Аккорды»). */
+  songs?: LeadSong[];
 }
 
 export interface TrackInfo {
@@ -383,7 +386,7 @@ export interface PieceNoteIn {
 export type PlayHands = HandMode | "none";
 
 /** Как нажатие сопоставляется с нотами: по высоте, любой клавишей (ритм) или по рукам (ритм двумя руками). */
-export type KeyMap = "exact" | "anyKey" | "byHand";
+export type KeyMap = "exact" | "anyKey" | "byHand" | "leftAnyOctave" | "anyOctave";
 
 export interface PieceConfig {
   hands: PlayHands;

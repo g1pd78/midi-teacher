@@ -8,7 +8,7 @@
 //! Время пьесы (`pos`, мс) связано с реальным временем (`t_us`, мкс) через темп:
 //! `pos = pos0 + (t_us − origin_us) / 1000 · tempo`.
 
-use crate::piece::{HandMode, KeyMap, MeasureErrors, PieceNote};
+use crate::piece::{note_matches, HandMode, KeyMap, MeasureErrors, PieceNote};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -422,17 +422,20 @@ impl RhythmSession {
             .iter()
             .enumerate()
             .filter(|(k, &i)| {
-                self.notes[i].pitch == pitch
+                note_matches(self.cfg.key_map, &self.notes[i], pitch)
                     && (fresh || (self.matched[*k].is_none() && !self.missed[*k]))
             })
             .map(|(k, &i)| {
                 (
                     k,
                     ((pos - self.notes[i].start_ms as f64) / tempo).round() as i32,
+                    self.notes[i].pitch == pitch,
                 )
             })
-            .filter(|(_, d)| d.abs() <= WINDOW_MS)
-            .min_by_key(|(_, d)| d.abs())
+            .filter(|(_, d, _)| d.abs() <= WINDOW_MS)
+            // Точное совпадение важнее «любой октавы», дальше — ближайшая по времени.
+            .min_by_key(|(_, d, exact)| (!exact, d.abs()))
+            .map(|(k, d, _)| (k, d))
     }
 
     fn release_until(&mut self, pos: f64, out: &mut Vec<Action>) {

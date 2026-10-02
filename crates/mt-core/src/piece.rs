@@ -49,13 +49,18 @@ pub enum KeyMap {
     /// Ритм двумя руками: клавиши от до первой октавы — правая, ниже — левая;
     /// пэды: бочка и низкие томы — левая, остальные — правая.
     ByHand,
+    /// Игра по буквам аккордов: ноты левой руки засчитываются в любой октаве
+    /// (аккорд можно взять в любом обращении), правой — как обычно.
+    LeftAnyOctave,
+    /// Аккорды по буквам без мелодии: обе руки — в любой октаве.
+    AnyOctave,
 }
 
 impl KeyMap {
     /// Высота, которую увидит сессия. `from_pads` — нажатие пришло с пэдов (нота GM-ударных).
     pub fn apply(self, pitch: u8, from_pads: bool) -> u8 {
         match self {
-            KeyMap::Exact => pitch,
+            KeyMap::Exact | KeyMap::LeftAnyOctave | KeyMap::AnyOctave => pitch,
             KeyMap::AnyKey => RHYTHM_RIGHT,
             KeyMap::ByHand => {
                 let left = if from_pads {
@@ -71,6 +76,15 @@ impl KeyMap {
                 }
             }
         }
+    }
+}
+
+/// Подходит ли нажатие `pitch` к ноте (с учётом «любой октавы» для левой руки).
+pub fn note_matches(key_map: KeyMap, note: &PieceNote, pitch: u8) -> bool {
+    match key_map {
+        KeyMap::LeftAnyOctave if note.hand == Hand::Left => note.pitch % 12 == pitch % 12,
+        KeyMap::AnyOctave => note.pitch % 12 == pitch % 12,
+        _ => note.pitch == pitch,
     }
 }
 
@@ -458,15 +472,34 @@ impl PieceSession {
             return out;
         }
         let i = self.index;
-        let hit_ids: Vec<String> = self
+        let km = self.cfg.key_map;
+        // Точное совпадение важнее «любой октавы»: одна клавиша — не две ноты разных рук.
+        let exact: Vec<(String, u8)> = self
             .required(i)
-            .filter(|n| n.pitch == pitch)
-            .map(|n| n.id.clone())
+            .filter(|n| n.pitch == pitch && !self.pressed.contains(&n.pitch))
+            .map(|n| (n.id.clone(), n.pitch))
             .collect();
+        let matched: Vec<(String, u8)> = if exact.is_empty() {
+            self.required(i)
+                .filter(|n| note_matches(km, n, pitch))
+                .map(|n| (n.id.clone(), n.pitch))
+                .collect()
+        } else {
+            exact
+        };
 
-        if !hit_ids.is_empty() {
-            if !self.pressed.insert(pitch) {
+        if !matched.is_empty() {
+            // Нажатые ноты шага — по высоте ноты в записи (при «любой октаве» она может отличаться).
+            let fresh: Vec<&(String, u8)> = matched
+                .iter()
+                .filter(|(_, p)| !self.pressed.contains(p))
+                .collect();
+            if fresh.is_empty() {
                 return out; // повторное нажатие той же ноты аккорда
+            }
+            let hit_ids: Vec<String> = fresh.iter().map(|(id, _)| id.clone()).collect();
+            for (_, p) in &fresh {
+                self.pressed.insert(*p);
             }
             out.push(Action::Event(PieceEvent::Hit {
                 index: i,
@@ -482,7 +515,7 @@ impl PieceSession {
         }
 
         // Нота второй руки на этом шаге — не ошибка (ученик играет вместе с приложением).
-        if self.others(i).any(|n| n.pitch == pitch) || self.required(i).next().is_none() {
+        if self.others(i).any(|n| note_matches(km, n, pitch)) || self.required(i).next().is_none() {
             return out;
         }
 
@@ -517,6 +550,40 @@ impl PieceSession {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn left_any_octave_accepts_any_voicing() {
+        use super::KeyMap;
+        // Шаг: мелодия ми (правая) и аккорд до мажор в малой октаве (левая).
+        let notes = vec![
+            note("m", 64, 0, 500, Hand::Right, 1),
+            note("c", 48, 0, 500, Hand::Left, 1),
+            note("e", 52, 0, 500, Hand::Left, 1),
+            note("g", 55, 0, 500, Hand::Left, 1),
+            note("n", 65, 500, 500, Hand::Right, 1),
+        ];
+        let mut s = PieceSession::new(
+            notes,
+            PieceConfig {
+                hands: HandMode::Both,
+                key_map: KeyMap::LeftAnyOctave,
+                ..PieceConfig::default()
+            },
+        );
+        s.start(0);
+        // Ре — нет ни в мелодии, ни в аккорде: ошибка.
+        assert!(s
+            .on_note_on(62, 1000)
+            .iter()
+            .any(|a| matches!(a, Action::Event(PieceEvent::Wrong { .. }))));
+        s.on_note_on(64, 2000);
+        // Левая — аккорд во втором обращении октавой выше: соль, до, ми.
+        s.on_note_on(67, 3000);
+        s.on_note_on(72, 4000);
+        assert_eq!(s.index(), 0);
+        s.on_note_on(76, 5000);
+        assert_eq!(s.index(), 1);
+    }
+
     #[test]
     fn key_map_by_rhythm() {
         use super::{KeyMap, RHYTHM_LEFT, RHYTHM_RIGHT};

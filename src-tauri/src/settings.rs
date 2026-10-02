@@ -24,6 +24,8 @@ pub struct UiPrefs {
     pub theory_seen: Vec<String>,
     /// Настройки отдельных пьес по id: транспонирование, дорожки MIDI, правка рук.
     pub piece_setup: BTreeMap<String, PieceSetup>,
+    /// Свои песни по буквам аккордов (формат задаёт интерфейс, ядро хранит как есть).
+    pub songs: Vec<serde_json::Value>,
 }
 
 /// Настройки одной пьесы.
@@ -120,6 +122,7 @@ impl Default for UiPrefs {
             piece: PiecePrefs::default(),
             theory_seen: Vec::new(),
             piece_setup: BTreeMap::new(),
+            songs: Vec::new(),
         }
     }
 }
@@ -170,6 +173,8 @@ mod tests {
         s.prefs.note_names = "latin".into();
         s.prefs.wizard_done = true;
         s.audio.buffer_frames = Some(64);
+        s.prefs.songs =
+            vec![serde_json::json!({ "id": "my-1", "title": "Песня", "chords": "C | G" })];
         s.save(&path).unwrap();
         assert_eq!(AppSettings::load(&path), s);
 

@@ -41,6 +41,7 @@ import { keyLabel } from "../lib/notes";
 import { fingerNotes, injectFingering, parseFinger, type Finger } from "../lib/fingering";
 import { PASS_ACCURACY, PASS_TIMING_SD_MS, evaluate, type Evaluation, type HitRecord } from "../lib/exercises";
 import type { Hints } from "../lib/reading";
+import { songFromScore } from "../lib/songs";
 import { RHYTHM_LEFT, RHYTHM_RIGHT } from "../lib/rhythm";
 import {
   LEVELS,
@@ -75,6 +76,10 @@ export interface PieceSource {
   load: () => Promise<{ data: string | ArrayBuffer; zip: boolean }>;
   /** MIDI-файл библиотеки: ноты строятся из него с выбранными дорожками. */
   midi?: string;
+  /** Сопоставление нажатий (песни по буквам: аккорды в любой октаве). */
+  keyMap?: KeyMap;
+  /** Надпись кнопки «назад» (песни по буквам — «← Аккорды»). */
+  backLabel?: string;
 }
 
 const NO_SETUP: PieceSetup = { transpose: 0, roles: null, handOverrides: [], instrument: null, part: 0 };
@@ -216,7 +221,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const listeningRef = useRef(listening);
   listeningRef.current = listening;
   const rhythmEx = exercise?.instrument === "rhythm";
-  const keyMap: KeyMap = exercise?.keyMap ?? "exact";
+  const keyMap: KeyMap = exercise?.keyMap ?? source.keyMap ?? "exact";
   const [exTempo, setExTempo] = useState(1);
   const [exMetronome, setExMetronome] = useState(true);
   const [exResult, setExResult] = useState<Evaluation | null>(null);
@@ -1331,6 +1336,21 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
       setToast(`Не сохранено: ${e}`);
     }
   };
+  // Песня по буквам из пьесы: мелодия и аккорды → «Тренажёры» → «Аккорды» → «Мои песни».
+  const makeChordSong = () => {
+    const sc = scoreRef.current;
+    // Буквы — из исходных нот (не из табулатуры).
+    if (!sc || !mei) return;
+    const song = songFromScore(
+      { notes: sc.notes, starts: sc.starts, tempoBpm: sc.tempoBpm, endMs: sc.endMs, meter: sc.structure.meter },
+      mei,
+      source.title,
+      `my-${Date.now()}`,
+    );
+    setPrefs({ songs: [...(prefs.songs ?? []), song] });
+    const n = song.chords.split("|").filter((b) => b.trim() && b.trim() !== "-").length;
+    setToast(`Песня по буквам «${song.title}» добавлена: Тренажёры → Аккорды → Мои песни (тактов с аккордами: ${n})`);
+  };
   const setTranspose = (t: number) => setSetup({ transpose: Math.max(-TRANSPOSE_MAX, Math.min(TRANSPOSE_MAX, t)) });
   const pieceTools = exercise ? null : (
     <>
@@ -1377,7 +1397,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     <main className={`piece${showWaterfall ? " with-waterfall" : ""}`}>
       <div className="piece-bar">
         <button className="ghost" onClick={onBack} title="Esc">
-          {exercise?.backLabel ?? (drums && exercise ? "← Барабаны" : exercise ? "← Упражнения" : "← Пьесы")}
+          {exercise?.backLabel ?? source.backLabel ?? (drums && exercise ? "← Барабаны" : exercise ? "← Упражнения" : "← Пьесы")}
         </button>
         <div className="piece-name">{source.title}</div>
         {!exercise && (
@@ -1484,6 +1504,11 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
             </button>
           </span>
           {pieceTools}
+          {!exercise && !drums && !strInst && score && (
+            <button className="small" onClick={makeChordSong} title="Песня по буквам: мелодия правой руки и аккорды (из файла или распознанные)" data-make-song>
+              Аккорды по буквам…
+            </button>
+          )}
         </MoreMenu>
       </div>
 

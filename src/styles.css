@@ -2641,3 +2641,152 @@ kbd {
 .legend-dot.rhythm {
   background: var(--left-hand);
 }
+
+/* Аккорды */
+.song-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.song-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  flex-wrap: wrap;
+}
+.song-info {
+  flex: 1;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.song-info .muted {
+  font-size: 12px;
+}
+.song-styles button {
+  padding: 5px 10px;
+  font-size: 13px;
+}
+.songs-mine-h {
+  margin: 16px 0 8px;
+  font-size: 15px;
+}
+.chord-drill {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px;
+  height: calc(100vh - 56px);
+  box-sizing: border-box;
+}
+.chord-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: box-shadow 0.15s;
+}
+.chord-card.flash-ok {
+  box-shadow: 0 0 0 3px var(--good) inset;
+}
+.chord-card.flash-wrong {
+  box-shadow: 0 0 0 3px #ff5c5c inset;
+}
+.chord-symbol {
+  font-size: 84px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 1px;
+}
+.chord-name {
+  font-size: 20px;
+  color: var(--muted);
+}
+.chord-notes {
+  font-size: 20px;
+}
+.chord-wait {
+  font-size: 14px;
+}
+.chord-staff {
+  width: 220px;
+  height: 150px;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chord-staff svg {
+  width: 100%;
+  height: 100%;
+}
+.chord-drill .session-piano {
+  height: 160px;
+  flex: none;
+}
+.toggle-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.song-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 12px 24px;
+  margin: 8px 0 14px;
+}
+.song-form label,
+.song-chords {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.song-form label > span:first-child,
+.song-chords > span:first-child {
+  min-width: 96px;
+  color: var(--muted);
+}
+.song-form input:not([type="number"]),
+.song-form select {
+  flex: 1;
+}
+.song-form input[type="number"] {
+  width: 80px;
+}
+.song-chords {
+  align-items: flex-start;
+}
+.song-chords textarea {
+  flex: 1;
+  font: 15px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+button.danger {
+  color: #ff8a8a;
+}
+.song-form .segmented {
+  flex-wrap: nowrap;
+}
+.song-form input,
+.song-form select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font: inherit;
+}

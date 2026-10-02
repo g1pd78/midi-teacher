@@ -31,13 +31,15 @@ import {
 } from "../lib/rhythm";
 import { PieceView } from "./PieceView";
 import { Trainer } from "./Trainer";
+import { Chords } from "./Chords";
 
-export type TrainerSection = "notes" | "reading" | "rhythm";
+export type TrainerSection = "notes" | "reading" | "rhythm" | "chords";
 
 const SECTIONS: { id: TrainerSection; title: string }[] = [
   { id: "notes", title: "Ноты" },
   { id: "reading", title: "Чтение с листа" },
   { id: "rhythm", title: "Ритм" },
+  { id: "chords", title: "Аккорды" },
 ];
 
 /** Новое зерно: каждая попытка — новая мелодия или ритм. */
@@ -69,6 +71,7 @@ export function Trainers({
     </nav>
   );
   if (section === "notes") return <Trainer tabs={tabs} />;
+  if (section === "chords") return <Chords tabs={tabs} />;
   return <Drills key={section} kind={section} tabs={tabs} autoStart={autoStart} onAutoStarted={onAutoStarted} />;
 }
 

@@ -260,10 +260,13 @@ export function createMock() {
     if (!piece || piece.index >= piece.steps.length) return;
     const i = piece.index;
     const req = pieceRequired(i);
-    const hits = req.filter((n) => n.pitch === note);
-    if (hits.length) {
-      if (piece.pressed.has(note)) return;
-      piece.pressed.add(note);
+    // «Любая октава» (аккорды по буквам): как note_matches в ядре, точное совпадение важнее.
+    const loose = (n: PieceNoteIn) => (keyMap === "anyOctave" || (keyMap === "leftAnyOctave" && n.hand === "left")) && n.pitch % 12 === note % 12;
+    const exact = req.filter((n) => n.pitch === note && !piece!.pressed.has(n.pitch));
+    const hits = (exact.length ? exact : req.filter((n) => loose(n))).filter((n) => !piece!.pressed.has(n.pitch));
+    if (hits.length || req.some((n) => n.pitch === note || loose(n))) {
+      if (!hits.length) return;
+      hits.forEach((n) => piece!.pressed.add(n.pitch));
       emit("piece", { kind: "hit", index: i, noteIds: hits.map((n) => n.id) });
       if (req.every((n) => piece!.pressed.has(n.pitch))) pieceActivate(i + 1);
     } else if (req.length && !piece.steps[i].notes.some((n) => n.pitch === note)) {

@@ -880,11 +880,113 @@ try {
   ok("ритм двумя руками: правая и левая по разным клавишам, засчитан");
   await waitFor("к тренажёрам", () => click("← Тренажёры"));
   await waitFor("главная", () => click("Главная"));
-  const doneSteps = await waitFor("занятие на сегодня", () =>
-    js("const d = [...document.querySelectorAll('.today-step.done b')].map((b) => b.textContent); return d.length ? d.join('|') : false;"),
-  );
-  if (!doneSteps.includes("Чтение с листа") || !doneSteps.includes("Ритм")) throw new Error(`«Занятие на сегодня», сделано: ${doneSteps}`);
+  const doneSteps = () => js("return [...document.querySelectorAll('.today-step.done b')].map((b) => b.textContent).join('|');");
+  await waitFor("шаги «Чтение с листа» и «Ритм» сделаны", async () => {
+    const d = await doneSteps();
+    return d.includes("Чтение с листа") && d.includes("Ритм");
+  }, 10000).catch(async () => {
+    throw new Error(`«Занятие на сегодня», сделано: ${await doneSteps()}`);
+  });
   ok("главная: шаги «Чтение с листа» и «Ритм» отмечены сделанными");
+
+  console.log("Сквозной тест: аккорды");
+  const noteOn = (n) => invoke("simulate_midi", { device: "E2E", bytes: [0x90, n, 100] });
+  const noteOff = (n) => invoke("simulate_midi", { device: "E2E", bytes: [0x80, n, 0] });
+  await waitFor("вкладка тренажёров", () => click("Тренажёры"));
+  await waitFor("раздел «Аккорды»", () => js("const b = document.querySelector(\"[data-trainer-section='chords']\"); if (!b) return false; b.click(); return true;"));
+  await waitFor("ступень 1", () => js("const b = document.querySelector(\"[data-chord-level='1']\"); if (!b || b.disabled) return false; b.click(); return true;"));
+  // Бот берёт каждый аккорд в обращении (основной тон сверху) — тоже верно.
+  for (let i = 0; i < 12; i++) {
+    const done = await js("return document.querySelector('[data-chord-done]')?.dataset.chordDone ?? '';");
+    if (done) break;
+    const idx = await js("return document.querySelector('[data-chord-index]')?.dataset.chordIndex;");
+    const pcs = await waitFor("аккорд", () => js("return document.querySelector('[data-chord-pcs]')?.dataset.chordPcs ?? '';"), 5000);
+    const [root, ...rest] = pcs.split(",").map(Number);
+    const keys = [...rest.map((pc) => 48 + pc), 60 + root];
+    for (const k of keys) await noteOn(k);
+    try {
+      await waitFor(`аккорд ${i + 1} принят`, async () => (await js("return document.querySelector('[data-chord-index]')?.dataset.chordIndex;")) !== idx, 5000);
+    } catch (e) {
+      const m = await js("const m = document.querySelector('.chord-drill'); return JSON.stringify({ held: m?.dataset.held, stale: m?.dataset.stale, pcs: document.querySelector('[data-chord-pcs]')?.dataset.chordPcs });");
+      throw new Error(`${e.message}; нажато ${keys}; экран ${m}`);
+    }
+    for (const k of keys) await noteOff(k);
+    await sleep(100);
+  }
+  const chordDone = await waitFor("итог серии", () => js("return document.querySelector('[data-chord-done]')?.dataset.chordDone ?? '';"), 10000);
+  if (chordDone !== "passed") throw new Error(`серия аккордов: ${chordDone}`);
+  await waitFor("зачёт записан", async () => ((await invoke("exercise_stats")).find((x) => x.exercise === "chord-1")?.passes ?? 0) === 1, 5000);
+  ok("тренажёр аккордов: серия из 10 аккордов взята в обращениях, засчитана");
+  await waitFor("к списку", () => click("К списку"));
+
+  // Песня по буквам: правая — мелодия, левая — аккорды октавой ниже записанного (любая октава).
+  const playSong = async (label, shift) => {
+    for (let i = 0; i < 300; i++) {
+      if ((await js("return document.querySelector('.score-scroll')?.dataset.finished;")) === "1") break;
+      const cur = await pitches();
+      if (!cur) {
+        await sleep(100);
+        continue;
+      }
+      const step = await stepNo();
+      for (const p of cur.split(",").map(Number)) await press(shift(p));
+      await waitFor(`${label}: шаг ${step}`, async () => (await stepNo()) !== step || (await js("return document.querySelector('.score-scroll')?.dataset.finished;")) === "1", 8000);
+    }
+    await waitFor(`${label}: итог`, () => js("return !!document.querySelector('.summary');"), 10000);
+    const errors = await js("return document.querySelector('.summary .big')?.textContent;");
+    if (errors !== "0") throw new Error(`${label}: ошибок ${errors}`);
+  };
+  await waitFor("песня «У Мэри был барашек»", () => js("const b = document.querySelector(\"[data-song='builtin-mary'] [data-song-style='block']\"); if (!b) return false; b.click(); return true;"));
+  await waitFor("ноты песни", () => js("return !!document.querySelector('.score-page svg g.note');"), 30000);
+  const harms = await js("return document.querySelectorAll('.score-page g.harm').length;");
+  if (harms < 8) throw new Error(`букв аккордов на нотах: ${harms}`);
+  await waitFor("«Свободно»", () => click("Свободно"));
+  await waitFor("обе руки", () => click("Обе"));
+  await waitFor("ожидание", () => click("Ожидание"));
+  await playSong("песня по буквам", (p) => (p < 60 ? p - 12 : p));
+  ok(`песня по буквам: ${harms} аккордов над нотами, левая рука сыграна октавой ниже — без ошибок`);
+  await js("document.querySelector('.summary-overlay button')?.click();");
+  await waitFor("к аккордам", () => click("← Аккорды"));
+
+  // Своя песня текстом, без мелодии: обе руки в любой октаве.
+  await waitFor("«+ Своя песня»", () => js("const b = document.querySelector('[data-song-new]'); if (!b) return false; b.click(); return true;"));
+  await waitFor("поле аккордов", () =>
+    js(
+      "const el = document.querySelector('[data-song-chords]'); if (!el) return false;" +
+        "Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, 'C | G7 | Am | F C');" +
+        "el.dispatchEvent(new Event('input', { bubbles: true })); return true;",
+    ),
+  );
+  await waitFor("аккорды разобраны", () => js("return document.querySelector('[data-song-parse]')?.dataset.songParse === 'ok';"));
+  await js("document.querySelector('[data-song-play]').click();");
+  await waitFor("ноты своей песни", () => js("return !!document.querySelector('.score-page svg g.note');"), 30000);
+  await waitFor("ожидание", () => click("Ожидание"));
+  await playSong("своя песня", (p) => p - 12);
+  const songsSaved = (await invoke("get_state")).prefs.songs ?? [];
+  if (songsSaved.length !== 1 || songsSaved[0].chords !== "C | G7 | Am | F C") throw new Error(`свои песни: ${JSON.stringify(songsSaved)}`);
+  ok("своя песня: аккорды текстом сохранены, сыграны обеими руками октавой ниже — без ошибок");
+  await js("document.querySelector('.summary-overlay button')?.click();");
+  await waitFor("к аккордам", () => click("← Аккорды"));
+
+  // Песня из пьесы: «⋯» → «Аккорды по буквам…».
+  await waitFor("вкладка пьес", () => click("Пьесы"));
+  await waitFor("«Ода к радости»", () =>
+    js("const b = [...document.querySelectorAll('.piece-card')].find((b) => b.textContent.includes('Ода к радости')); if (!b) return false; b.click(); return true;"),
+  );
+  await waitFor("ноты пьесы", () => js("return !!document.querySelector('.score-page svg g.note');"), 30000);
+  // В разделе «Гитара» «Оду» переключали на гитару — аккорды по буквам делаются из фортепианной партии.
+  await waitFor("фортепиано", () => js("const b = document.querySelector(\"[data-piece-instrument='piano']\"); if (!b) return false; b.click(); return true;"));
+  await waitFor("фортепианный стан", () => js("return !document.querySelector('.tab-score') && !!document.querySelector('.session-piano .piano');"), 30000);
+  await sleep(2000); // ноты фортепианной партии перерисовываются после переключения
+  await js("document.querySelector('[data-more]').click();");
+  await waitFor("«Аккорды по буквам…»", () => js("const b = document.querySelector('[data-make-song]'); if (!b) return false; b.click(); return true;"));
+  await waitFor("песня добавлена", () => js("return (document.querySelector('.toast')?.textContent ?? '').includes('добавлена');"));
+  const fromPiece = ((await invoke("get_state")).prefs.songs ?? []).find((x) => x.source && x.source.includes("Ода"));
+  if (!fromPiece || fromPiece.melody.length < 20 || !/^C\b/.test(fromPiece.chords)) throw new Error(`песня из пьесы: ${JSON.stringify(fromPiece)?.slice(0, 300)}`);
+  ok(`песня из пьесы: мелодия ${fromPiece.melody.length} нот, аккорды «${fromPiece.chords.slice(0, 40)}…»`);
+  await js("document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));");
+  await sleep(300);
+  await waitFor("к списку пьес", () => click("← Пьесы")).catch(() => {});
 
   console.log("Сквозной тест: доводка");
   // Панель пьесы: редкое — в меню «⋯»; Esc закрывает только меню.
