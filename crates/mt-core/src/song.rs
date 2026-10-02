@@ -806,8 +806,10 @@ mod tests {
         let wav = render_wav(&s, None, None, 22_050).unwrap();
         assert_eq!(&wav[0..4], b"RIFF");
         let samples: Vec<i16> = wav[44..]
-            .chunks_exact(2)
-            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| i16::from_le_bytes(*b))
             .collect();
         // Первые 100 мс — нота звучит (рояль приложения), далеко после конца — тишина.
         let early = samples[..4410]

@@ -237,7 +237,7 @@ pub fn studio_list(app: AppHandle) -> Result<Vec<SongSummary>, String> {
             modified,
         });
     }
-    out.sort_by(|a, b| b.modified.cmp(&a.modified));
+    out.sort_by_key(|a| std::cmp::Reverse(a.modified));
     Ok(out)
 }
 
