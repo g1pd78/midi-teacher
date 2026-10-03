@@ -4,10 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+aes = "0.8"
 anyhow = "1.0.104"
+cfb-mode = "0.8"
 cpal = "0.18.2"
 crossbeam-channel = "0.5.17"
 crossbeam-queue = "0.3"
+ctr = "0.9"
+flate2 = "1"
 log = "0.4.34"
 midir = "0.11.0"
 midly = { version = "0.5.3", default-features = false, features = ["std"] }

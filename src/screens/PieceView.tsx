@@ -5,6 +5,7 @@ import {
   PADS_DEVICE,
   type AttemptRecord,
   type Converted,
+  type GuitarConfig,
   type MidiInfo,
   type PieceInstrument,
   type PieceSetup,
@@ -30,8 +31,10 @@ import { RecordTake } from "../components/RecordTake";
 import { MoreMenu } from "../components/MoreMenu";
 import { RhythmPads } from "../components/RhythmPads";
 import { PASS_DYNAMICS, drumMei, drumPartFromMidi, dynamicsOf, evaluateDynamics } from "../lib/drums";
-import { FRETS, meiToTab, nearestPosition, tabStaff, type StringInstrument } from "../lib/tab";
-import { TUNINGS } from "../lib/guitar";
+import { FRETS, MIRROR, meiToTab, nearestPosition, readTuning, tabStaff, withStaff, type StringInstrument } from "../lib/tab";
+import { TUNINGS, openTuning, sameTuning, tuningLabel, TUNING_PRESETS } from "../lib/guitar";
+import { arrangementTitle, rsAccompaniment, rsChart, rsTuning, type RsChart, type RsSong } from "../lib/rocksmith";
+import { RetunePanel } from "../components/Tuner";
 import { TrackDialog } from "../components/TrackDialog";
 import { accompNotes, overrideFor, toggleOverride } from "../lib/midi";
 import { TheoryPlaque } from "../components/Theory";
@@ -80,6 +83,8 @@ export interface PieceSource {
   keyMap?: KeyMap;
   /** Надпись кнопки «назад» (песни по буквам — «← Аккорды»). */
   backLabel?: string;
+  /** Песня Rocksmith (CDLC) из библиотеки: табы партий, строй, остальные партии звучат. */
+  rocksmith?: string;
 }
 
 const NO_SETUP: PieceSetup = { transpose: 0, roles: null, handOverrides: [], instrument: null, part: 0 };
@@ -96,8 +101,10 @@ const SOLFEGE: Record<string, string> = { c: "до", d: "ре", e: "ми", f: "�
 const ACCID: Record<string, string> = { s: "♯", f: "♭", ss: "𝄪", ff: "𝄫" };
 const HAND_NAME: Record<PlayHands, string> = { right: "правая рука", left: "левая рука", both: "обе руки", none: "слушаем" };
 
-function verovioLayout(layout: "line" | "pages", width: number, tab = false): Record<string, unknown> {
+function verovioLayout(layout: "line" | "pages", width: number, tab = false, tabWithStaff = false): Record<string, unknown> {
   const common = {
+    // Ноты над табом — станы ближе друг к другу, чтобы строка не мельчала.
+    ...(tabWithStaff ? { spacingStaff: 2 } : {}),
     // Цифры ладов в табулатуре мелкие — таб крупнее нот.
     scale: tab ? 58 : 42,
     header: "none",
@@ -230,7 +237,11 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const setup: PieceSetup = { ...NO_SETUP, ...prefs.pieceSetup?.[source.id] };
   const setSetup = (patch: Partial<PieceSetup>) =>
     setPrefs({ pieceSetup: { ...prefs.pieceSetup, [source.id]: { ...setup, ...patch } } });
-  const transpose = exercise ? 0 : setup.transpose;
+  const transpose = exercise || source.rocksmith ? 0 : setup.transpose;
+  // Песня Rocksmith: партии и выбранная партия (инструмент — по партии).
+  const [rsSong, setRsSong] = useState<RsSong | null>(null);
+  const rsArr = rsSong ? (rsSong.arrangements[setup.arrangement ?? 0] ?? rsSong.arrangements[0]) : null;
+  const rsChartData: RsChart | null = useMemo(() => (rsSong && rsArr ? rsChart(rsSong, rsArr) : null), [rsSong, rsArr]);
   // На чём играем: фортепиано или гитара/бас (табы и гриф).
   const [guitarOn, setGuitarOn] = useState<boolean | null>(null);
   // Аппликатура своя для каждого тона: в другой тональности другие пальцы.
@@ -247,6 +258,10 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     ? exercise.instrument === "drums"
       ? "drums"
       : "piano"
+    : source.rocksmith
+      ? rsArr?.bass
+        ? "bass"
+        : "guitar"
     : drumsOnly
       ? "drums"
       : wantDrums && !(source.midi && (midiDrums || !converted))
@@ -256,7 +271,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   // Барабаны: ударный стан, дорожка по барабанам, пэды вместо клавиатуры.
   const drums = instrument === "drums";
   // Прогресс разучивания у гитары, баса и барабанов свой.
-  const practiceId = instrument !== "piano" ? `${source.id}#${instrument}` : source.id;
+  const practiceId = rsArr ? `${source.id}#${rsArr.id}` : instrument !== "piano" ? `${source.id}#${instrument}` : source.id;
   const [editHands, setEditHands] = useState(false);
 
   const [mei, setMei] = useState<string | null>(null);
@@ -354,7 +369,17 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     warmUpVerovio();
     let alive = true;
     const fail = (e: unknown) => alive && setError(`Не удалось открыть ноты: ${(e as Error)?.message ?? e}`);
-    if (source.midi) {
+    if (source.rocksmith) {
+      if (!rsSong)
+        api
+          .rocksmithOpen(source.rocksmith)
+          .then((song) => alive && setRsSong(song))
+          .catch(fail);
+      else if (rsChartData)
+        loadScore(rsChartData.mei, false)
+          .then((m) => alive && setMei(m))
+          .catch(fail);
+    } else if (source.midi) {
       const file = source.midi;
       if (!setup.roles) {
         api
@@ -390,7 +415,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     };
     // setup.roles и setup.handOverrides входят в rolesKey и overridesKey
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, transpose, rolesKey, overridesKey, wantDrums]);
+  }, [source, transpose, rolesKey, overridesKey, wantDrums, rsSong, rsChartData]);
   useEffect(
     () => () => {
       void api.pieceStop();
@@ -401,9 +426,15 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   );
   // Аккомпанемент из MIDI: звучит вместе с учеником, на нотах не показывается.
   // Играешь барабаны — руки тоже звучат аккомпанементом.
+  // Песня Rocksmith: остальные партии.
   const accomp = useMemo(
-    () => (converted ? accompNotes(drums ? [...converted.accompaniment, ...converted.handsAccompaniment] : converted.accompaniment) : []),
-    [converted, drums],
+    () =>
+      rsSong && rsArr && rsChartData
+        ? accompNotes(rsAccompaniment(rsSong, rsArr, rsChartData.barBeats)).map((n) => ({ ...n, id: `rs-${n.id}` }))
+        : converted
+          ? accompNotes(drums ? [...converted.accompaniment, ...converted.handsAccompaniment] : converted.accompaniment)
+          : [],
+    [converted, drums, rsSong, rsArr, rsChartData],
   );
 
   // Размер области нот: ширина — для раскладки страниц, полный размер — для рамок тактов.
@@ -426,11 +457,41 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   // Гитара/бас: одна партия в табулатуре (готовые табы из файла — как есть).
   const fileTab = useMemo(() => (mei ? tabStaff(mei) : null), [mei]);
   const partStaff = strInst ? (fileTab ?? Math.min(Math.max(1, staves), setup.part || (strInst === "bass" && staves >= 2 ? 2 : 1))) : 0;
+  // Строй: свой у инструмента (настройки гитары) и у пьесы (песня Rocksmith, табы из файла или выбранный).
+  const [guitarCfg, setGuitarCfg] = useState<GuitarConfig | null>(null);
+  const myOpen = strInst ? openTuning({ instrument: strInst, tuning: guitarCfg?.tuning ?? null }) : [];
+  const myCapo = guitarCfg?.capo ?? 0;
+  const fileTuning = useMemo(() => (mei && fileTab ? readTuning(mei, fileTab) : null), [mei, fileTab]);
+  const fixedTab = !!(rsArr || fileTab);
+  const pieceOpen: number[] = !strInst
+    ? []
+    : rsArr
+      ? rsTuning(rsArr)
+      : fileTab
+        ? (fileTuning ?? TUNINGS[strInst])
+        : setup.tuning && setup.tuning.length === TUNINGS[strInst].length
+          ? setup.tuning
+          : myOpen;
+  const pieceCapo = rsArr ? rsArr.capo : fileTab ? 0 : (setup.capo ?? myCapo);
+  const sounding = (t: number[], capo: number) => t.map((m) => m + capo);
+  const tuningDiffers = !!strInst && !!guitarCfg && !sameTuning(sounding(pieceOpen, pieceCapo), sounding(myOpen, myCapo));
+  const relayout = tuningDiffers && !!setup.relayout;
+  const tabOpen = relayout ? myOpen : pieceOpen;
+  const tabCapo = relayout ? myCapo : pieceCapo;
+  const tabKey = `${tabOpen.join(",")}|${tabCapo}|${relayout}`;
   const tab = useMemo(
-    () => (strInst && mei ? meiToTab(mei, partStaff, strInst, parseMei(mei).meter) : null),
-    [mei, strInst, partStaff],
+    () =>
+      strInst && mei
+        ? meiToTab(mei, partStaff, strInst, parseMei(mei).meter, fixedTab && !relayout ? {} : { tuning: tabOpen, capo: tabCapo, relayout })
+        : null,
+    // tabOpen, tabCapo и relayout входят в tabKey
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mei, strInst, partStaff, fixedTab, tabKey],
   );
-  const displayMei = tab?.mei ?? mei;
+  const [retune, setRetune] = useState(false);
+  // Обычные ноты над табулатурой (копии нот таба, в оценке не участвуют).
+  const staffWithTab = !!p.staffWithTab;
+  const displayMei = tab ? (staffWithTab ? withStaff(tab.mei, tab.tuning, strInst!) : tab.mei) : mei;
   const nameStaves = staves < 2 || hands === "both" || hands === "none" ? "all" : hands === "right" ? "1" : "2";
   const fingersKey = useMemo(() => fingers?.map((f) => `${f.id}:${f.finger}:${f.source[0]}`).join(",") ?? "", [fingers]);
   useEffect(() => {
@@ -445,11 +506,11 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     // Цифры пальцев (файл + правки + подбор) заменяют аппликатуру из файла.
     const sc = scoreRef.current;
     if (fingers && sc && !tab) text = injectFingering(text, fingers, sc.notes);
-    renderScore(text, verovioLayout(p.layout, width, !!tab))
+    renderScore(text, verovioLayout(p.layout, width, !!tab, !!tab && staffWithTab))
       .then((r) => {
         if (!alive) return;
         const structure = parseMei(displayMei);
-        const notes = buildNotes(r.timemap, r.midi, structure);
+        const notes = buildNotes(r.timemap, r.midi, structure).filter((n) => !n.id.endsWith(MIRROR));
         setPages(r.pages);
         setScore({
           notes,
@@ -503,13 +564,14 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
       .then((g) => {
         if (!alive) return;
         setGuitarOn(g.config.enabled);
+        setGuitarCfg({ ...g.config, instrument: strInst });
         if (g.config.instrument !== strInst) void api.guitarSet({ ...g.config, instrument: strInst });
       })
       .catch(() => {});
     return () => {
       alive = false;
     };
-  }, [strInst]);
+  }, [strInst, retune]);
 
   // Аппликатура пьесы от ядра: ручные правки → файл → автоматический подбор.
   const fingerInput = useMemo(
@@ -937,10 +999,10 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
       el.classList.remove("mark-right", "mark-left", "mark-app", "mark-hit", "mark-poor", "mark-miss", "mark-select");
     marked.current = [];
     const mark = (id: string, cls: string) => {
-      const el = root.querySelector(`g[id="${id}"]`);
-      if (!el) return;
-      el.classList.add(cls);
-      marked.current.push(el);
+      for (const el of root.querySelectorAll(`g[id="${id}"], g[id="${id}${MIRROR}"]`)) {
+        el.classList.add(cls);
+        marked.current.push(el);
+      }
     };
     // Правка рук: все ноты окрашены по рукам, без курсора и отметок игры.
     if (editHands) {
@@ -1202,10 +1264,10 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   );
 
   // Гитара/бас: куда поставить палец (подсказка) и что звучит сейчас — на грифе.
-  const tuning = strInst ? TUNINGS[strInst] : [];
+  const tuning = tab ? tab.tuning : strInst ? TUNINGS[strInst] : [];
   const fretMarks: FretMark[] = [];
   if (tab && strInst) {
-    const frets = FRETS[strInst];
+    const frets = FRETS[strInst] - tab.capo;
     if (keyHints)
       for (const id of cursorIds) {
         const pos = tab.positions.get(id);
@@ -1354,7 +1416,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const setTranspose = (t: number) => setSetup({ transpose: Math.max(-TRANSPOSE_MAX, Math.min(TRANSPOSE_MAX, t)) });
   const pieceTools = exercise ? null : (
     <>
-      {!drums && <span className="transpose" title="Транспонирование: сдвиг всей пьесы на полутоны">
+      {!drums && !source.rocksmith && <span className="transpose" title="Транспонирование: сдвиг всей пьесы на полутоны">
         Тон
         <button className="small" onClick={() => setTranspose(transpose - 1)} disabled={transpose <= -TRANSPOSE_MAX} data-transpose-down>
           −
@@ -1369,6 +1431,39 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
           </button>
         )}
       </span>}
+      {strInst && (
+        <span data-staff-with-tab={staffWithTab ? "on" : "off"}>
+          <Toggle label="Ноты над табами" on={staffWithTab} onChange={(v) => setPiece({ staffWithTab: v })} />
+        </span>
+      )}
+      {strInst && !fixedTab && (
+        <span className="transpose" title="Строй, под который раскладываются табы этой пьесы">
+          Строй
+          <select
+            value={setup.tuning ? (TUNING_PRESETS[strInst].find((t) => sameTuning(t.notes, setup.tuning!))?.id ?? "") : ""}
+            onChange={(e) => {
+              const t = TUNING_PRESETS[strInst].find((x) => x.id === e.target.value);
+              setSetup({ tuning: t ? t.notes : null, relayout: false });
+            }}
+            data-piece-tuning
+          >
+            <option value="">мой ({tuningLabel(myOpen, 0, strInst)})</option>
+            {TUNING_PRESETS[strInst].map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+          <select value={setup.capo ?? ""} onChange={(e) => setSetup({ capo: e.target.value === "" ? null : Number(e.target.value), relayout: false })} data-piece-capo>
+            <option value="">каподастр: мой ({myCapo || "нет"})</option>
+            {Array.from({ length: 10 }, (_, k) => (
+              <option key={k} value={k}>
+                {k ? `каподастр ${k}` : "без каподастра"}
+              </option>
+            ))}
+          </select>
+        </span>
+      )}
       {source.midi && (
         <>
           <button className="small" onClick={openTracks} data-tracks>
@@ -1399,8 +1494,25 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         <button className="ghost" onClick={onBack} title="Esc">
           {exercise?.backLabel ?? source.backLabel ?? (drums && exercise ? "← Барабаны" : exercise ? "← Упражнения" : "← Пьесы")}
         </button>
-        <div className="piece-name">{source.title}</div>
-        {!exercise && (
+        <div className="piece-name">
+          {rsSong ? [rsSong.artist, rsSong.title].filter(Boolean).join(" — ") || source.title : source.title}
+          {strInst && tab && (
+            <span className="rs-meta muted" data-tuning-meta={tab.tuning.join(",")} data-capo-meta={tab.capo}>
+              {" · "}
+              {tuningLabel(tabOpen, tabCapo, strInst)}
+            </span>
+          )}
+        </div>
+        {rsSong && rsArr && (
+          <span className="segmented" title="Какую партию песни играть" data-arrangement-select>
+            {rsSong.arrangements.map((a, k) => (
+              <button key={a.id} className={a.id === rsArr.id ? "on" : ""} onClick={() => setSetup({ arrangement: k, relayout: false })} data-arrangement={a.name.toLowerCase()}>
+                {arrangementTitle(a)}
+              </button>
+            ))}
+          </span>
+        )}
+        {!exercise && !source.rocksmith && (
           <span className="segmented" title="На чём играть: фортепиано — ноты и клавиатура, гитара и бас — табы и гриф" data-instrument-select>
             {(drumsOnly ? ["drums"] : ["piano", "guitar", "bass", ...(midiDrums ? ["drums"] : [])]).map((k) => (
               <button
@@ -1699,6 +1811,45 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
           Вход гитары выключен — приложение не услышит {strInst === "bass" ? "бас" : "гитару"}. Включи «Слушать вход» на
           вкладке «Гитара». Пока можно нажимать те же ноты на MIDI-клавиатуре.
         </div>
+      )}
+      {strInst && tuningDiffers && !relayout && !retune && (
+        <div className="notice info tuning-notice" data-tuning-mismatch>
+          <span>
+            Строй пьесы — <b>{tuningLabel(pieceOpen, pieceCapo, strInst)}</b>, у тебя — <b>{tuningLabel(myOpen, myCapo, strInst)}</b>.
+          </span>
+          <span className="buttons">
+            <button className="small primary" onClick={() => setRetune(true)} data-retune-open>
+              Перестроить {strInst === "bass" ? "бас" : "гитару"}
+            </button>
+            <button className="small" onClick={() => setSetup({ relayout: true })} data-relayout>
+              Переложить табы под мой строй
+            </button>
+          </span>
+        </div>
+      )}
+      {strInst && relayout && (
+        <div className="notice info tuning-notice" data-relayout-on>
+          <span>
+            Табы переложены под твой строй ({tuningLabel(myOpen, myCapo, strInst)}); звучат те же ноты.
+          </span>
+          <button className="small" onClick={() => setSetup({ relayout: false })}>
+            Вернуть строй пьесы
+          </button>
+        </div>
+      )}
+      {strInst && retune && (
+        <RetunePanel
+          instrument={strInst}
+          tuning={pieceOpen}
+          capo={pieceCapo}
+          naming={naming}
+          onSaved={() => {
+            setRetune(false);
+            setSetup({ relayout: false });
+            setToast(`Строй сохранён: ${tuningLabel(pieceOpen, pieceCapo, strInst)}`);
+          }}
+          onClose={() => setRetune(false)}
+        />
       )}
       {tab && tab.folded > 0 && (
         <div className="notice info">

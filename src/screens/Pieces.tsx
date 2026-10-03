@@ -23,7 +23,7 @@ export function Pieces({ initial, onInitialOpened }: { initial?: string | null; 
       if (!paths.length) return;
       try {
         const added = await api.libraryImport(paths);
-        setMessage(added.length ? `Добавлено: ${added.join(", ")}` : "Подходящих файлов нет (нужны .musicxml, .mxl или .mid)");
+        setMessage(added.length ? `Добавлено: ${added.join(", ")}` : "Подходящих файлов нет (нужны .musicxml, .mxl, .mid или .psarc)");
         reload();
       } catch (e) {
         setError(String(e));
@@ -70,6 +70,7 @@ export function Pieces({ initial, onInitialOpened }: { initial?: string | null; 
           return item.format === "mxl" ? { data: buf, zip: true } : { data: new TextDecoder().decode(buf), zip: false };
         },
         midi: item.format === "midi" ? item.id : undefined,
+        rocksmith: item.format === "psarc" ? item.id : undefined,
       }),
     [],
   );
@@ -155,9 +156,11 @@ export function Pieces({ initial, onInitialOpened }: { initial?: string | null; 
         {error && <div className="notice warn">{error}</div>}
         {message && <div className="notice info">{message}</div>}
         <p className="hint">
-          Файлы MusicXML (.musicxml, .xml, .mxl) и MIDI (.mid) из папки {listing ? <code>{listing.dir}</code> : "библиотеки"}.
-          Можно просто перетащить файл в окно. Из MIDI приложение само строит ноты: при первом открытии выбери, какие
-          дорожки играешь.
+          Файлы MusicXML (.musicxml, .xml, .mxl), MIDI (.mid) и песни Rocksmith (.psarc) из папки{" "}
+          {listing ? <code>{listing.dir}</code> : "библиотеки"}. Можно просто перетащить файл в окно. Из MIDI приложение
+          само строит ноты: при первом открытии выбери, какие дорожки играешь. Песни Rocksmith — пользовательские (CDLC,
+          например с CustomsForge): скачай файл сам и добавь сюда — откроются табы гитары и баса с настоящим строем;
+          официальные DLC игры не открываются.
         </p>
         {listing && listing.items.length === 0 && <p className="muted">Пока пусто.</p>}
         <div className="piece-grid">
@@ -166,6 +169,7 @@ export function Pieces({ initial, onInitialOpened }: { initial?: string | null; 
               <div className="piece-title">{item.title}</div>
               <div className="piece-composer">{item.id}</div>
               {item.format === "midi" && <span className="chip small">MIDI</span>}
+              {item.format === "psarc" && <span className="chip small" title="Песня Rocksmith (CDLC): табы гитары и баса">Rocksmith</span>}
               {strip(`user:${item.id}`)}
             </button>
           ))}

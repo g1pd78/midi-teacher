@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Calibration, type GuitarConfig, type GuitarState } from "../api";
 import { octaveOf, pitchName } from "../lib/notes";
-import { nearestString, TUNINGS } from "../lib/guitar";
+import { openTuning, sameTuning, TUNINGS } from "../lib/guitar";
+import { TunerGauge, TunerStrings, TuningPicker } from "../components/Tuner";
 import { useApp } from "../store";
 
 const LEVEL_MIN_DB = -60;
-const IN_TUNE_CENTS = 5;
 const RECORD_SECS = 20;
 
 function pct(db: number): number {
@@ -81,9 +81,9 @@ export function Guitar() {
   const channels = input?.channels ?? st.channels ?? 1;
   const inMs = st.running && st.sampleRate ? (st.bufferFrames / st.sampleRate) * 1000 : null;
   const monitorMs = inMs !== null && outMs !== null ? Math.round(inMs * 2 + outMs) : null;
-  const tuning = TUNINGS[c.instrument];
+  const open = openTuning(c);
+  const tuning = open.map((m) => m + c.capo);
   const pitch = st.pitch;
-  const near = pitch ? nearestString(pitch.hz, tuning) : null;
   const rec = st.recording;
   const recording = rec && !rec.path && !rec.error;
 
@@ -214,35 +214,15 @@ export function Guitar() {
 
       <section className="guitar-col">
         <div className="card tuner" data-midi={pitch?.midi ?? ""} data-cents={pitch ? Math.round(pitch.cents) : ""}>
-          <h2>Тюнер</h2>
-          <div className="tuner-note">
-            {pitch ? (
-              <>
-                <span className={Math.abs(pitch.cents) <= IN_TUNE_CENTS ? "in-tune" : ""}>{pitchName(pitch.midi, naming)}</span>
-                <sub>{octaveOf(pitch.midi)}</sub>
-              </>
-            ) : (
-              <span className="muted tuner-idle">{c.enabled || st.running ? "сыграй открытую струну" : "включи «Слушать вход»"}</span>
-            )}
-          </div>
-          <div className="tuner-gauge">
-            <div className="tuner-zone" />
-            <div className="tuner-tick" style={{ left: "50%" }} />
-            {pitch && (
-              <div
-                className={`tuner-needle${Math.abs(pitch.cents) <= IN_TUNE_CENTS ? " in-tune" : ""}`}
-                style={{ left: `${50 + Math.max(-50, Math.min(50, pitch.cents))}%` }}
-              />
-            )}
-          </div>
-          <div className="tuner-scale muted">
-            <span>−50</span>
-            <span>0</span>
-            <span>+50 центов</span>
-          </div>
-          <div className="tuner-readout muted">
-            {pitch ? `${pitch.hz.toFixed(1)} Гц · ${pitch.cents > 0 ? "+" : ""}${Math.round(pitch.cents)} центов` : " "}
-          </div>
+          <h2>Строй и тюнер</h2>
+          <TuningPicker
+            instrument={c.instrument}
+            tuning={open}
+            capo={c.capo}
+            naming={naming}
+            onChange={(t, capo) => set({ tuning: sameTuning(t, TUNINGS[c.instrument]) ? null : t, capo })}
+          />
+          <TunerGauge pitch={pitch} naming={naming} idle={c.enabled || st.running ? "сыграй открытую струну" : "включи «Слушать вход»"} />
           <div className="tuner-recent muted" data-recent-notes={st.recentNotes.join(",")}>
             Распознано:{" "}
             {st.recentNotes.length ? (
@@ -256,23 +236,10 @@ export function Guitar() {
               <span>сыграй несколько нот</span>
             )}
           </div>
-          <div className="tuner-strings">
-            {tuning.map((m, k) => {
-              const active = near?.index === k;
-              const ok = active && pitch && pitch.midi === m && Math.abs(pitch.cents) <= IN_TUNE_CENTS;
-              return (
-                <span key={k} className={`tuner-string${active ? " active" : ""}${ok ? " ok" : ""}`} data-string={k}>
-                  {pitchName(m, naming)}
-                  <sub>{octaveOf(m)}</sub>
-                  {active && near && !ok && <small>{near.cents > 0 ? "ниже" : "выше"}</small>}
-                  {ok && <small>✓</small>}
-                </span>
-              );
-            })}
-          </div>
+          <TunerStrings target={tuning} pitch={pitch} naming={naming} />
           <p className="hint">
-            Стандартный строй: {c.instrument === "bass" ? "Ми Ля Ре Соль (4 струны)" : "Ми Ля Ре Соль Си Ми (6 струн)"}. Под струной
-            подсказка: «выше» — подтяни колок, «ниже» — отпусти.
+            Дёрни любую открытую струну — приложение само поймёт какую. Под струной подсказка: «выше» — подтяни колок,
+            «ниже» — отпусти; настроенные отмечаются ✓.{c.capo > 0 && ` С каподастром на ${c.capo} ладу тюнер ждёт звучащие ноты.`}
           </p>
         </div>
 

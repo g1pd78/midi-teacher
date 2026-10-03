@@ -2790,3 +2790,41 @@ button.danger {
   padding: 6px 10px;
   font: inherit;
 }
+
+/* Строи */
+.tuning-picker {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.tuning-strings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tuning-strings label {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.tuning-picker .hint {
+  margin: 0;
+}
+.retune {
+  max-width: 560px;
+  margin: 8px auto;
+}
+.tuning-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.rs-meta {
+  font-size: 13px;
+  white-space: pre;
+}
+.retune .buttons {
+  margin-top: 12px;
+}

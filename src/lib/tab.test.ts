@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import createVerovioModule from "verovio/wasm";
 import { VerovioToolkit } from "verovio/esm";
 import { readFileSync } from "node:fs";
-import { assignPositions, chooseShift, meiToTab, readTabPositions, tabStaff, type TabPos } from "./tab";
+import { assignPositions, chooseShift, meiToTab, readTabPositions, readTuning, tabStaff, type TabPos } from "./tab";
 import { TUNINGS } from "./guitar";
 import { parseMei, timemapNoteIds, type TimemapEntry } from "./score";
 
@@ -140,8 +140,11 @@ describe("MEI → табулатура (Verovio)", () => {
     const xml = `<?xml version="1.0"?><score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Bass</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>TAB</sign><line>5</line></clef><staff-details><staff-lines>4</staff-lines>${tun}</staff-details></attributes>${note("E", 1, 4, 0)}${note("G", 1, 4, 3)}${note("A", 1, 3, 0)}${note("C", 2, 3, 3)}</measure></part></score-partwise>`;
     const mei = load(xml);
     expect(tabStaff(mei)).toBe(1);
+    // Строй табов из MusicXML (<staff-tuning>) доходит до MEI.
+    expect(readTuning(mei, 1)).toEqual([28, 33, 38, 43]);
     const tab = meiToTab(mei, 1, "bass", { count: 4, unit: 4 });
     expect(tab.shift).toBe(0);
+    expect(tab.tuning).toEqual([28, 33, 38, 43]);
     expect([...tab.positions.values()]).toEqual([
       { string: 0, fret: 0 },
       { string: 0, fret: 3 },

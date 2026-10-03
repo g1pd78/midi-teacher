@@ -11,6 +11,7 @@ import type { PieceMetaIn } from "./lib/practice";
 import type { Finger, FingerNoteIn } from "./lib/fingering";
 import type { ExerciseStatView } from "./lib/exercises";
 import type { LeadSong } from "./lib/songs";
+import type { RsSong } from "./lib/rocksmith";
 
 export interface TodayStatus {
   warmupDone: boolean;
@@ -111,6 +112,8 @@ export interface PiecePrefs {
   countIn: boolean;
   metronome: boolean;
   waterfall: boolean;
+  /** Гитара/бас: обычные ноты над табулатурой. */
+  staffWithTab?: boolean;
 }
 
 export type TrackRole = "right" | "left" | "both" | "accompany" | "drums" | "off";
@@ -145,6 +148,14 @@ export interface PieceSetup {
   instrument: PieceInstrument | null;
   /** Стан для гитары/баса: 0 — выбрать самому (мелодия для гитары, бас для баса). */
   part: number;
+  /** Партия песни Rocksmith (номер в списке). */
+  arrangement?: number;
+  /** Свой строй пьесы (открытые струны от низкой); null — как у инструмента. */
+  tuning?: number[] | null;
+  /** Каподастр пьесы; null — как у инструмента. */
+  capo?: number | null;
+  /** Табы переложены под строй инструмента. */
+  relayout?: boolean;
 }
 
 export interface UiPrefs {
@@ -313,6 +324,10 @@ export interface GuitarConfig {
   monitorVolume: number;
   tone: ToneKind;
   latencyMs: number | null;
+  /** Строй: открытые струны от низкой (MIDI); null — стандартный. */
+  tuning: number[] | null;
+  /** Каподастр на ладу (0 — нет). */
+  capo: number;
 }
 
 export interface GuitarInput {
@@ -532,7 +547,7 @@ export interface Progress {
 export interface LibraryItem {
   id: string;
   title: string;
-  format: "musicxml" | "mxl" | "midi";
+  format: "musicxml" | "mxl" | "midi" | "psarc";
   size: number;
   modified: number;
 }
@@ -683,6 +698,8 @@ export const api = {
   trainerStop: () => invoke<void>("trainer_stop"),
   libraryList: () => invoke<LibraryListing>("library_list"),
   libraryRead: (id: string) => invoke<ArrayBuffer>("library_read", { id }),
+  /** Песня Rocksmith (CDLC) из библиотеки: партии, строй, секции. */
+  rocksmithOpen: (id: string) => invoke<RsSong>("rocksmith_open", { id }),
   libraryImport: (paths: string[]) => invoke<string[]>("library_import", { paths }),
   libraryOpenFolder: () => invoke<void>("library_open_folder"),
   pieceStart: (notes: PieceNoteIn[], config: PieceConfig) => invoke<number>("piece_start", { notes, config }),
@@ -756,7 +773,7 @@ export async function pickScoreFiles(): Promise<string[]> {
   const { open } = await import("@tauri-apps/plugin-dialog");
   const res = await open({
     multiple: true,
-    filters: [{ name: "Ноты", extensions: ["musicxml", "xml", "mxl", "mid", "midi"] }],
+    filters: [{ name: "Ноты и табы", extensions: ["musicxml", "xml", "mxl", "mid", "midi", "psarc"] }],
   });
   if (!res) return [];
   return Array.isArray(res) ? res : [res];

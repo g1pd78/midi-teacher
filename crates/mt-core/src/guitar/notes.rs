@@ -36,6 +36,8 @@ struct Sounding {
 
 pub struct NoteTracker {
     instrument: Instrument,
+    /// Самая низкая открытая струна (MIDI).
+    lowest: u8,
     index: u64,
     onset: OnsetDetector,
     decimator: Decimator,
@@ -55,13 +57,14 @@ pub struct NoteTracker {
 }
 
 impl NoteTracker {
-    pub fn new(rate: f32, instrument: Instrument) -> Self {
+    pub fn new(rate: f32, instrument: Instrument, lowest: u8) -> Self {
         // Окно ~2,5 периода самой низкой открытой струны.
-        let low_hz = dsp::midi_to_hz(instrument.tuning()[0] as f32);
+        let low_hz = dsp::midi_to_hz(lowest as f32);
         let window = ((2.5 * rate / low_hz) as usize).max((rate * 0.03) as usize);
         let window = window.div_ceil(DECIMATE) * DECIMATE;
         Self {
             instrument,
+            lowest,
             index: 0,
             onset: OnsetDetector::new(rate),
             decimator: Decimator::new(rate, DECIMATE),
@@ -220,7 +223,7 @@ impl NoteTracker {
         if rms < 0.001 {
             return None;
         }
-        let (fmin, fmax) = self.instrument.range();
+        let (fmin, fmax) = self.instrument.range_from(self.lowest);
         let rate = self.rate / DECIMATE as f32;
         let p = dsp::mpm(&low, rate, fmin, fmax)?;
         if p.clarity < min_clarity {
@@ -252,7 +255,7 @@ mod tests {
     const RATE: f32 = 48_000.0;
 
     fn run(sig: &[f32], instrument: Instrument, expected: &[u8]) -> Vec<TrackEvent> {
-        let mut t = NoteTracker::new(RATE, instrument);
+        let mut t = NoteTracker::new(RATE, instrument, instrument.tuning()[0]);
         let mut out = Vec::new();
         for &x in sig {
             t.push(x, expected, &mut out);
@@ -336,10 +339,42 @@ mod tests {
             .enumerate()
             .map(|(k, &m)| (m, 0.1 + k as f32 * 0.5, 0.45))
             .collect();
-        let t = NoteTracker::new(RATE, Instrument::Bass);
+        let t = NoteTracker::new(RATE, Instrument::Bass, 28);
         assert!(t.latency_ms() < 170.0, "{}", t.latency_ms());
         let got = ons(&run(&melody(&notes, 4.3), Instrument::Bass, &[]));
         assert_eq!(got.iter().map(|g| g.0).collect::<Vec<_>>(), line);
+    }
+
+    #[test]
+    fn drop_tunings_reach_below_standard_low_string() {
+        // Drop C на гитаре: низкая струна — до (36), ниже стандартной ми (40).
+        let line = [36u8, 38, 43, 36];
+        let notes: Vec<(u8, f32, f32)> = line
+            .iter()
+            .enumerate()
+            .map(|(k, &m)| (m, 0.1 + k as f32 * 0.5, 0.45))
+            .collect();
+        let sig = melody(&notes, 2.3);
+        let mut t = NoteTracker::new(RATE, Instrument::Guitar, 36);
+        let mut ev = Vec::new();
+        for &x in &sig {
+            t.push(x, &[], &mut ev);
+        }
+        assert_eq!(ons(&ev).iter().map(|g| g.0).collect::<Vec<_>>(), line);
+        let cfg = crate::guitar::GuitarConfig {
+            tuning: Some(vec![36, 43, 48, 53, 57, 62]),
+            capo: 2,
+            ..Default::default()
+        };
+        assert_eq!(cfg.lowest(), 38);
+        assert_eq!(cfg.sounding()[5], 64);
+        // Строй не той длины (бас с гитарным строем) — стандартный.
+        let bass = crate::guitar::GuitarConfig {
+            instrument: Instrument::Bass,
+            tuning: Some(vec![36, 43, 48, 53, 57, 62]),
+            ..Default::default()
+        };
+        assert_eq!(bass.sounding(), vec![28, 33, 38, 43]);
     }
 
     #[test]

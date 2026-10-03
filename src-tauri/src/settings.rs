@@ -42,6 +42,14 @@ pub struct PieceSetup {
     pub instrument: Option<String>,
     /// Какой стан играть на гитаре/басе (0 — выбрать самому).
     pub part: u8,
+    /// Партия песни Rocksmith (номер в списке).
+    pub arrangement: u8,
+    /// Свой строй пьесы для гитары/баса (открытые струны от низкой); `None` — как у инструмента.
+    pub tuning: Option<Vec<u8>>,
+    /// Каподастр пьесы; `None` — как у инструмента.
+    pub capo: Option<u8>,
+    /// Табы переложены под строй инструмента (вместо строя пьесы).
+    pub relayout: bool,
 }
 
 /// Настройки экрана пьесы.
@@ -70,6 +78,8 @@ pub struct PiecePrefs {
     pub guided: bool,
     /// Тепловая карта трудных тактов на нотах.
     pub heat: bool,
+    /// Гитара/бас: обычные ноты над табулатурой.
+    pub staff_with_tab: bool,
 }
 
 impl Default for PiecePrefs {
@@ -88,6 +98,7 @@ impl Default for PiecePrefs {
             waterfall: true,
             guided: true,
             heat: false,
+            staff_with_tab: false,
         }
     }
 }
@@ -175,6 +186,19 @@ mod tests {
         s.audio.buffer_frames = Some(64);
         s.prefs.songs =
             vec![serde_json::json!({ "id": "my-1", "title": "Песня", "chords": "C | G" })];
+        s.prefs.piece.staff_with_tab = true;
+        s.prefs.piece_setup.insert(
+            "user:song_p.psarc".into(),
+            PieceSetup {
+                arrangement: 2,
+                tuning: Some(vec![38, 45, 50, 55, 59, 64]),
+                capo: Some(3),
+                relayout: true,
+                ..Default::default()
+            },
+        );
+        s.guitar.tuning = Some(vec![38, 45, 50, 55, 59, 64]);
+        s.guitar.capo = 2;
         s.save(&path).unwrap();
         assert_eq!(AppSettings::load(&path), s);
 

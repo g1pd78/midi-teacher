@@ -213,9 +213,8 @@ export function nearestPosition(pitch: number, tuning: number[], frets: number, 
 }
 
 /** Сдвиг на целые октавы, при котором партия лучше всего ложится на гриф. */
-export function chooseShift(pitches: number[], instrument: StringInstrument): number {
+export function chooseShift(pitches: number[], instrument: StringInstrument, tuning: number[] = TUNINGS[instrument]): number {
   if (!pitches.length) return 0;
-  const tuning = TUNINGS[instrument];
   const low = tuning[0];
   const high = tuning[tuning.length - 1] + 12; // удобно — до 12-го лада
   const sorted = [...pitches].sort((a, b) => a - b);
@@ -257,6 +256,24 @@ export function readTabPositions(mei: string, strings: number): Map<string, TabP
 
 const PNAMES = ["c", "c", "d", "d", "e", "f", "f", "g", "g", "a", "a", "b"];
 
+/** Строй табулатуры стана из файла: звучащие открытые струны от низкой (MIDI). */
+export function readTuning(mei: string, staff: number): number[] | null {
+  for (const m of mei.matchAll(/<staffDef\b([^>]*)>([\s\S]*?)<\/staffDef>/g)) {
+    if (Number(attr(m[1], "n")) !== staff) continue;
+    const courses = [...m[2].matchAll(/<course\b([^>]*?)\/?>/g)].map((c) => {
+      const pname = attr(c[1], "pname");
+      const oct = attr(c[1], "oct");
+      const acc = attr(c[1], "accid");
+      if (!pname || oct === undefined) return null;
+      return { n: Number(attr(c[1], "n") ?? 0), midi: (Number(oct) + 1) * 12 + PC[pname.toLowerCase()] + (acc ? (ACC[acc] ?? 0) : 0) };
+    });
+    if (!courses.length || courses.some((c) => !c)) return null;
+    // Струна 1 — самая высокая.
+    return courses.map((c) => c!).sort((a, b) => b.n - a.n).map((c) => c.midi);
+  }
+  return null;
+}
+
 function tuningXml(tuning: number[]): string {
   const n = tuning.length;
   return (
@@ -282,6 +299,18 @@ export interface TabResult {
   dropped: number;
   /** Нот, перенесённых на октаву, чтобы лечь на гриф. */
   folded: number;
+  /** Звучащие открытые струны табулатуры (с каподастром), от низкой. */
+  tuning: number[];
+  /** Каподастр (лады на табе — от него). */
+  capo: number;
+}
+
+export interface TabOptions {
+  /** Строй (открытые струны от низкой, без каподастра); по умолчанию стандартный. */
+  tuning?: number[];
+  capo?: number;
+  /** Готовую табулатуру из файла разложить заново под этот строй. */
+  relayout?: boolean;
 }
 
 /** Управляющие элементы такта, привязанные к стану: чужие убираем, свои переносим на стан 1. */
@@ -291,13 +320,26 @@ const CONTROL = new Set(["slur", "tie", "dynam", "hairpin", "dir", "pedal", "tri
  * Превратить стан `staff` в табулатуру для `instrument`. Если стан уже табулатура —
  * оставляем его как есть (убираем только остальные станы).
  */
-export function meiToTab(mei: string, staff: number, instrument: StringInstrument, meter: { count: number; unit: number }): TabResult {
-  const tuning = TUNINGS[instrument];
-  const frets = FRETS[instrument];
+export function meiToTab(
+  mei: string,
+  staff: number,
+  instrument: StringInstrument,
+  meter: { count: number; unit: number },
+  opts: TabOptions = {},
+): TabResult {
+  const base = opts.tuning && opts.tuning.length === TUNINGS[instrument].length ? opts.tuning : TUNINGS[instrument];
+  const fromFile = tabStaff(mei) === staff;
+  const fileTuning = fromFile ? readTuning(mei, staff) : null;
+  // Готовые табы — как в файле (со строем файла), если не просили переложить.
+  const already = fromFile && !opts.relayout;
+  const capo = already ? 0 : Math.max(0, Math.min(12, opts.capo ?? 0));
+  const tuning = already ? (fileTuning ?? base) : base.map((m) => m + capo);
+  const frets = FRETS[instrument] - capo;
   const toks = tokenize(mei);
-  const already = tabStaff(mei) === staff;
+  const filePos = fromFile ? readTabPositions(mei, (fileTuning ?? base).length) : null;
 
   // 1. События выбранного стана (первый слой).
+  const tieEnds = new Set([...mei.matchAll(/<tie\b[^>]*\bendid="#([^"]+)"/g)].map((m) => m[1]));
   const events: Event[] = [];
   {
     let st = 0;
@@ -309,16 +351,19 @@ export function meiToTab(mei: string, staff: number, instrument: StringInstrumen
       else if (t.name === "staff" && t.kind === "close") st = 0;
       else if (t.name === "layer" && t.kind === "open") layer++;
       if (st !== staff || layer !== 1) continue;
-      if (t.name === "chord" && t.kind === "open") chord = { ids: [], pitches: [], tied: [] };
-      else if (t.name === "chord" && t.kind === "close") {
+      // Аккорд нот или группа таба (ноты одной доли).
+      if ((t.name === "chord" || t.name === "tabGrp") && t.kind === "open") chord = { ids: [], pitches: [], tied: [] };
+      else if ((t.name === "chord" || t.name === "tabGrp") && t.kind === "close") {
         if (chord?.ids.length) events.push(chord);
         chord = null;
       } else if (t.name === "note" && (t.kind === "open" || t.kind === "self")) {
         const id = attr(t.attrs, "xml:id");
-        const p = notePitch(toks, i);
+        // Нота табулатуры без высоты — по строю файла и ладу.
+        const fp = id ? filePos?.get(id) : undefined;
+        const p = notePitch(toks, i) ?? (fp && fileTuning ? fileTuning[fp.string] + fp.fret : null);
         if (!id || p === null) continue;
         const tie = attr(t.attrs, "tie");
-        const tied = tie === "t" || tie === "m";
+        const tied = tie === "t" || tie === "m" || tieEnds.has(id);
         if (chord) chord.ids.push(id), chord.pitches.push(p), chord.tied.push(tied);
         else events.push({ ids: [id], pitches: [p], tied: [tied] });
       }
@@ -333,10 +378,14 @@ export function meiToTab(mei: string, staff: number, instrument: StringInstrumen
   if (already) {
     for (const [id, p] of readTabPositions(mei, tuning.length)) positions.set(id, p);
   } else {
-    shift = chooseShift(
-      events.flatMap((e) => e.pitches),
-      instrument,
-    );
+    // Табы из файла — настоящие высоты гитары, октаву не сдвигаем.
+    shift = fromFile
+      ? 0
+      : chooseShift(
+          events.flatMap((e) => e.pitches),
+          instrument,
+          tuning,
+        );
     // Ноты за краем грифа переносим на октаву внутрь (как при переложении для баса).
     const low = tuning[0];
     const high = tuning[tuning.length - 1] + frets;
@@ -428,6 +477,18 @@ export function meiToTab(mei: string, staff: number, instrument: StringInstrumen
       out.push(`<layer${setAttr(t.attrs, "n", "1")}>`);
       continue;
     }
+    if (st === staff && fromFile && !already && t.name === "tabGrp" && t.kind === "open") {
+      // Переложение готовой табулатуры: те же длительности, новые позиции.
+      const end = matching(toks, i);
+      const notes = toks.slice(i + 1, end).filter((n) => n.name === "note" && n.kind !== "close" && positions.has(attr(n.attrs, "xml:id") ?? ""));
+      out.push(
+        notes.length
+          ? `<tabGrp${keep(t.attrs, ["xml:id", "dur", "dots", "dur.ppq", "grace"])}><tabDurSym/>${notes.map(tabNote).join("")}</tabGrp>`
+          : `<rest${keep(t.attrs, ["dur", "dots", "dur.ppq"])}/>`,
+      );
+      i = end;
+      continue;
+    }
     if (st === staff && !already) {
       if (t.name === "chord" && t.kind === "open") {
         const end = matching(toks, i);
@@ -469,5 +530,96 @@ export function meiToTab(mei: string, staff: number, instrument: StringInstrumen
     }
     out.push(t.raw);
   }
-  return { mei: out.join(""), shift, positions, dropped, folded };
+  return { mei: out.join(""), shift, positions, dropped, folded, tuning, capo };
+}
+
+/** Суффикс id нот обычного стана над табулатурой: они повторяют ноты таба и в оценке не участвуют. */
+export const MIRROR = "~s";
+
+/**
+ * Табулатура + обычные ноты над ней (скрипичный ключ с октавой ниже у гитары, басовый — у баса).
+ * Ноты стана — копии нот таба с id `<id>~s`; стан таба остаётся первым по номеру.
+ */
+export function withStaff(tabMei: string, tuning: number[], instrument: StringInstrument): string {
+  const toks = tokenize(tabMei);
+  const strings = tuning.length;
+  const clef = instrument === "bass" ? `<clef shape="F" line="4" dis="8" dis.place="below"/>` : `<clef shape="G" line="2" dis="8" dis.place="below"/>`;
+  const mirrorId = (attrs: string) => {
+    const id = attr(attrs, "xml:id");
+    return id ? setAttr(attrs, "xml:id", id + MIRROR) : attrs;
+  };
+  const out: string[] = [];
+  let inScoreDef = 0;
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i];
+    if (t.name === "scoreDef") inScoreDef += t.kind === "open" ? 1 : t.kind === "close" ? -1 : 0;
+    // Шапка: обычный стан перед табом.
+    if (inScoreDef && t.name === "staffDef" && t.kind === "open" && /notationtype="tab/.test(t.attrs)) {
+      const end = matching(toks, i);
+      const meter = toks.slice(i, end).find((x) => x.name === "meterSig" && x.kind !== "close");
+      out.push(`<staffDef n="2" lines="5">${clef}${meter ? meter.raw.replace(/\/?>$/, "/>") : ""}</staffDef>`);
+      for (let j = i; j <= end; j++) out.push(toks[j].raw);
+      i = end;
+      continue;
+    }
+    // Такт: стан с нотами перед станом таба.
+    if (t.name === "staff" && t.kind === "open" && attr(t.attrs, "n") === "1") {
+      const end = matching(toks, i);
+      const acc = new Map<string, number>(); // нота+октава → знак в такте
+      const staff: string[] = [`<staff n="2">`];
+      for (let j = i + 1; j < end; j++) {
+        const x = toks[j];
+        if (x.name === "layer" || x.name === "beam" || x.name === "tuplet") staff.push(x.kind === "close" ? x.raw : `<${x.name}${mirrorId(x.attrs)}${x.kind === "self" ? "/" : ""}>`);
+        else if (x.name === "rest" || x.name === "space" || x.name === "mRest") staff.push(`<${x.name}${mirrorId(x.attrs)}/>`);
+        else if (x.name === "tabGrp" && x.kind === "open") {
+          const gEnd = matching(toks, j);
+          const notes = toks.slice(j + 1, gEnd).filter((n) => n.name === "note" && n.kind !== "close");
+          const durs = keep(x.attrs, ["dur", "dots", "grace"]);
+          const xml = notes.map((n) => {
+            const course = Number(attr(n.attrs, "tab.course"));
+            const fret = Number(attr(n.attrs, "tab.fret"));
+            const midi = tuning[strings - course] + fret;
+            const pc = ((midi % 12) + 12) % 12;
+            const pname = PNAMES[pc];
+            const oct = Math.floor(midi / 12) - 1;
+            const sharp = PNAMES[pc] === PNAMES[(pc + 11) % 12] ? 1 : 0;
+            const key = pname + oct;
+            const tie = attr(n.attrs, "tie");
+            let accid = ` accid.ges="${sharp ? "s" : "n"}"`;
+            if ((acc.get(key) ?? 0) !== sharp && tie !== "t" && tie !== "m") {
+              accid = ` accid="${sharp ? "s" : "n"}"`;
+              acc.set(key, sharp);
+            }
+            const id = attr(n.attrs, "xml:id");
+            return `<note${id ? ` xml:id="${id}${MIRROR}"` : ""} pname="${pname}" oct="${oct}"${accid}${tie ? ` tie="${tie}"` : ""}${notes.length === 1 ? durs : ""}/>`;
+          });
+          const gid = attr(x.attrs, "xml:id");
+          staff.push(notes.length === 1 ? xml[0] : `<chord${gid ? ` xml:id="${gid}${MIRROR}"` : ""}${durs}>${xml.join("")}</chord>`);
+          j = gEnd;
+        }
+      }
+      staff.push("</staff>");
+      out.push(staff.join(""));
+      // Ритм показывает стан — штили таба убираем, так строка ниже и ноты крупнее.
+      for (let j = i; j <= end; j++) if (toks[j].name !== "tabDurSym") out.push(toks[j].raw);
+      i = end;
+      continue;
+    }
+    // Подписи секций (на первой доле) — над верхним станом.
+    if (t.name === "dir" && t.kind === "open" && attr(t.attrs, "tstamp") !== undefined && attr(t.attrs, "staff") === "1") {
+      out.push(`<dir${setAttr(t.attrs, "staff", "2")}>`);
+      continue;
+    }
+    // Лиги таба — и на стане.
+    if (t.name === "tie" && (t.kind === "self" || t.kind === "open")) {
+      const s = attr(t.attrs, "startid");
+      const e = attr(t.attrs, "endid");
+      out.push(t.raw);
+      if (s && e) out.push(`<tie staff="2" startid="${s}${MIRROR}" endid="${e}${MIRROR}"/>`);
+      if (t.kind === "open") i = matching(toks, i);
+      continue;
+    }
+    out.push(t.raw);
+  }
+  return out.join("");
 }

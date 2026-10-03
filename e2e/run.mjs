@@ -988,6 +988,118 @@ try {
   await sleep(300);
   await waitFor("к списку пьес", () => click("← Пьесы")).catch(() => {});
 
+  console.log("Сквозной тест: строи и Rocksmith");
+  // Пользовательская песня Rocksmith (CDLC) в папке библиотеки — как будто скачана с CustomsForge.
+  const rsFile = "Test_Test_v1_p.psarc";
+  writeFileSync(join(docs, "MIDI Teacher", rsFile), readFileSync(join(root, "crates/mt-core/tests/fixtures/rocksmith/test_p.psarc")));
+  const select = (sel, value) =>
+    js(
+      "const s = document.querySelector(arguments[0]); if (!s) return false; s.value = arguments[1]; s.dispatchEvent(new Event('change', { bubbles: true })); return true;",
+      [sel, value],
+    );
+  const openRs = async () => {
+    // Список файлов читается при открытии вкладки — заходим на неё заново.
+    await waitFor("главная", () => click("Главная"));
+    await waitFor("вкладка пьес", () => click("Пьесы"));
+    await waitFor("карточка песни Rocksmith", () =>
+      js("const c = document.querySelector('[data-file=\"' + arguments[0] + '\"]'); if (!c || !c.textContent.includes('Rocksmith')) return false; c.click(); return true;", [rsFile]),
+    );
+    await waitFor("табулатура песни", () => js("return !!document.querySelector('.tab-score g.note') && !!document.querySelector('[data-arrangement-select]');"), 30000);
+  };
+  await openRs();
+  const rsName = await js("return document.querySelector('.piece-name')?.textContent ?? '';");
+  const parts = await js("return [...document.querySelectorAll('[data-arrangement]')].map((b) => b.dataset.arrangement + (b.classList.contains('on') ? '*' : '')).join(',');");
+  const meta = await js("return document.querySelector('[data-tuning-meta]')?.dataset.tuningMeta;");
+  if (!rsName.startsWith("Test — Test") || parts !== "lead*,rhythm" || meta !== "40,45,50,55,59,64")
+    throw new Error(`песня: «${rsName}», партии ${parts}, строй ${meta}`);
+  if (!(await js("return document.querySelector('.score-page svg')?.textContent.includes('Вступление');"))) throw new Error("нет подписи секции");
+  ok("песня Rocksmith из библиотеки: соло и ритм-гитара, стандартный строй, секция «Вступление»");
+
+  // Соло-гитара в режиме ожидания: 7 аккордов (19 нот) по нотам из табов.
+  await waitFor("режим «Свободно»", () => click("Свободно"));
+  await waitFor("режим ожидания", () => click("Ожидание"));
+  const chordNow = async () => (await pitches()).split(",").filter(Boolean).map(Number).sort((a, b) => a - b).join(",");
+  await waitFor("первый аккорд D (ре-фа#-ля)", async () => {
+    if ((await chordNow()) !== "50,54,57") return false;
+    await sleep(700);
+    return (await chordNow()) === "50,54,57";
+  }, 20000);
+  let rsChords = 0;
+  for (let i = 0; i < 40 && !(await gDone()); i++) {
+    const cur = await pitches();
+    if (!cur) {
+      await sleep(100);
+      continue;
+    }
+    const step = await stepNo();
+    for (const p of cur.split(",")) await invoke("simulate_midi", { device: "E2E", bytes: [0x90, Number(p), 100] });
+    for (const p of cur.split(",")) await invoke("simulate_midi", { device: "E2E", bytes: [0x80, Number(p), 0] });
+    rsChords++;
+    await waitFor(`Rocksmith: переход с шага ${step}`, async () => (await stepNo()) !== step || (await gDone()), 8000);
+  }
+  const rsErrors = await waitFor("итог соло-гитары", () => js("return document.querySelector('.summary .big')?.textContent;"), 10000);
+  if (rsErrors !== "0" || rsChords !== 7) throw new Error(`соло: шагов ${rsChords}, ошибок ${rsErrors}`);
+  ok("соло-гитара сыграна по табам: 7 аккордов, 0 ошибок");
+
+  await js("document.querySelector('[data-arrangement=\"rhythm\"]').click();");
+  await waitFor("ритм-гитара выбрана и сохранена", async () => (await invoke("get_state")).prefs.pieceSetup[`user:${rsFile}`]?.arrangement === 1);
+  await waitFor("табы ритм-гитары", () => js("return document.querySelector('[data-arrangement=\"rhythm\"]').classList.contains('on') && document.querySelectorAll('.tab-score g.note').length > 10;"), 20000);
+  ok("переключение на ритм-гитару: другая партия, выбор запомнен");
+
+  // Ноты над табами: обычный стан с копиями нот, таб на месте.
+  await js("document.querySelector('[data-more]').click();");
+  await waitFor("«Ноты над табами»", () => js("const t = document.querySelector('[data-staff-with-tab] input'); if (!t) return false; t.click(); return true;"));
+  await waitFor("стан над табом", () => js("return document.querySelectorAll('.score-page svg g.note[id$=\"~s\"]').length > 10 && !!document.querySelector('.score-page svg g.note:not([id$=\"~s\"])');"), 20000);
+  if (!(await invoke("get_state")).prefs.piece.staffWithTab) throw new Error("«Ноты над табами» не сохранилось");
+  await js("document.querySelector('[data-staff-with-tab] input').click(); document.querySelector('[data-more]').click();");
+  ok("«Ноты над табами»: обычный стан над табулатурой");
+
+  // Мой строй — Drop D: песня в стандартном строе предлагает перестроиться или переложить табы.
+  const gcfg = (await invoke("guitar_state")).config;
+  await invoke("guitar_set", { config: { ...gcfg, instrument: "guitar", tuning: [38, 45, 50, 55, 59, 64], capo: 0 } });
+  await js("document.querySelector('[data-arrangement=\"lead\"]').click();");
+  await waitFor("назад к списку", () => click("← Пьесы"));
+  await openRs();
+  await waitFor("плашка «строй пьесы другой»", () => js("return !!document.querySelector('[data-tuning-mismatch]');"), 15000);
+  await js("document.querySelector('[data-relayout]').click();");
+  await waitFor("табы переложены под Drop D", () =>
+    js("return !!document.querySelector('[data-relayout-on]') && document.querySelector('[data-tuning-meta]')?.dataset.tuningMeta === '38,45,50,55,59,64';"),
+  );
+  if (!(await invoke("get_state")).prefs.pieceSetup[`user:${rsFile}`]?.relayout) throw new Error("переложение не сохранилось");
+  // Звучат те же ноты: первый аккорд — снова D.
+  await waitFor("первый аккорд после переложения", async () => (await chordNow()) === "50,54,57", 15000);
+  ok("строй Drop D: плашка о строе, «Переложить табы» — табы под мой строй, ноты те же");
+
+  await waitFor("вернуть строй пьесы", () => click("Вернуть строй пьесы"));
+  await waitFor("перестроить гитару", () => js("const b = document.querySelector('[data-retune-open]'); if (!b) return false; b.click(); return true;"));
+  await waitFor("тюнер на строй пьесы", () => js("return document.querySelector('[data-retune] [data-tuner-target]')?.dataset.tunerTarget === '40,45,50,55,59,64';"));
+  await invoke("guitar_test_signal", { hz: 110, secs: 1.0, kind: "pluck" });
+  await waitFor("струна ля настроена ✓", () => js("return (document.querySelector('[data-retune] [data-tuned]')?.dataset.tuned ?? '').split(',').includes('1');"));
+  await js("document.querySelector('[data-retune-save]').click();");
+  await waitFor("строй сохранён — стандартный", async () => {
+    const c = (await invoke("guitar_state")).config;
+    return c.tuning === null && c.capo === 0;
+  });
+  await waitFor("плашка о строе ушла", () => js("return !document.querySelector('[data-tuning-mismatch]') && !document.querySelector('[data-retune]');"));
+  ok("«Перестроить гитару»: тюнер со струнами строя пьесы, ✓ у настроенной, строй сохранён");
+
+  // Экран «Гитара»: Drop C — тюнер слышит до большой октавы (ниже стандартной ми).
+  await waitFor("вкладка «Гитара»", () => click("Гитара"));
+  await waitFor("выбор строя", () => select("[data-tuning-select]", "dropc"));
+  await waitFor("Drop C в настройках", async () => (await invoke("guitar_state")).config.tuning?.join(",") === "36,43,48,53,57,62");
+  await waitFor("струны тюнера — Drop C", () => js("return document.querySelector('[data-tuner-target]')?.dataset.tunerTarget === '36,43,48,53,57,62';"));
+  await invoke("guitar_test_signal", { hz: 65.406, secs: 1.0, kind: "pluck" });
+  await waitFor("тюнер: до (36)", async () => (await tuner())?.[0] === "36");
+  await waitFor("каподастр", () => select("[data-capo-select]", "3"));
+  await waitFor("каподастр в настройках", async () => (await invoke("guitar_state")).config.capo === 3);
+  await waitFor("стандартный строй", () => select("[data-tuning-select]", "std"));
+  await waitFor("без каподастра", () => select("[data-capo-select]", "0"));
+  await waitFor("стандарт в настройках", async () => {
+    const c = (await invoke("guitar_state")).config;
+    return c.tuning === null && c.capo === 0;
+  });
+  ok("экран «Гитара»: Drop C — тюнер слышит низкое до, каподастр сохраняется");
+
   console.log("Сквозной тест: доводка");
   // Панель пьесы: редкое — в меню «⋯»; Esc закрывает только меню.
   await waitFor("вкладка пьес", () => click("Пьесы"));

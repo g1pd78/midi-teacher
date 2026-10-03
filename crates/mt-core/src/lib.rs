@@ -13,6 +13,7 @@ pub mod midifile;
 pub mod piece;
 pub mod practice;
 pub mod rhythm;
+pub mod rocksmith;
 pub mod song;
 pub mod store;
 pub mod synth;

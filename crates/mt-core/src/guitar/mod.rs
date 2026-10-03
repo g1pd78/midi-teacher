@@ -53,6 +53,12 @@ impl Instrument {
             Instrument::Guitar => (70.0, dsp::FMAX),
         }
     }
+
+    /// Полоса частот с учётом самой низкой открытой струны (пониженные строи).
+    pub fn range_from(self, lowest: u8) -> (f32, f32) {
+        let (fmin, fmax) = self.range();
+        (fmin.min(dsp::midi_to_hz(lowest as f32) * 0.85), fmax)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -73,6 +79,29 @@ pub struct GuitarConfig {
     pub tone: ToneKind,
     /// Задержка входа по калибровке, мс: на неё поправляется время нот.
     pub latency_ms: Option<f32>,
+    /// Строй: открытые струны от низкой (MIDI); `None` — стандартный.
+    pub tuning: Option<Vec<u8>>,
+    /// Каподастр на ладу (0 — нет).
+    pub capo: u8,
+}
+
+impl GuitarConfig {
+    /// Открытые струны с учётом каподастра (звучащие ноты).
+    pub fn sounding(&self) -> Vec<u8> {
+        let base = self.instrument.tuning();
+        let t = self
+            .tuning
+            .as_ref()
+            .filter(|t| t.len() == base.len())
+            .map(|t| t.as_slice())
+            .unwrap_or(base);
+        t.iter().map(|&m| m.saturating_add(self.capo)).collect()
+    }
+
+    /// Самая низкая звучащая открытая струна.
+    pub fn lowest(&self) -> u8 {
+        self.sounding().into_iter().min().unwrap_or(40)
+    }
 }
 
 impl Default for GuitarConfig {
@@ -87,6 +116,8 @@ impl Default for GuitarConfig {
             monitor_volume: 0.8,
             tone: ToneKind::Clean,
             latency_ms: None,
+            tuning: None,
+            capo: 0,
         }
     }
 }
@@ -532,7 +563,8 @@ struct Analyzer {
     recording: Option<Recording>,
     buf: Vec<f32>,
     tracker: NoteTracker,
-    tracker_for: Instrument,
+    /// Инструмент и самая низкая струна, под которые настроен распознаватель.
+    tracker_for: (Instrument, u8),
     track_events: Vec<TrackEvent>,
 }
 
@@ -556,8 +588,8 @@ impl Analyzer {
             clip_until: 0,
             recording: None,
             buf: Vec::with_capacity(8192),
-            tracker: NoteTracker::new(48_000.0, Instrument::Guitar),
-            tracker_for: Instrument::Guitar,
+            tracker: NoteTracker::new(48_000.0, Instrument::Guitar, 40),
+            tracker_for: (Instrument::Guitar, 40),
             track_events: Vec::new(),
         }
     }
@@ -571,7 +603,7 @@ impl Analyzer {
         self.full.clear();
         self.low_since_pitch = 0;
         self.history.clear();
-        self.tracker = NoteTracker::new(rate as f32, self.tracker_for);
+        self.tracker = NoteTracker::new(rate as f32, self.tracker_for.0, self.tracker_for.1);
     }
 
     fn run(mut self, rx: Receiver<Msg>) {
@@ -680,13 +712,17 @@ impl Analyzer {
             let back = end_index.saturating_sub(i) as f64 * 1e6 / rate;
             end_us.saturating_sub(back as u64)
         };
-        let (instrument, latency_ms) = {
+        let (instrument, lowest, latency_ms) = {
             let c = shared.config.read();
-            (c.instrument, c.latency_ms.unwrap_or(0.0).max(0.0))
+            (
+                c.instrument,
+                c.lowest(),
+                c.latency_ms.unwrap_or(0.0).max(0.0),
+            )
         };
-        if instrument != self.tracker_for {
-            self.tracker_for = instrument;
-            self.tracker = NoteTracker::new(self.rate.max(1) as f32, instrument);
+        if (instrument, lowest) != self.tracker_for {
+            self.tracker_for = (instrument, lowest);
+            self.tracker = NoteTracker::new(self.rate.max(1) as f32, instrument, lowest);
         }
         let expected = shared.expected.lock().clone();
         let latency_us = (latency_ms * 1000.0) as u64;
@@ -750,7 +786,7 @@ impl Analyzer {
                 self.low_since_pitch += 1;
                 if self.low_since_pitch >= LOW_WINDOW / 4 && self.low.len() == LOW_WINDOW {
                     self.low_since_pitch = 0;
-                    reading = Some(self.pitch(instrument));
+                    reading = Some(self.pitch(instrument, lowest));
                 }
             }
             // Запись.
@@ -805,14 +841,14 @@ impl Analyzer {
 
     /// Высота по последнему окну; сглаживание — медиана трёх последних
     /// значений одной и той же ноты (тюнеру важна устойчивость стрелки).
-    fn pitch(&mut self, instrument: Instrument) -> Option<PitchReading> {
+    fn pitch(&mut self, instrument: Instrument, lowest: u8) -> Option<PitchReading> {
         let low: Vec<f32> = self.low.iter().copied().collect();
         let rms = (low.iter().map(|x| x * x).sum::<f32>() / low.len() as f32).sqrt();
         if rms < 0.001 {
             self.history.clear();
             return None;
         }
-        let (fmin, fmax) = instrument.range();
+        let (fmin, fmax) = instrument.range_from(lowest);
         let rate = self.rate as f32;
         let p = dsp::mpm(&low, rate / DECIMATE as f32, fmin, fmax)?;
         if p.clarity < 0.85 {

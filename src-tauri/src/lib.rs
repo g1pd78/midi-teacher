@@ -398,6 +398,7 @@ pub fn run() {
             library::library_read,
             library::library_import,
             library::library_open_folder,
+            library::rocksmith_open,
             piece::piece_start,
             piece::piece_stop,
             rhythm::rhythm_start,

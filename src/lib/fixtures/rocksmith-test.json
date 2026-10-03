@@ -1,0 +1,2363 @@
+{
+  "title": "Test",
+  "artist": "Test",
+  "album": "Test",
+  "year": 2020,
+  "arrangements": [
+    {
+      "id": "testtest_lead",
+      "name": "Lead",
+      "bass": false,
+      "tuning": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "capo": 0,
+      "centOffset": 0.0,
+      "songLength": 119.999,
+      "beats": [
+        {
+          "time": 4.998,
+          "downbeat": true
+        },
+        {
+          "time": 5.498,
+          "downbeat": false
+        },
+        {
+          "time": 5.998,
+          "downbeat": false
+        },
+        {
+          "time": 6.498,
+          "downbeat": false
+        },
+        {
+          "time": 6.998,
+          "downbeat": true
+        },
+        {
+          "time": 7.498,
+          "downbeat": false
+        },
+        {
+          "time": 7.998,
+          "downbeat": false
+        },
+        {
+          "time": 8.498,
+          "downbeat": false
+        },
+        {
+          "time": 8.998,
+          "downbeat": true
+        },
+        {
+          "time": 9.498,
+          "downbeat": false
+        },
+        {
+          "time": 9.998,
+          "downbeat": false
+        },
+        {
+          "time": 10.498,
+          "downbeat": false
+        },
+        {
+          "time": 10.998,
+          "downbeat": true
+        },
+        {
+          "time": 11.498,
+          "downbeat": false
+        },
+        {
+          "time": 11.998,
+          "downbeat": false
+        },
+        {
+          "time": 12.498,
+          "downbeat": false
+        },
+        {
+          "time": 12.998,
+          "downbeat": true
+        },
+        {
+          "time": 13.498,
+          "downbeat": false
+        },
+        {
+          "time": 13.998,
+          "downbeat": false
+        },
+        {
+          "time": 14.498,
+          "downbeat": false
+        },
+        {
+          "time": 14.998,
+          "downbeat": true
+        },
+        {
+          "time": 15.498,
+          "downbeat": false
+        },
+        {
+          "time": 15.998,
+          "downbeat": false
+        },
+        {
+          "time": 16.498,
+          "downbeat": false
+        },
+        {
+          "time": 16.998,
+          "downbeat": true
+        },
+        {
+          "time": 17.498,
+          "downbeat": false
+        },
+        {
+          "time": 17.998,
+          "downbeat": false
+        },
+        {
+          "time": 18.498,
+          "downbeat": false
+        },
+        {
+          "time": 18.998,
+          "downbeat": true
+        },
+        {
+          "time": 19.498,
+          "downbeat": false
+        },
+        {
+          "time": 19.998,
+          "downbeat": false
+        },
+        {
+          "time": 20.498,
+          "downbeat": false
+        },
+        {
+          "time": 20.998,
+          "downbeat": true
+        },
+        {
+          "time": 21.498,
+          "downbeat": false
+        },
+        {
+          "time": 21.998,
+          "downbeat": false
+        },
+        {
+          "time": 22.498,
+          "downbeat": false
+        },
+        {
+          "time": 22.998,
+          "downbeat": true
+        },
+        {
+          "time": 23.498,
+          "downbeat": false
+        },
+        {
+          "time": 23.998,
+          "downbeat": false
+        },
+        {
+          "time": 24.498,
+          "downbeat": false
+        },
+        {
+          "time": 24.998,
+          "downbeat": true
+        },
+        {
+          "time": 25.498,
+          "downbeat": false
+        },
+        {
+          "time": 25.998,
+          "downbeat": false
+        },
+        {
+          "time": 26.498,
+          "downbeat": false
+        },
+        {
+          "time": 26.998,
+          "downbeat": true
+        },
+        {
+          "time": 27.498,
+          "downbeat": false
+        },
+        {
+          "time": 27.998,
+          "downbeat": false
+        },
+        {
+          "time": 28.498,
+          "downbeat": false
+        },
+        {
+          "time": 28.998,
+          "downbeat": true
+        },
+        {
+          "time": 29.498,
+          "downbeat": false
+        },
+        {
+          "time": 29.998,
+          "downbeat": false
+        },
+        {
+          "time": 30.498,
+          "downbeat": false
+        },
+        {
+          "time": 30.998,
+          "downbeat": true
+        },
+        {
+          "time": 31.498,
+          "downbeat": false
+        },
+        {
+          "time": 31.998,
+          "downbeat": false
+        },
+        {
+          "time": 32.498,
+          "downbeat": false
+        },
+        {
+          "time": 32.998,
+          "downbeat": true
+        },
+        {
+          "time": 33.498,
+          "downbeat": false
+        },
+        {
+          "time": 33.998,
+          "downbeat": false
+        },
+        {
+          "time": 34.498,
+          "downbeat": false
+        },
+        {
+          "time": 34.998,
+          "downbeat": true
+        },
+        {
+          "time": 35.498,
+          "downbeat": false
+        },
+        {
+          "time": 35.998,
+          "downbeat": false
+        },
+        {
+          "time": 36.498,
+          "downbeat": false
+        },
+        {
+          "time": 36.998,
+          "downbeat": true
+        },
+        {
+          "time": 37.498,
+          "downbeat": false
+        },
+        {
+          "time": 37.998,
+          "downbeat": false
+        },
+        {
+          "time": 38.498,
+          "downbeat": false
+        },
+        {
+          "time": 38.998,
+          "downbeat": true
+        },
+        {
+          "time": 39.498,
+          "downbeat": false
+        },
+        {
+          "time": 39.998,
+          "downbeat": false
+        },
+        {
+          "time": 40.498,
+          "downbeat": false
+        },
+        {
+          "time": 40.998,
+          "downbeat": true
+        },
+        {
+          "time": 41.498,
+          "downbeat": false
+        },
+        {
+          "time": 41.998,
+          "downbeat": false
+        },
+        {
+          "time": 42.498,
+          "downbeat": false
+        },
+        {
+          "time": 42.998,
+          "downbeat": true
+        },
+        {
+          "time": 43.498,
+          "downbeat": false
+        },
+        {
+          "time": 43.998,
+          "downbeat": false
+        },
+        {
+          "time": 44.498,
+          "downbeat": false
+        },
+        {
+          "time": 44.998,
+          "downbeat": true
+        },
+        {
+          "time": 45.498,
+          "downbeat": false
+        },
+        {
+          "time": 45.998,
+          "downbeat": false
+        },
+        {
+          "time": 46.498,
+          "downbeat": false
+        },
+        {
+          "time": 46.998,
+          "downbeat": true
+        },
+        {
+          "time": 47.498,
+          "downbeat": false
+        },
+        {
+          "time": 47.998,
+          "downbeat": false
+        },
+        {
+          "time": 48.498,
+          "downbeat": false
+        },
+        {
+          "time": 48.998,
+          "downbeat": true
+        },
+        {
+          "time": 49.498,
+          "downbeat": false
+        },
+        {
+          "time": 49.998,
+          "downbeat": false
+        },
+        {
+          "time": 50.498,
+          "downbeat": false
+        },
+        {
+          "time": 50.998,
+          "downbeat": true
+        },
+        {
+          "time": 51.498,
+          "downbeat": false
+        },
+        {
+          "time": 51.998,
+          "downbeat": false
+        },
+        {
+          "time": 52.498,
+          "downbeat": false
+        },
+        {
+          "time": 52.998,
+          "downbeat": true
+        },
+        {
+          "time": 53.498,
+          "downbeat": false
+        },
+        {
+          "time": 53.998,
+          "downbeat": false
+        },
+        {
+          "time": 54.498,
+          "downbeat": false
+        },
+        {
+          "time": 54.998,
+          "downbeat": true
+        },
+        {
+          "time": 55.498,
+          "downbeat": false
+        },
+        {
+          "time": 55.998,
+          "downbeat": false
+        },
+        {
+          "time": 56.498,
+          "downbeat": false
+        },
+        {
+          "time": 56.998,
+          "downbeat": true
+        },
+        {
+          "time": 57.498,
+          "downbeat": false
+        },
+        {
+          "time": 57.998,
+          "downbeat": false
+        },
+        {
+          "time": 58.498,
+          "downbeat": false
+        },
+        {
+          "time": 58.998,
+          "downbeat": true
+        },
+        {
+          "time": 59.498,
+          "downbeat": false
+        },
+        {
+          "time": 59.998,
+          "downbeat": false
+        },
+        {
+          "time": 60.498,
+          "downbeat": false
+        },
+        {
+          "time": 60.998,
+          "downbeat": true
+        },
+        {
+          "time": 61.498,
+          "downbeat": false
+        },
+        {
+          "time": 61.998,
+          "downbeat": false
+        },
+        {
+          "time": 62.498,
+          "downbeat": false
+        },
+        {
+          "time": 62.998,
+          "downbeat": true
+        },
+        {
+          "time": 63.498,
+          "downbeat": false
+        },
+        {
+          "time": 63.998,
+          "downbeat": false
+        },
+        {
+          "time": 64.498,
+          "downbeat": false
+        },
+        {
+          "time": 64.998,
+          "downbeat": true
+        },
+        {
+          "time": 65.498,
+          "downbeat": false
+        },
+        {
+          "time": 65.998,
+          "downbeat": false
+        },
+        {
+          "time": 66.498,
+          "downbeat": false
+        },
+        {
+          "time": 66.998,
+          "downbeat": true
+        },
+        {
+          "time": 67.498,
+          "downbeat": false
+        },
+        {
+          "time": 67.998,
+          "downbeat": false
+        },
+        {
+          "time": 68.498,
+          "downbeat": false
+        },
+        {
+          "time": 68.998,
+          "downbeat": true
+        },
+        {
+          "time": 69.498,
+          "downbeat": false
+        },
+        {
+          "time": 69.998,
+          "downbeat": false
+        },
+        {
+          "time": 70.498,
+          "downbeat": false
+        },
+        {
+          "time": 70.998,
+          "downbeat": true
+        },
+        {
+          "time": 71.498,
+          "downbeat": false
+        },
+        {
+          "time": 71.998,
+          "downbeat": false
+        },
+        {
+          "time": 72.498,
+          "downbeat": false
+        },
+        {
+          "time": 72.998,
+          "downbeat": true
+        },
+        {
+          "time": 73.498,
+          "downbeat": false
+        },
+        {
+          "time": 73.998,
+          "downbeat": false
+        },
+        {
+          "time": 74.498,
+          "downbeat": false
+        },
+        {
+          "time": 74.998,
+          "downbeat": true
+        },
+        {
+          "time": 75.498,
+          "downbeat": false
+        },
+        {
+          "time": 75.998,
+          "downbeat": false
+        },
+        {
+          "time": 76.498,
+          "downbeat": false
+        },
+        {
+          "time": 76.998,
+          "downbeat": true
+        },
+        {
+          "time": 77.498,
+          "downbeat": false
+        },
+        {
+          "time": 77.998,
+          "downbeat": false
+        },
+        {
+          "time": 78.498,
+          "downbeat": false
+        },
+        {
+          "time": 78.998,
+          "downbeat": true
+        },
+        {
+          "time": 79.498,
+          "downbeat": false
+        },
+        {
+          "time": 79.998,
+          "downbeat": false
+        },
+        {
+          "time": 80.498,
+          "downbeat": false
+        },
+        {
+          "time": 80.998,
+          "downbeat": true
+        },
+        {
+          "time": 81.498,
+          "downbeat": false
+        },
+        {
+          "time": 81.998,
+          "downbeat": false
+        },
+        {
+          "time": 82.498,
+          "downbeat": false
+        },
+        {
+          "time": 82.998,
+          "downbeat": true
+        },
+        {
+          "time": 83.498,
+          "downbeat": false
+        },
+        {
+          "time": 83.998,
+          "downbeat": false
+        },
+        {
+          "time": 84.498,
+          "downbeat": false
+        },
+        {
+          "time": 84.998,
+          "downbeat": true
+        },
+        {
+          "time": 85.498,
+          "downbeat": false
+        },
+        {
+          "time": 85.998,
+          "downbeat": false
+        },
+        {
+          "time": 86.498,
+          "downbeat": false
+        },
+        {
+          "time": 86.998,
+          "downbeat": true
+        },
+        {
+          "time": 87.498,
+          "downbeat": false
+        },
+        {
+          "time": 87.998,
+          "downbeat": false
+        },
+        {
+          "time": 88.498,
+          "downbeat": false
+        },
+        {
+          "time": 88.998,
+          "downbeat": true
+        },
+        {
+          "time": 89.498,
+          "downbeat": false
+        },
+        {
+          "time": 89.998,
+          "downbeat": false
+        },
+        {
+          "time": 90.498,
+          "downbeat": false
+        },
+        {
+          "time": 90.998,
+          "downbeat": true
+        },
+        {
+          "time": 91.498,
+          "downbeat": false
+        },
+        {
+          "time": 91.998,
+          "downbeat": false
+        },
+        {
+          "time": 92.498,
+          "downbeat": false
+        },
+        {
+          "time": 92.998,
+          "downbeat": true
+        },
+        {
+          "time": 93.498,
+          "downbeat": false
+        },
+        {
+          "time": 93.998,
+          "downbeat": false
+        },
+        {
+          "time": 94.498,
+          "downbeat": false
+        },
+        {
+          "time": 94.998,
+          "downbeat": true
+        },
+        {
+          "time": 95.498,
+          "downbeat": false
+        },
+        {
+          "time": 95.998,
+          "downbeat": false
+        },
+        {
+          "time": 96.498,
+          "downbeat": false
+        },
+        {
+          "time": 96.998,
+          "downbeat": true
+        },
+        {
+          "time": 97.498,
+          "downbeat": false
+        },
+        {
+          "time": 97.998,
+          "downbeat": false
+        },
+        {
+          "time": 98.498,
+          "downbeat": false
+        },
+        {
+          "time": 98.998,
+          "downbeat": true
+        },
+        {
+          "time": 99.498,
+          "downbeat": false
+        },
+        {
+          "time": 99.998,
+          "downbeat": false
+        },
+        {
+          "time": 100.498,
+          "downbeat": false
+        },
+        {
+          "time": 100.998,
+          "downbeat": true
+        },
+        {
+          "time": 101.498,
+          "downbeat": false
+        },
+        {
+          "time": 101.998,
+          "downbeat": false
+        },
+        {
+          "time": 102.498,
+          "downbeat": false
+        },
+        {
+          "time": 102.998,
+          "downbeat": true
+        },
+        {
+          "time": 103.498,
+          "downbeat": false
+        },
+        {
+          "time": 103.998,
+          "downbeat": false
+        },
+        {
+          "time": 104.498,
+          "downbeat": false
+        },
+        {
+          "time": 104.998,
+          "downbeat": true
+        },
+        {
+          "time": 105.498,
+          "downbeat": false
+        },
+        {
+          "time": 105.998,
+          "downbeat": false
+        },
+        {
+          "time": 106.498,
+          "downbeat": false
+        },
+        {
+          "time": 106.998,
+          "downbeat": true
+        },
+        {
+          "time": 107.498,
+          "downbeat": false
+        },
+        {
+          "time": 107.998,
+          "downbeat": false
+        },
+        {
+          "time": 108.498,
+          "downbeat": false
+        },
+        {
+          "time": 108.998,
+          "downbeat": true
+        },
+        {
+          "time": 109.498,
+          "downbeat": false
+        },
+        {
+          "time": 109.998,
+          "downbeat": false
+        },
+        {
+          "time": 110.498,
+          "downbeat": false
+        },
+        {
+          "time": 110.998,
+          "downbeat": true
+        },
+        {
+          "time": 111.498,
+          "downbeat": false
+        },
+        {
+          "time": 111.998,
+          "downbeat": false
+        },
+        {
+          "time": 112.498,
+          "downbeat": false
+        },
+        {
+          "time": 112.998,
+          "downbeat": true
+        },
+        {
+          "time": 113.498,
+          "downbeat": false
+        },
+        {
+          "time": 113.998,
+          "downbeat": false
+        },
+        {
+          "time": 114.498,
+          "downbeat": false
+        },
+        {
+          "time": 114.998,
+          "downbeat": true
+        },
+        {
+          "time": 115.498,
+          "downbeat": false
+        },
+        {
+          "time": 115.998,
+          "downbeat": false
+        },
+        {
+          "time": 116.498,
+          "downbeat": false
+        },
+        {
+          "time": 116.998,
+          "downbeat": true
+        },
+        {
+          "time": 117.498,
+          "downbeat": false
+        },
+        {
+          "time": 117.998,
+          "downbeat": false
+        },
+        {
+          "time": 118.498,
+          "downbeat": false
+        },
+        {
+          "time": 118.998,
+          "downbeat": true
+        },
+        {
+          "time": 119.498,
+          "downbeat": false
+        },
+        {
+          "time": 119.998,
+          "downbeat": false
+        },
+        {
+          "time": 120.498,
+          "downbeat": false
+        },
+        {
+          "time": 120.998,
+          "downbeat": true
+        },
+        {
+          "time": 121.498,
+          "downbeat": false
+        }
+      ],
+      "notes": [
+        {
+          "time": 7.498,
+          "string": 1,
+          "fret": 5,
+          "sustain": 0.0,
+          "techniques": 2147483650,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 0
+        },
+        {
+          "time": 7.498,
+          "string": 2,
+          "fret": 4,
+          "sustain": 0.0,
+          "techniques": 2147483650,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 0
+        },
+        {
+          "time": 7.498,
+          "string": 3,
+          "fret": 2,
+          "sustain": 0.0,
+          "techniques": 2147483650,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 0
+        },
+        {
+          "time": 7.748,
+          "string": 1,
+          "fret": 5,
+          "sustain": 0.0,
+          "techniques": 2097154,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 0
+        },
+        {
+          "time": 7.748,
+          "string": 2,
+          "fret": 4,
+          "sustain": 0.0,
+          "techniques": 2097154,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 0
+        },
+        {
+          "time": 7.748,
+          "string": 3,
+          "fret": 2,
+          "sustain": 0.0,
+          "techniques": 2097154,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 0
+        },
+        {
+          "time": 7.998,
+          "string": 1,
+          "fret": 5,
+          "sustain": 0.0,
+          "techniques": 2097154,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 0
+        },
+        {
+          "time": 7.998,
+          "string": 2,
+          "fret": 4,
+          "sustain": 0.0,
+          "techniques": 2097154,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 0
+        },
+        {
+          "time": 7.998,
+          "string": 3,
+          "fret": 2,
+          "sustain": 0.0,
+          "techniques": 2097154,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 0
+        },
+        {
+          "time": 8.248,
+          "string": 1,
+          "fret": 5,
+          "sustain": 0.0,
+          "techniques": 2097154,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 0
+        },
+        {
+          "time": 8.248,
+          "string": 2,
+          "fret": 4,
+          "sustain": 0.0,
+          "techniques": 2097154,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 0
+        },
+        {
+          "time": 8.248,
+          "string": 3,
+          "fret": 2,
+          "sustain": 0.0,
+          "techniques": 2097154,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 0
+        },
+        {
+          "time": 8.998,
+          "string": 3,
+          "fret": 0,
+          "sustain": 0.0,
+          "techniques": 2197815302,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 1
+        },
+        {
+          "time": 8.998,
+          "string": 4,
+          "fret": 0,
+          "sustain": 0.0,
+          "techniques": 2197815302,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 1
+        },
+        {
+          "time": 9.248,
+          "string": 3,
+          "fret": 0,
+          "sustain": 0.0,
+          "techniques": 52428806,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 1
+        },
+        {
+          "time": 9.248,
+          "string": 4,
+          "fret": 0,
+          "sustain": 0.0,
+          "techniques": 52428806,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 1
+        },
+        {
+          "time": 9.998,
+          "string": 2,
+          "fret": 7,
+          "sustain": 0.75,
+          "techniques": 2164269058,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 2
+        },
+        {
+          "time": 9.998,
+          "string": 3,
+          "fret": 9,
+          "sustain": 0.75,
+          "techniques": 2164269058,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 2
+        },
+        {
+          "time": 9.998,
+          "string": 4,
+          "fret": 10,
+          "sustain": 0.75,
+          "techniques": 2164269058,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": 2
+        }
+      ],
+      "chords": [
+        {
+          "name": "D",
+          "frets": [
+            -1,
+            5,
+            4,
+            2,
+            -1,
+            -1
+          ]
+        },
+        {
+          "name": "",
+          "frets": [
+            -1,
+            -1,
+            -1,
+            0,
+            0,
+            -1
+          ]
+        },
+        {
+          "name": "A5",
+          "frets": [
+            -1,
+            -1,
+            7,
+            9,
+            10,
+            -1
+          ]
+        },
+        {
+          "name": "D7sus4",
+          "frets": [
+            -1,
+            5,
+            5,
+            5,
+            -1,
+            -1
+          ]
+        }
+      ],
+      "sections": [
+        {
+          "name": "intro",
+          "start": 6.998,
+          "end": 10.998
+        },
+        {
+          "name": "solo",
+          "start": 10.998,
+          "end": 14.998
+        },
+        {
+          "name": "noguitar",
+          "start": 14.998,
+          "end": 119.999
+        }
+      ]
+    },
+    {
+      "id": "testtest_rhythm",
+      "name": "Rhythm",
+      "bass": false,
+      "tuning": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "capo": 0,
+      "centOffset": 0.0,
+      "songLength": 119.999,
+      "beats": [
+        {
+          "time": 4.998,
+          "downbeat": true
+        },
+        {
+          "time": 5.498,
+          "downbeat": false
+        },
+        {
+          "time": 5.998,
+          "downbeat": false
+        },
+        {
+          "time": 6.498,
+          "downbeat": false
+        },
+        {
+          "time": 6.998,
+          "downbeat": true
+        },
+        {
+          "time": 7.498,
+          "downbeat": false
+        },
+        {
+          "time": 7.998,
+          "downbeat": false
+        },
+        {
+          "time": 8.498,
+          "downbeat": false
+        },
+        {
+          "time": 8.998,
+          "downbeat": true
+        },
+        {
+          "time": 9.498,
+          "downbeat": false
+        },
+        {
+          "time": 9.998,
+          "downbeat": false
+        },
+        {
+          "time": 10.498,
+          "downbeat": false
+        },
+        {
+          "time": 10.998,
+          "downbeat": true
+        },
+        {
+          "time": 11.498,
+          "downbeat": false
+        },
+        {
+          "time": 11.998,
+          "downbeat": false
+        },
+        {
+          "time": 12.498,
+          "downbeat": false
+        },
+        {
+          "time": 12.998,
+          "downbeat": true
+        },
+        {
+          "time": 13.498,
+          "downbeat": false
+        },
+        {
+          "time": 13.998,
+          "downbeat": false
+        },
+        {
+          "time": 14.498,
+          "downbeat": false
+        },
+        {
+          "time": 14.998,
+          "downbeat": true
+        },
+        {
+          "time": 15.498,
+          "downbeat": false
+        },
+        {
+          "time": 15.998,
+          "downbeat": false
+        },
+        {
+          "time": 16.498,
+          "downbeat": false
+        },
+        {
+          "time": 16.998,
+          "downbeat": true
+        },
+        {
+          "time": 17.498,
+          "downbeat": false
+        },
+        {
+          "time": 17.998,
+          "downbeat": false
+        },
+        {
+          "time": 18.498,
+          "downbeat": false
+        },
+        {
+          "time": 18.998,
+          "downbeat": true
+        },
+        {
+          "time": 19.498,
+          "downbeat": false
+        },
+        {
+          "time": 19.998,
+          "downbeat": false
+        },
+        {
+          "time": 20.498,
+          "downbeat": false
+        },
+        {
+          "time": 20.998,
+          "downbeat": true
+        },
+        {
+          "time": 21.498,
+          "downbeat": false
+        },
+        {
+          "time": 21.998,
+          "downbeat": false
+        },
+        {
+          "time": 22.498,
+          "downbeat": false
+        },
+        {
+          "time": 22.998,
+          "downbeat": true
+        },
+        {
+          "time": 23.498,
+          "downbeat": false
+        },
+        {
+          "time": 23.998,
+          "downbeat": false
+        },
+        {
+          "time": 24.498,
+          "downbeat": false
+        },
+        {
+          "time": 24.998,
+          "downbeat": true
+        },
+        {
+          "time": 25.498,
+          "downbeat": false
+        },
+        {
+          "time": 25.998,
+          "downbeat": false
+        },
+        {
+          "time": 26.498,
+          "downbeat": false
+        },
+        {
+          "time": 26.998,
+          "downbeat": true
+        },
+        {
+          "time": 27.498,
+          "downbeat": false
+        },
+        {
+          "time": 27.998,
+          "downbeat": false
+        },
+        {
+          "time": 28.498,
+          "downbeat": false
+        },
+        {
+          "time": 28.998,
+          "downbeat": true
+        },
+        {
+          "time": 29.498,
+          "downbeat": false
+        },
+        {
+          "time": 29.998,
+          "downbeat": false
+        },
+        {
+          "time": 30.498,
+          "downbeat": false
+        },
+        {
+          "time": 30.998,
+          "downbeat": true
+        },
+        {
+          "time": 31.498,
+          "downbeat": false
+        },
+        {
+          "time": 31.998,
+          "downbeat": false
+        },
+        {
+          "time": 32.498,
+          "downbeat": false
+        },
+        {
+          "time": 32.998,
+          "downbeat": true
+        },
+        {
+          "time": 33.498,
+          "downbeat": false
+        },
+        {
+          "time": 33.998,
+          "downbeat": false
+        },
+        {
+          "time": 34.498,
+          "downbeat": false
+        },
+        {
+          "time": 34.998,
+          "downbeat": true
+        },
+        {
+          "time": 35.498,
+          "downbeat": false
+        },
+        {
+          "time": 35.998,
+          "downbeat": false
+        },
+        {
+          "time": 36.498,
+          "downbeat": false
+        },
+        {
+          "time": 36.998,
+          "downbeat": true
+        },
+        {
+          "time": 37.498,
+          "downbeat": false
+        },
+        {
+          "time": 37.998,
+          "downbeat": false
+        },
+        {
+          "time": 38.498,
+          "downbeat": false
+        },
+        {
+          "time": 38.998,
+          "downbeat": true
+        },
+        {
+          "time": 39.498,
+          "downbeat": false
+        },
+        {
+          "time": 39.998,
+          "downbeat": false
+        },
+        {
+          "time": 40.498,
+          "downbeat": false
+        },
+        {
+          "time": 40.998,
+          "downbeat": true
+        },
+        {
+          "time": 41.498,
+          "downbeat": false
+        },
+        {
+          "time": 41.998,
+          "downbeat": false
+        },
+        {
+          "time": 42.498,
+          "downbeat": false
+        },
+        {
+          "time": 42.998,
+          "downbeat": true
+        },
+        {
+          "time": 43.498,
+          "downbeat": false
+        },
+        {
+          "time": 43.998,
+          "downbeat": false
+        },
+        {
+          "time": 44.498,
+          "downbeat": false
+        },
+        {
+          "time": 44.998,
+          "downbeat": true
+        },
+        {
+          "time": 45.498,
+          "downbeat": false
+        },
+        {
+          "time": 45.998,
+          "downbeat": false
+        },
+        {
+          "time": 46.498,
+          "downbeat": false
+        },
+        {
+          "time": 46.998,
+          "downbeat": true
+        },
+        {
+          "time": 47.498,
+          "downbeat": false
+        },
+        {
+          "time": 47.998,
+          "downbeat": false
+        },
+        {
+          "time": 48.498,
+          "downbeat": false
+        },
+        {
+          "time": 48.998,
+          "downbeat": true
+        },
+        {
+          "time": 49.498,
+          "downbeat": false
+        },
+        {
+          "time": 49.998,
+          "downbeat": false
+        },
+        {
+          "time": 50.498,
+          "downbeat": false
+        },
+        {
+          "time": 50.998,
+          "downbeat": true
+        },
+        {
+          "time": 51.498,
+          "downbeat": false
+        },
+        {
+          "time": 51.998,
+          "downbeat": false
+        },
+        {
+          "time": 52.498,
+          "downbeat": false
+        },
+        {
+          "time": 52.998,
+          "downbeat": true
+        },
+        {
+          "time": 53.498,
+          "downbeat": false
+        },
+        {
+          "time": 53.998,
+          "downbeat": false
+        },
+        {
+          "time": 54.498,
+          "downbeat": false
+        },
+        {
+          "time": 54.998,
+          "downbeat": true
+        },
+        {
+          "time": 55.498,
+          "downbeat": false
+        },
+        {
+          "time": 55.998,
+          "downbeat": false
+        },
+        {
+          "time": 56.498,
+          "downbeat": false
+        },
+        {
+          "time": 56.998,
+          "downbeat": true
+        },
+        {
+          "time": 57.498,
+          "downbeat": false
+        },
+        {
+          "time": 57.998,
+          "downbeat": false
+        },
+        {
+          "time": 58.498,
+          "downbeat": false
+        },
+        {
+          "time": 58.998,
+          "downbeat": true
+        },
+        {
+          "time": 59.498,
+          "downbeat": false
+        },
+        {
+          "time": 59.998,
+          "downbeat": false
+        },
+        {
+          "time": 60.498,
+          "downbeat": false
+        },
+        {
+          "time": 60.998,
+          "downbeat": true
+        },
+        {
+          "time": 61.498,
+          "downbeat": false
+        },
+        {
+          "time": 61.998,
+          "downbeat": false
+        },
+        {
+          "time": 62.498,
+          "downbeat": false
+        },
+        {
+          "time": 62.998,
+          "downbeat": true
+        },
+        {
+          "time": 63.498,
+          "downbeat": false
+        },
+        {
+          "time": 63.998,
+          "downbeat": false
+        },
+        {
+          "time": 64.498,
+          "downbeat": false
+        },
+        {
+          "time": 64.998,
+          "downbeat": true
+        },
+        {
+          "time": 65.498,
+          "downbeat": false
+        },
+        {
+          "time": 65.998,
+          "downbeat": false
+        },
+        {
+          "time": 66.498,
+          "downbeat": false
+        },
+        {
+          "time": 66.998,
+          "downbeat": true
+        },
+        {
+          "time": 67.498,
+          "downbeat": false
+        },
+        {
+          "time": 67.998,
+          "downbeat": false
+        },
+        {
+          "time": 68.498,
+          "downbeat": false
+        },
+        {
+          "time": 68.998,
+          "downbeat": true
+        },
+        {
+          "time": 69.498,
+          "downbeat": false
+        },
+        {
+          "time": 69.998,
+          "downbeat": false
+        },
+        {
+          "time": 70.498,
+          "downbeat": false
+        },
+        {
+          "time": 70.998,
+          "downbeat": true
+        },
+        {
+          "time": 71.498,
+          "downbeat": false
+        },
+        {
+          "time": 71.998,
+          "downbeat": false
+        },
+        {
+          "time": 72.498,
+          "downbeat": false
+        },
+        {
+          "time": 72.998,
+          "downbeat": true
+        },
+        {
+          "time": 73.498,
+          "downbeat": false
+        },
+        {
+          "time": 73.998,
+          "downbeat": false
+        },
+        {
+          "time": 74.498,
+          "downbeat": false
+        },
+        {
+          "time": 74.998,
+          "downbeat": true
+        },
+        {
+          "time": 75.498,
+          "downbeat": false
+        },
+        {
+          "time": 75.998,
+          "downbeat": false
+        },
+        {
+          "time": 76.498,
+          "downbeat": false
+        },
+        {
+          "time": 76.998,
+          "downbeat": true
+        },
+        {
+          "time": 77.498,
+          "downbeat": false
+        },
+        {
+          "time": 77.998,
+          "downbeat": false
+        },
+        {
+          "time": 78.498,
+          "downbeat": false
+        },
+        {
+          "time": 78.998,
+          "downbeat": true
+        },
+        {
+          "time": 79.498,
+          "downbeat": false
+        },
+        {
+          "time": 79.998,
+          "downbeat": false
+        },
+        {
+          "time": 80.498,
+          "downbeat": false
+        },
+        {
+          "time": 80.998,
+          "downbeat": true
+        },
+        {
+          "time": 81.498,
+          "downbeat": false
+        },
+        {
+          "time": 81.998,
+          "downbeat": false
+        },
+        {
+          "time": 82.498,
+          "downbeat": false
+        },
+        {
+          "time": 82.998,
+          "downbeat": true
+        },
+        {
+          "time": 83.498,
+          "downbeat": false
+        },
+        {
+          "time": 83.998,
+          "downbeat": false
+        },
+        {
+          "time": 84.498,
+          "downbeat": false
+        },
+        {
+          "time": 84.998,
+          "downbeat": true
+        },
+        {
+          "time": 85.498,
+          "downbeat": false
+        },
+        {
+          "time": 85.998,
+          "downbeat": false
+        },
+        {
+          "time": 86.498,
+          "downbeat": false
+        },
+        {
+          "time": 86.998,
+          "downbeat": true
+        },
+        {
+          "time": 87.498,
+          "downbeat": false
+        },
+        {
+          "time": 87.998,
+          "downbeat": false
+        },
+        {
+          "time": 88.498,
+          "downbeat": false
+        },
+        {
+          "time": 88.998,
+          "downbeat": true
+        },
+        {
+          "time": 89.498,
+          "downbeat": false
+        },
+        {
+          "time": 89.998,
+          "downbeat": false
+        },
+        {
+          "time": 90.498,
+          "downbeat": false
+        },
+        {
+          "time": 90.998,
+          "downbeat": true
+        },
+        {
+          "time": 91.498,
+          "downbeat": false
+        },
+        {
+          "time": 91.998,
+          "downbeat": false
+        },
+        {
+          "time": 92.498,
+          "downbeat": false
+        },
+        {
+          "time": 92.998,
+          "downbeat": true
+        },
+        {
+          "time": 93.498,
+          "downbeat": false
+        },
+        {
+          "time": 93.998,
+          "downbeat": false
+        },
+        {
+          "time": 94.498,
+          "downbeat": false
+        },
+        {
+          "time": 94.998,
+          "downbeat": true
+        },
+        {
+          "time": 95.498,
+          "downbeat": false
+        },
+        {
+          "time": 95.998,
+          "downbeat": false
+        },
+        {
+          "time": 96.498,
+          "downbeat": false
+        },
+        {
+          "time": 96.998,
+          "downbeat": true
+        },
+        {
+          "time": 97.498,
+          "downbeat": false
+        },
+        {
+          "time": 97.998,
+          "downbeat": false
+        },
+        {
+          "time": 98.498,
+          "downbeat": false
+        },
+        {
+          "time": 98.998,
+          "downbeat": true
+        },
+        {
+          "time": 99.498,
+          "downbeat": false
+        },
+        {
+          "time": 99.998,
+          "downbeat": false
+        },
+        {
+          "time": 100.498,
+          "downbeat": false
+        },
+        {
+          "time": 100.998,
+          "downbeat": true
+        },
+        {
+          "time": 101.498,
+          "downbeat": false
+        },
+        {
+          "time": 101.998,
+          "downbeat": false
+        },
+        {
+          "time": 102.498,
+          "downbeat": false
+        },
+        {
+          "time": 102.998,
+          "downbeat": true
+        },
+        {
+          "time": 103.498,
+          "downbeat": false
+        },
+        {
+          "time": 103.998,
+          "downbeat": false
+        },
+        {
+          "time": 104.498,
+          "downbeat": false
+        },
+        {
+          "time": 104.998,
+          "downbeat": true
+        },
+        {
+          "time": 105.498,
+          "downbeat": false
+        },
+        {
+          "time": 105.998,
+          "downbeat": false
+        },
+        {
+          "time": 106.498,
+          "downbeat": false
+        },
+        {
+          "time": 106.998,
+          "downbeat": true
+        },
+        {
+          "time": 107.498,
+          "downbeat": false
+        },
+        {
+          "time": 107.998,
+          "downbeat": false
+        },
+        {
+          "time": 108.498,
+          "downbeat": false
+        },
+        {
+          "time": 108.998,
+          "downbeat": true
+        },
+        {
+          "time": 109.498,
+          "downbeat": false
+        },
+        {
+          "time": 109.998,
+          "downbeat": false
+        },
+        {
+          "time": 110.498,
+          "downbeat": false
+        },
+        {
+          "time": 110.998,
+          "downbeat": true
+        },
+        {
+          "time": 111.498,
+          "downbeat": false
+        },
+        {
+          "time": 111.998,
+          "downbeat": false
+        },
+        {
+          "time": 112.498,
+          "downbeat": false
+        },
+        {
+          "time": 112.998,
+          "downbeat": true
+        },
+        {
+          "time": 113.498,
+          "downbeat": false
+        },
+        {
+          "time": 113.998,
+          "downbeat": false
+        },
+        {
+          "time": 114.498,
+          "downbeat": false
+        },
+        {
+          "time": 114.998,
+          "downbeat": true
+        },
+        {
+          "time": 115.498,
+          "downbeat": false
+        },
+        {
+          "time": 115.998,
+          "downbeat": false
+        },
+        {
+          "time": 116.498,
+          "downbeat": false
+        },
+        {
+          "time": 116.998,
+          "downbeat": true
+        },
+        {
+          "time": 117.498,
+          "downbeat": false
+        },
+        {
+          "time": 117.998,
+          "downbeat": false
+        },
+        {
+          "time": 118.498,
+          "downbeat": false
+        },
+        {
+          "time": 118.998,
+          "downbeat": true
+        },
+        {
+          "time": 119.498,
+          "downbeat": false
+        },
+        {
+          "time": 119.998,
+          "downbeat": false
+        },
+        {
+          "time": 120.498,
+          "downbeat": false
+        },
+        {
+          "time": 120.998,
+          "downbeat": true
+        },
+        {
+          "time": 121.498,
+          "downbeat": false
+        }
+      ],
+      "notes": [
+        {
+          "time": 6.998,
+          "string": 0,
+          "fret": 0,
+          "sustain": 0.0,
+          "techniques": 8388612,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": null
+        },
+        {
+          "time": 7.248,
+          "string": 1,
+          "fret": 0,
+          "sustain": 0.0,
+          "techniques": 8388612,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": null
+        },
+        {
+          "time": 7.373,
+          "string": 2,
+          "fret": 0,
+          "sustain": 0.0,
+          "techniques": 8388612,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": null
+        },
+        {
+          "time": 7.498,
+          "string": 3,
+          "fret": 0,
+          "sustain": 0.0,
+          "techniques": 8388612,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": null
+        },
+        {
+          "time": 7.748,
+          "string": 4,
+          "fret": 0,
+          "sustain": 0.0,
+          "techniques": 8388612,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": null
+        },
+        {
+          "time": 7.998,
+          "string": 5,
+          "fret": 0,
+          "sustain": 0.0,
+          "techniques": 8388612,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": null
+        },
+        {
+          "time": 8.998,
+          "string": 1,
+          "fret": 2,
+          "sustain": 0.0,
+          "techniques": 545259520,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": null
+        },
+        {
+          "time": 9.248,
+          "string": 2,
+          "fret": 4,
+          "sustain": 0.0,
+          "techniques": 545259520,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": null
+        },
+        {
+          "time": 9.498,
+          "string": 3,
+          "fret": 4,
+          "sustain": 0.0,
+          "techniques": 545259520,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": null
+        },
+        {
+          "time": 9.748,
+          "string": 1,
+          "fret": 2,
+          "sustain": 0.75,
+          "techniques": 545267712,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": null
+        },
+        {
+          "time": 10.998,
+          "string": 4,
+          "fret": 7,
+          "sustain": 0.5,
+          "techniques": 8400896,
+          "slideTo": null,
+          "bend": 1.0,
+          "chord": null
+        },
+        {
+          "time": 12.498,
+          "string": 1,
+          "fret": 12,
+          "sustain": 0.0,
+          "techniques": 8388640,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": null
+        },
+        {
+          "time": 12.498,
+          "string": 2,
+          "fret": 12,
+          "sustain": 0.0,
+          "techniques": 8388640,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": null
+        },
+        {
+          "time": 12.498,
+          "string": 3,
+          "fret": 12,
+          "sustain": 0.0,
+          "techniques": 8388640,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": null
+        },
+        {
+          "time": 12.998,
+          "string": 4,
+          "fret": 12,
+          "sustain": 0.313,
+          "techniques": 142616576,
+          "slideTo": 14,
+          "bend": 0.0,
+          "chord": null
+        },
+        {
+          "time": 13.311,
+          "string": 4,
+          "fret": 14,
+          "sustain": 0.312,
+          "techniques": 276897792,
+          "slideTo": null,
+          "bend": 0.0,
+          "chord": null
+        }
+      ],
+      "chords": [
+        {
+          "name": "B5",
+          "frets": [
+            -1,
+            2,
+            4,
+            4,
+            -1,
+            -1
+          ]
+        }
+      ],
+      "sections": [
+        {
+          "name": "intro",
+          "start": 6.998,
+          "end": 10.998
+        },
+        {
+          "name": "solo",
+          "start": 10.998,
+          "end": 14.998
+        },
+        {
+          "name": "noguitar",
+          "start": 14.998,
+          "end": 119.999
+        }
+      ]
+    }
+  ]
+}

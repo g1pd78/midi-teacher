@@ -55,6 +55,8 @@ export function createMock() {
     monitorVolume: 0.8,
     tone: "clean",
     latencyMs: null as number | null,
+    tuning: null as number[] | null,
+    capo: 0,
   };
   let guitarSignal: { hz: number; until: number } | null = null;
   let guitarRec: { start: number; secs: number; path: string } | null = null;
@@ -373,8 +375,13 @@ export function createMock() {
     rhythm_stop: () => stopRhythmMock(),
     library_list: () => ({
       dir: "C:\\Users\\Ученик\\Documents\\MIDI Teacher",
-      items: [{ id: "Песня.mid", title: "Песня", format: "midi", size: 2048, modified: 0 }],
+      items: [
+        { id: "Песня.mid", title: "Песня", format: "midi", size: 2048, modified: 0 },
+        { id: "Test_Test_v1_p.psarc", title: "Test — Test", format: "psarc", size: 274432, modified: 0 },
+      ],
     }),
+    // Песня Rocksmith в демо — тестовый CDLC (разбирает ядро; здесь — готовый результат).
+    rocksmith_open: () => import("./lib/fixtures/rocksmith-test.json").then((m) => m.default),
     library_read: () => Promise.reject(new Error("в демо нет своих файлов")),
     // MIDI в демо: дорожки выдуманы, ноты — «Ода к радости» (настоящий перевод делает ядро).
     midi_inspect: () => ({

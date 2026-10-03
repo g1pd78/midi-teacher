@@ -13,7 +13,7 @@ pub struct LibraryItem {
     /// Имя файла внутри папки библиотеки.
     id: String,
     title: String,
-    /// `musicxml`, `mxl` или `midi`.
+    /// `musicxml`, `mxl`, `midi` или `psarc`.
     format: String,
     size: u64,
     modified: u64,
@@ -44,6 +44,7 @@ fn format_of(path: &Path) -> Option<&'static str> {
         "musicxml" | "xml" => Some("musicxml"),
         "mxl" => Some("mxl"),
         "mid" | "midi" => Some("midi"),
+        "psarc" => Some("psarc"),
         _ => None,
     }
 }
@@ -54,6 +55,9 @@ pub fn title_of(path: &Path, format: &str) -> String {
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
+    if format == "psarc" {
+        return psarc_title(&stem);
+    }
     if format != "musicxml" {
         return stem;
     }
@@ -68,6 +72,47 @@ pub fn title_of(path: &Path, format: &str) -> String {
         }
     }
     stem
+}
+
+/// Имя файла CustomsForge «Artist_Song-Name_v2_DD_p» → «Artist — Song Name».
+fn psarc_title(stem: &str) -> String {
+    let mut parts: Vec<&str> = stem.split('_').filter(|p| !p.is_empty()).collect();
+    // Хвост: платформа, версия, пометки (DD, RS2014…).
+    if let Some(v) = parts.iter().skip(1).position(|p| {
+        let l = p.to_lowercase();
+        l.starts_with('v') && l[1..].starts_with(|c: char| c.is_ascii_digit())
+    }) {
+        parts.truncate(v + 1);
+    }
+    while parts.len() > 1
+        && matches!(
+            parts.last().map(|p| p.to_lowercase()).as_deref(),
+            Some("p" | "m" | "dd" | "rs2014" | "rs2" | "ps3" | "xbox")
+        )
+    {
+        parts.pop();
+    }
+    let words = |s: &str| s.replace('-', " ").trim().to_string();
+    match parts.as_slice() {
+        [] => stem.to_string(),
+        [one] => words(one),
+        [artist, rest @ ..] => format!("{} — {}", words(artist), words(&rest.join(" "))),
+    }
+}
+
+/// Песня Rocksmith (CDLC) из библиотеки: партии с табами, строем и секциями.
+#[tauri::command]
+pub async fn rocksmith_open(
+    app: AppHandle,
+    id: String,
+) -> Result<mt_core::rocksmith::RsSong, String> {
+    let path = safe_path(&library_dir(&app)?, &id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let data = std::fs::read(&path).map_err(|e| format!("не удалось прочитать {id}: {e}"))?;
+        mt_core::rocksmith::open_cdlc(data).map_err(|e| format!("{e:#}"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn extract_tag(text: &str, tag: &str) -> Option<String> {
@@ -218,6 +263,13 @@ mod tests {
         assert!(safe_path(&dir, "a.musicxml").is_ok());
         assert_eq!(format_of(Path::new("X.MXL")), Some("mxl"));
         assert_eq!(format_of(Path::new("x.txt")), None);
+        assert_eq!(format_of(Path::new("Song_p.psarc")), Some("psarc"));
+        assert_eq!(
+            psarc_title("Deep-Purple_Smoke-on-the-Water_v3_DD_p"),
+            "Deep Purple — Smoke on the Water"
+        );
+        assert_eq!(psarc_title("Artist_Song_p"), "Artist — Song");
+        assert_eq!(psarc_title("test_p"), "test");
         std::fs::remove_dir_all(dir).ok();
     }
 }
