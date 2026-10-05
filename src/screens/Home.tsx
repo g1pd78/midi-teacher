@@ -20,6 +20,7 @@ export interface TodayActions {
   trainer: () => void;
   reading: () => void;
   rhythm: () => void;
+  ear: () => void;
   piece: (id: string | null) => void;
   /** Гитара или бас: упражнения на сегодня. */
   guitar: (instrument: "guitar" | "bass") => void;
@@ -32,7 +33,7 @@ const RHYTHM_PER_DAY = 1;
 /** «Занятие на сегодня»: разминка → тренажёр нот → чтение с листа → ритм → пьеса. */
 function Today({ actions }: { actions: TodayActions }) {
   const [st, setSt] = useState<TodayStatus | null>(null);
-  const [drills, setDrills] = useState({ read: 0, rhythm: 0 });
+  const [drills, setDrills] = useState({ read: 0, rhythm: 0, ear: 0 });
   // Шаг «Гитара» — если вход гитары включён или гитарные упражнения уже были.
   const [gtr, setGtr] = useState<{ instrument: "guitar" | "bass"; today: number } | null>(null);
   useEffect(() => {
@@ -40,8 +41,8 @@ function Today({ actions }: { actions: TodayActions }) {
       .todayStatus(dayStartSecs())
       .then(setSt)
       .catch(() => setSt(null));
-    Promise.all([api.exerciseHistory("read-", dayStartSecs()), api.exerciseHistory("rhythm-", dayStartSecs())])
-      .then(([r, h]) => setDrills({ read: r.length, rhythm: h.length }))
+    Promise.all([api.exerciseHistory("read-", dayStartSecs()), api.exerciseHistory("rhythm-", dayStartSecs()), api.exerciseHistory("ear-", dayStartSecs())])
+      .then(([r, h, e]) => setDrills({ read: r.length, rhythm: h.length, ear: e.length }))
       .catch(() => {});
     Promise.all([api.guitarState(), api.exerciseStats(), api.exerciseHistory("gtr-", dayStartSecs()), api.exerciseHistory("bass-", dayStartSecs()), api.exerciseHistory("fret-", dayStartSecs()), api.exerciseHistory("gchord-", dayStartSecs()), api.exerciseHistory("gchange-", dayStartSecs())])
       .then(([g, stats, a, b, f, c, ch]) => {
@@ -77,6 +78,12 @@ function Today({ actions }: { actions: TodayActions }) {
       title: "Ритм",
       text: drills.rhythm ? `Ритмов сегодня: ${drills.rhythm}` : "Простучать один ритм",
       go: actions.rhythm,
+    },
+    {
+      done: drills.ear > 0,
+      title: "Слух",
+      text: drills.ear ? `Серий сегодня: ${drills.ear}` : "Одна серия: интервалы, аккорды или ступени",
+      go: actions.ear,
     },
     ...(gtr
       ? [

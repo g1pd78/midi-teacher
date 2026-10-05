@@ -104,6 +104,11 @@ export function App() {
               setDrillReq(true);
               setScreen("trainer");
             },
+            ear: () => {
+              setTrainerSection("ear");
+              setDrillReq(true);
+              setScreen("trainer");
+            },
             piece: (id) => {
               setOpenPiece(id);
               setScreen("pieces");

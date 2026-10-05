@@ -34,8 +34,9 @@ import { PieceView } from "./PieceView";
 import { Trainer } from "./Trainer";
 import { Chords } from "./Chords";
 import { FretTrainer } from "./FretTrainer";
+import { Ear } from "./Ear";
 
-export type TrainerSection = "notes" | "reading" | "rhythm" | "chords" | "fretboard";
+export type TrainerSection = "notes" | "reading" | "rhythm" | "chords" | "fretboard" | "ear";
 
 const SECTIONS: { id: TrainerSection; title: string }[] = [
   { id: "notes", title: "Ноты" },
@@ -43,6 +44,7 @@ const SECTIONS: { id: TrainerSection; title: string }[] = [
   { id: "rhythm", title: "Ритм" },
   { id: "chords", title: "Аккорды" },
   { id: "fretboard", title: "Гриф" },
+  { id: "ear", title: "Слух" },
 ];
 
 /** Новое зерно: каждая попытка — новая мелодия или ритм. */
@@ -76,6 +78,7 @@ export function Trainers({
   if (section === "notes") return <Trainer tabs={tabs} />;
   if (section === "chords") return <Chords tabs={tabs} />;
   if (section === "fretboard") return <FretTrainer tabs={tabs} />;
+  if (section === "ear") return <Ear tabs={tabs} autoStart={autoStart} onAutoStarted={onAutoStarted} />;
   return <Drills key={section} kind={section} tabs={tabs} autoStart={autoStart} onAutoStarted={onAutoStarted} />;
 }
 

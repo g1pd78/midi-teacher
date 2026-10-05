@@ -132,9 +132,55 @@ pub fn midi_preview(
     let notes = midifile::track_preview(&data, track, PREVIEW_SECS);
     // Если GM-банк загружен — дорожка звучит своим инструментом (барабаны — барабанами).
     let voice = midifile::track_voice(&data, track).filter(|_| hub.audio.status().gm.is_some());
+    spawn_playback(Arc::clone(&hub), notes, voice)
+}
+
+/// Нота для проигрывания из интерфейса (задания тренажёра слуха).
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayNote {
+    start_ms: u32,
+    dur_ms: u32,
+    pitch: u8,
+    velocity: u8,
+}
+
+/// Канал GM для заданий с тембром (не 1-й — там звук приложения, не 10-й — барабаны).
+const PLAY_CHANNEL: u8 = 2;
+
+/// Проиграть ноты: инструментом GM (`program`, если банк загружен) или звуком приложения.
+/// Новый вызов и `midi_preview_stop` обрывают предыдущий.
+#[tauri::command]
+pub fn play_notes(
+    hub: State<Arc<MidiHub>>,
+    notes: Vec<PlayNote>,
+    program: Option<u8>,
+) -> Result<(), String> {
+    let voice = program
+        .filter(|_| hub.audio.status().gm.is_some())
+        .map(|p| (PLAY_CHANNEL, Some(p.min(127))));
+    let notes = notes
+        .into_iter()
+        .map(|n| {
+            (
+                n.start_ms,
+                n.dur_ms.max(1),
+                n.pitch.min(127),
+                n.velocity.clamp(1, 127),
+            )
+        })
+        .collect();
+    spawn_playback(Arc::clone(&hub), notes, voice)
+}
+
+/// Нить проигрывания нот (время мс, длительность мс, высота, сила): прежнее проигрывание обрывается.
+fn spawn_playback(
+    hub: Arc<MidiHub>,
+    notes: Vec<(u32, u32, u8, u8)>,
+    voice: Option<(u8, Option<u8>)>,
+) -> Result<(), String> {
     hub.stop_preview();
     let gen = hub.preview_gen.load(Ordering::SeqCst);
-    let hub = Arc::clone(&hub);
     thread::Builder::new()
         .name("mt-preview".into())
         .spawn(move || {

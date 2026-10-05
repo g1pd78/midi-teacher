@@ -545,6 +545,7 @@ export function createMock() {
     },
     guitar_expect: () => undefined,
     guitar_expect_chords: () => undefined,
+    play_notes: () => undefined,
     guitar_test_chord: ({ pitches }) => {
       const list = pitches as unknown as number[];
       for (const n of list) send("Гитара (звук)", { type: "noteOn", note: n, velocity: 90 });

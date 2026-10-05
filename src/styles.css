@@ -3053,3 +3053,53 @@ button.ex-star.on,
 .ex-all {
   margin-left: 6px;
 }
+
+/* Слух */
+.ear-options {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  max-width: 760px;
+}
+.ear-option {
+  min-width: 84px;
+  padding: 10px 16px;
+  font-size: 17px;
+}
+.ear-option.right {
+  border-color: var(--good);
+  color: var(--good);
+}
+.ear-option.wrong {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+.ear-how {
+  font-size: 13px;
+}
+.ear-explain {
+  font-size: 16px;
+}
+.good-text {
+  color: var(--good);
+}
+.dictation-slots {
+  display: flex;
+  gap: 8px;
+}
+.dictation-slot {
+  min-width: 52px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  text-align: center;
+  font-size: 16px;
+}
+.dictation-slot.ok {
+  border-color: var(--good);
+  color: var(--good);
+}
+.dictation-slot.bad {
+  border-color: var(--bad);
+}

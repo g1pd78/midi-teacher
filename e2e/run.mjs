@@ -1336,6 +1336,69 @@ try {
   await waitFor("к упражнениям", () => click("К упражнениям"));
   await waitFor("переключатель «Фортепиано»", () => clickSel("[data-ex-instrument-btn='piano']"));
 
+  console.log("Сквозной тест: слух");
+  const ear = (a) => js(`return document.querySelector('[data-ear-index]')?.dataset.${a} ?? '';`);
+  await waitFor("вкладка тренажёров", () => click("Тренажёры"));
+  await waitFor("раздел «Слух»", () => clickSel("[data-trainer-section='ear']"));
+  await waitFor("интервалы, ступень 1", () => clickSel("[data-ear-level='interval-1']"));
+  await waitFor("первый вопрос", () => ear("earCorrect"));
+  // Первый вопрос — сначала неверная кнопка: ответ засчитывается, но не с первой попытки.
+  await js("const c = document.querySelector('[data-ear-index]').dataset.earCorrect; [...document.querySelectorAll('[data-ear-option]')].find((b) => b.dataset.earOption !== c).click();");
+  for (let i = 0; i < 12; i++) {
+    if (await ear("earDone")) break;
+    const idx = await ear("earIndex");
+    // Чередуем: кнопка и ответ игрой (вторая нота интервала).
+    if (i % 2) await press(Number((await ear("earExpected")).split(",")[0]));
+    else await clickSel(`[data-ear-option='${await ear("earCorrect")}']`);
+    await waitFor(`интервал ${idx}`, async () => (await ear("earIndex")) !== idx, 5000);
+  }
+  const intervalDone = await waitFor("итог серии интервалов", () => ear("earDone"), 5000);
+  if (intervalDone !== "passed") throw new Error(`интервалы: ${await js("return document.querySelector('.ear-drill').innerText;")}`);
+  await waitFor("зачёт записан", async () => (await invoke("exercise_stats")).some((x) => x.exercise === "ear-interval-1" && x.passed), 5000);
+  ok("слух: интервалы — 9 из 10 с первой попытки (кнопками и игрой), серия засчитана");
+  await waitFor("к списку", () => click("К списку"));
+  await waitFor("ступень 2 интервалов открыта", () => js("return !document.querySelector(\"[data-ear-level='interval-2']\")?.disabled;"));
+
+  // Мелодический диктант: ошибка в первой ноте, затем мелодии целиком.
+  await waitFor("диктант 1", () => clickSel("[data-ear-level='melody-1']"));
+  await waitFor("мелодия", () => ear("earExpected"));
+  await press(Number((await ear("earExpected")).split(",")[0]) + 1);
+  await waitFor("ошибка отмечена", () => js("return !!document.querySelector('.dictation-slot.bad');"), 3000);
+  for (let i = 0; i < 6; i++) {
+    if (await ear("earDone")) break;
+    const idx = await ear("earIndex");
+    for (const p of (await ear("earExpected")).split(",").map(Number)) await press(p);
+    await waitFor(`мелодия ${idx}`, async () => (await ear("earIndex")) !== idx, 5000);
+  }
+  if ((await waitFor("итог диктанта", () => ear("earDone"), 5000)) !== "passed") throw new Error("мелодический диктант не засчитан");
+  ok("слух: мелодический диктант — ошибка показана, 4 из 5 с первой попытки, засчитан");
+  await waitFor("к списку", () => click("К списку"));
+
+  // Ритмический диктант: удары в нужные моменты — отсчёт и такты идут в самом окне.
+  await waitFor("ритм 1", () => clickSel("[data-ear-level='rhythm-1']"));
+  await waitFor("кнопка «Твоя очередь»", () => clickSel("[data-ear-start]"));
+  await waitFor("фаза ударов", async () => (await ear("earPhase")) === "tap", 8000);
+  const onsets = (await ear("earRhythm")).split(",").map(Number);
+  await jsAsync(
+    "const [on, done] = arguments; const t0 = performance.now(); const hit = (p) => window.__TAURI_INTERNALS__.invoke('simulate_midi', { device: 'E2E', bytes: [0x90, 60, 100] }).then(() => window.__TAURI_INTERNALS__.invoke('simulate_midi', { device: 'E2E', bytes: [0x80, 60, 0] }));" +
+      "(async () => { for (const t of on) { while (performance.now() - t0 < t + 150) await new Promise((r) => setTimeout(r, 2)); hit(); } done(true); })();",
+    [onsets],
+  );
+  await sleep(300);
+  await clickSel("[data-ear-finish]");
+  const rhythmVerdict = await waitFor("вердикт ритма", () => js("return document.querySelector('[data-ear-verdict]')?.dataset.earVerdict ?? '';"), 5000);
+  if (rhythmVerdict !== "ok") throw new Error(`ритм: ${await js("return document.querySelector('.ear-drill').innerText;")}`);
+  await waitFor("запись ритма нотами", () => js("return !!document.querySelector('.ear-drill .chord-staff svg');"), 10000);
+  ok(`слух: ритмический диктант — ${onsets.length} ударов простучаны вовремя, показана запись нотами`);
+  await waitFor("к разделу «Слух»", () => click("← Слух"));
+  await waitFor("список ступеней слуха", () => js("return !!document.querySelector(\"[data-ear-level='interval-1']\");"));
+
+  await waitFor("главная", () => click("Главная"));
+  await waitFor("шаг «Слух» сделан", () =>
+    js("return [...document.querySelectorAll('.today-step.done b')].some((b) => b.textContent === 'Слух');"),
+  10000);
+  ok("главная: шаг «Слух» отмечен сделанным");
+
   console.log("Сквозной тест: доводка");
   // Панель пьесы: редкое — в меню «⋯»; Esc закрывает только меню.
   await waitFor("вкладка пьес", () => click("Пьесы"));

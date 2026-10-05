@@ -731,6 +731,9 @@ export const api = {
   midiConvert: (id: string, options: ConvertOptions) => invoke<Converted>("midi_convert", { id, options }),
   midiPreview: (id: string, track: number) => invoke<void>("midi_preview", { id, track }),
   midiPreviewStop: () => invoke<void>("midi_preview_stop"),
+  /** Проиграть ноты (задания тренажёра слуха): инструментом GM или звуком приложения (`program` = null). */
+  playNotes: (notes: { startMs: number; durMs: number; pitch: number; velocity: number }[], program: number | null) =>
+    invoke<void>("play_notes", { notes, program }),
   recordStart: (bpm: number, beatsPerBar: number, metronome: boolean, countIn: boolean) =>
     invoke<void>("record_start", { bpm, beatsPerBar, metronome, countIn }),
   recordStatus: () => invoke<RecordStatus>("record_status"),

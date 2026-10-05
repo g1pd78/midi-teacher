@@ -678,7 +678,8 @@ impl Store {
                    AND exercise NOT LIKE 'read-%' AND exercise NOT LIKE 'rhythm-%'
                    AND exercise NOT LIKE 'chord-%' AND exercise NOT LIKE 'gtr-%'
                    AND exercise NOT LIKE 'bass-%' AND exercise NOT LIKE 'fret-%'
-                   AND exercise NOT LIKE 'gchord-%' AND exercise NOT LIKE 'gchange-%'",
+                   AND exercise NOT LIKE 'gchord-%' AND exercise NOT LIKE 'gchange-%'
+                   AND exercise NOT LIKE 'ear-%'",
             )?,
             trainer_sessions: count(
                 "SELECT COUNT(*) FROM trainer_sessions WHERE finished_at >= ?1",
@@ -1031,6 +1032,7 @@ mod tests {
             "fret-guitar-2",
             "gchord-1",
             "gchange-Am-C",
+            "ear-int-1",
         ] {
             store.record_exercise(&res(id, 0.95, true), 400).unwrap();
         }
