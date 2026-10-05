@@ -3,7 +3,9 @@ import createVerovioModule from "verovio/wasm";
 import { VerovioToolkit } from "verovio/esm";
 import { readFileSync } from "node:fs";
 import { buildNotes, parseMei, timemapNoteIds, type MidiValues, type TimemapEntry } from "./score";
-import { CARDS, THEORY_GROUPS, detectFeatures, trainerFeatures } from "./theory";
+import { CARDS, THEORY_GROUPS, detectFeatures, tabFeatures, trainerFeatures } from "./theory";
+import { loadGuitarPro } from "./gp";
+import { partChart } from "./tabsong";
 import { EXERCISE_BY_ID, exerciseMei } from "./exercises";
 
 type Tk = VerovioToolkit & {
@@ -51,8 +53,19 @@ describe("карточки теории", () => {
       const svg = tk.renderToSVG(1);
       expect(svg.length, c.id).toBeGreaterThan(1000);
       // Пример содержит элемент своей карточки.
-      expect(features(mei), c.id).toContain(c.id);
+      const found = c.group === "Гитара и бас" ? tabFeatures(mei, { capo: c.id === "capo" ? 2 : 0, tuningChanged: c.id === "tuning", fingers: false }) : features(mei);
+      expect(found, c.id).toContain(c.id);
     }
+  });
+});
+
+describe("табы: приёмы для карточек", () => {
+  it("файл Guitar Pro с приёмами — карточки табов, хаммеров, слайдов, бендов, PM, флажолетов", async () => {
+    const song = await loadGuitarPro(new Uint8Array(readFileSync("src/lib/fixtures/gp/5-effects.gp5")));
+    const ids = tabFeatures(partChart(song, 0).mei, { capo: 0, tuningChanged: false, fingers: false });
+    for (const id of ["tab", "strings-frets", "hammer-pull", "slide", "bend", "palm-mute", "vibrato", "dead-note", "harmonics"]) expect(ids).toContain(id);
+    expect(ids).not.toContain("capo");
+    expect(tabFeatures("", { capo: 3, tuningChanged: true, fingers: true })).toEqual(["tab", "strings-frets", "left-fingers", "tuning", "capo"]);
   });
 });
 

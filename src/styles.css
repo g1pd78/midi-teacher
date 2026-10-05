@@ -2858,3 +2858,16 @@ button.danger {
   width: 100%;
   height: auto;
 }
+
+/* Тренажёр грифа */
+.fret-task {
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--text);
+}
+.fret-board-wrap {
+  padding: 8px 0;
+}
+.ex-instrument {
+  margin: 4px 0 8px;
+}

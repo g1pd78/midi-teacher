@@ -3,7 +3,7 @@ import { useApp } from "./store";
 import { Header } from "./components/Header";
 import { Hotkeys } from "./components/Hotkeys";
 import { Home } from "./screens/Home";
-import { Exercises } from "./screens/Exercises";
+import { Exercises, type ExInstrument } from "./screens/Exercises";
 import { Guitar } from "./screens/Guitar";
 import { Drums } from "./screens/Drums";
 import { Studio } from "./screens/Studio";
@@ -24,6 +24,7 @@ export function App() {
   const [openPiece, setOpenPiece] = useState<string | null>(null);
   // Разминка по кнопке с главного экрана.
   const [warmupReq, setWarmupReq] = useState(false);
+  const [exInstrument, setExInstrument] = useState<ExInstrument | undefined>(undefined);
   // «Тренажёры»: открытый раздел и запуск текущей ступени с главной.
   const [trainerSection, setTrainerSection] = useState<TrainerSection>("notes");
   const [drillReq, setDrillReq] = useState(false);
@@ -59,6 +60,12 @@ export function App() {
           onNavigate={setScreen}
           today={{
             warmup: () => {
+              setExInstrument("piano");
+              setWarmupReq(true);
+              setScreen("exercises");
+            },
+            guitar: (inst) => {
+              setExInstrument(inst);
               setWarmupReq(true);
               setScreen("exercises");
             },
@@ -92,7 +99,7 @@ export function App() {
           }}
         />
       )}
-      {screen === "exercises" && <Exercises startWarmup={warmupReq} onWarmupStarted={() => setWarmupReq(false)} />}
+      {screen === "exercises" && <Exercises startWarmup={warmupReq} onWarmupStarted={() => setWarmupReq(false)} instrument={exInstrument} />}
       {screen === "trainer" && (
         <Trainers
           section={trainerSection}

@@ -32,14 +32,16 @@ import {
 import { PieceView } from "./PieceView";
 import { Trainer } from "./Trainer";
 import { Chords } from "./Chords";
+import { FretTrainer } from "./FretTrainer";
 
-export type TrainerSection = "notes" | "reading" | "rhythm" | "chords";
+export type TrainerSection = "notes" | "reading" | "rhythm" | "chords" | "fretboard";
 
 const SECTIONS: { id: TrainerSection; title: string }[] = [
   { id: "notes", title: "Ноты" },
   { id: "reading", title: "Чтение с листа" },
   { id: "rhythm", title: "Ритм" },
   { id: "chords", title: "Аккорды" },
+  { id: "fretboard", title: "Гриф" },
 ];
 
 /** Новое зерно: каждая попытка — новая мелодия или ритм. */
@@ -72,6 +74,7 @@ export function Trainers({
   );
   if (section === "notes") return <Trainer tabs={tabs} />;
   if (section === "chords") return <Chords tabs={tabs} />;
+  if (section === "fretboard") return <FretTrainer tabs={tabs} />;
   return <Drills key={section} kind={section} tabs={tabs} autoStart={autoStart} onAutoStarted={onAutoStarted} />;
 }
 

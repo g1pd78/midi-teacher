@@ -12,6 +12,23 @@ import {
   type ExerciseStatView,
 } from "../lib/exercises";
 import { PieceView } from "./PieceView";
+import { GuitarExercises } from "./GuitarExercises";
+
+export type ExInstrument = "piano" | "guitar" | "bass";
+const INSTRUMENTS: { id: ExInstrument; title: string }[] = [
+  { id: "piano", title: "Фортепиано" },
+  { id: "guitar", title: "Гитара" },
+  { id: "bass", title: "Бас" },
+];
+
+function savedInstrument(): ExInstrument {
+  try {
+    const v = localStorage.getItem("mt-ex-instrument");
+    return v === "guitar" || v === "bass" ? v : "piano";
+  } catch {
+    return "piano";
+  }
+}
 
 /** Ключ местного дня: «2026-10-01». */
 export function dayKey(d = new Date()): string {
@@ -29,7 +46,44 @@ interface Run {
   warmup: boolean;
 }
 
-export function Exercises({ startWarmup, onWarmupStarted }: { startWarmup?: boolean; onWarmupStarted?: () => void }) {
+/** «Упражнения»: фортепиано, гитара и бас — переключатель вверху (запоминается). */
+export function Exercises({
+  startWarmup,
+  onWarmupStarted,
+  instrument: forced,
+}: {
+  startWarmup?: boolean;
+  onWarmupStarted?: () => void;
+  /** С главной: открыть упражнения этого инструмента. */
+  instrument?: ExInstrument;
+}) {
+  const [instrument, setInstrument] = useState<ExInstrument>(forced ?? savedInstrument());
+  useEffect(() => {
+    if (forced) setInstrument(forced);
+  }, [forced]);
+  const choose = (i: ExInstrument) => {
+    setInstrument(i);
+    try {
+      localStorage.setItem("mt-ex-instrument", i);
+    } catch {
+      // не страшно
+    }
+  };
+  const switcher = (
+    <span className="segmented ex-instrument" data-ex-instrument={instrument}>
+      {INSTRUMENTS.map((x) => (
+        <button key={x.id} className={instrument === x.id ? "on" : ""} onClick={() => choose(x.id)} data-ex-instrument-btn={x.id}>
+          {x.title}
+        </button>
+      ))}
+    </span>
+  );
+  if (instrument !== "piano")
+    return <GuitarExercises key={instrument} instrument={instrument} switcher={switcher} startWarmup={startWarmup} onWarmupStarted={onWarmupStarted} />;
+  return <PianoExercises switcher={switcher} startWarmup={startWarmup} onWarmupStarted={onWarmupStarted} />;
+}
+
+function PianoExercises({ switcher, startWarmup, onWarmupStarted }: { switcher: React.ReactNode; startWarmup?: boolean; onWarmupStarted?: () => void }) {
   const [stats, setStats] = useState<ExerciseStatView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [run, setRun] = useState<Run | null>(null);
@@ -140,6 +194,7 @@ export function Exercises({ startWarmup, onWarmupStarted }: { startWarmup?: bool
         <div className="warmup-head">
           <div>
             <h1>Упражнения</h1>
+            {switcher}
             <p className="hint">
               Гаммы, арпеджио и узоры для пальцев со стандартной аппликатурой. Играются в темпе под метроном: приложение
               оценивает верные ноты, ровность ритма и громкости. Следующее упражнение открывается, когда предыдущее

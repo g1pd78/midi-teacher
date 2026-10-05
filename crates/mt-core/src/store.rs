@@ -672,10 +672,12 @@ impl Store {
             .optional()?;
         Ok(TodayStatus {
             warmup_done: warmup_at >= day_start_secs,
-            // Чтение с листа и ритм — отдельные шаги занятия, не разминка.
+            // Чтение с листа, ритм, аккорды, гитара и бас — отдельные шаги занятия, не разминка.
             exercises: count(
                 "SELECT COUNT(*) FROM exercise_results WHERE finished_at >= ?1
-                   AND exercise NOT LIKE 'read-%' AND exercise NOT LIKE 'rhythm-%'",
+                   AND exercise NOT LIKE 'read-%' AND exercise NOT LIKE 'rhythm-%'
+                   AND exercise NOT LIKE 'chord-%' AND exercise NOT LIKE 'gtr-%'
+                   AND exercise NOT LIKE 'bass-%' AND exercise NOT LIKE 'fret-%'",
             )?,
             trainer_sessions: count(
                 "SELECT COUNT(*) FROM trainer_sessions WHERE finished_at >= ?1",
@@ -1021,6 +1023,14 @@ mod tests {
         assert!(hist[0].passed && hist[0].finished_at == 400);
         assert!(store.exercise_history("read-", 401).unwrap().is_empty());
         assert_eq!(store.exercise_history("five-", 0).unwrap().len(), 1);
+        // Гитара и тренажёр грифа — тоже не разминка.
+        for id in [
+            "gtr-spider-1234-5-60",
+            "bass-groove-roots-90",
+            "fret-guitar-2",
+        ] {
+            store.record_exercise(&res(id, 0.95, true), 400).unwrap();
+        }
 
         let t = store.today(150).unwrap();
         assert_eq!(

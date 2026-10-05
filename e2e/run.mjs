@@ -1166,6 +1166,68 @@ try {
   await waitFor("назад к списку пьес", () => click("← Пьесы"));
   await waitFor("список пьес", () => js("return !!document.querySelector('.piece-card');"));
 
+  console.log("Сквозной тест: гитарные упражнения и гриф");
+  const clickSel = (sel) => js("const b = document.querySelector(arguments[0]); if (!b || b.disabled) return false; b.click(); return true;", [sel]);
+  await waitFor("вкладка «Упражнения»", () => click("Упражнения"));
+  await waitFor("переключатель «Гитара»", () => clickSel("[data-ex-instrument-btn='guitar']"));
+  await waitFor("гитарные упражнения", () => js("return !!document.querySelector(\"[data-gtr-exercises='guitar'] [data-exercise='gtr-spider-1234-5-60']\");"));
+  if (await js("return !document.querySelector(\"[data-category='pentatonic']\")?.classList.contains('locked');")) throw new Error("пентатоника открыта сразу");
+  await waitFor("паучок 1-2-3-4", () => clickSel("[data-exercise='gtr-spider-1234-5-60']"));
+  await waitFor("табы паучка", () => js("return document.querySelectorAll('.tab-score g.note').length === 48 && !!document.querySelector('[data-ex-hint]');"), 30000);
+  if (!(await js("return document.querySelector('.score-page svg')?.textContent.includes('4');"))) throw new Error("нет пальцев над табами");
+  // Ожидание: разобрать узор по нотам.
+  await waitFor("режим ожидания", () => click("Ожидание"));
+  await waitFor("первая нота — ля (45)", async () => (await pitches()) === "45", 15000);
+  const spiderSteps = await playWait("паучок", press);
+  if (spiderSteps !== 48) throw new Error(`нот в паучке: ${spiderSteps}`);
+  // В темпе: бот играет по часам — засчитано.
+  await js("document.querySelector('.summary-overlay button')?.click();");
+  await waitFor("режим «в темпе»", () => click("В темпе"));
+  await js("document.querySelector('.score-scroll')?.removeAttribute('data-transport');");
+  await waitFor("старт", () => click("▶ Старт"));
+  await playInTempo();
+  await waitFor("итог паучка", () => js("return !!document.querySelector('.exercise-summary');"), 30000);
+  if ((await scroll("exResult")) !== "passed") throw new Error(`паучок не засчитан:\n${await js("return document.querySelector('.exercise-summary').innerText;")}`);
+  ok(`паучок 1-2-3-4: табы с пальцами, ${spiderSteps} нот в ожидании, в темпе — засчитан`);
+  await waitFor("к упражнениям", () => click("К упражнениям"));
+  await waitFor("пентатоника и грувы открылись", () =>
+    js("return !document.querySelector(\"[data-category='pentatonic']\")?.classList.contains('locked') && !document.querySelector(\"[data-exercise='gtr-groove-rock-90']\")?.disabled;"),
+  10000);
+  // Игра под барабаны: своя партия — гитара, барабаны звучат аккомпанементом.
+  await waitFor("грув «Рок»", () => clickSel("[data-exercise='gtr-groove-rock-90']"));
+  await waitFor("табы грува", () => js("return document.querySelectorAll('.tab-score g.note').length > 8;"), 30000);
+  ok("после паучка открылись пентатоника и игра под барабаны");
+  await waitFor("к упражнениям", () => click("← Упражнения"));
+  await waitFor("переключатель «Фортепиано»", () => clickSel("[data-ex-instrument-btn='piano']"));
+
+  // Тренажёр грифа: открытые струны, одна ошибка — всё равно зачёт (от 85%).
+  await waitFor("вкладка тренажёров", () => click("Тренажёры"));
+  await waitFor("раздел «Гриф»", () => clickSel("[data-trainer-section='fretboard']"));
+  await waitFor("ступень 1", () => clickSel("[data-fret-level='1']"));
+  const fretPitch = () => js("return document.querySelector('[data-fret-index]')?.dataset.fretPitch ?? '';");
+  await waitFor("первое задание", fretPitch);
+  await press(Number(await fretPitch()) + 1);
+  await waitFor("ошибка отмечена", () => js("return !!document.querySelector('.fret-drill .flash-wrong');"), 3000).catch(() => {});
+  for (let i = 0; i < 20; i++) {
+    const p = await fretPitch();
+    if (!p) break;
+    const idx = await js("return document.querySelector('[data-fret-index]').dataset.fretIndex;");
+    await press(Number(p));
+    await waitFor(`гриф: задание ${idx}`, async () => (await js("return document.querySelector('[data-fret-index]').dataset.fretIndex;")) !== idx || !(await fretPitch()), 5000);
+  }
+  const fretDone = await waitFor("итог серии грифа", () => js("return document.querySelector('[data-fret-index]')?.dataset.fretDone;"), 10000);
+  if (fretDone !== "passed") throw new Error(`гриф: ${await js("return document.querySelector('.fret-drill').innerText;")}`);
+  await waitFor("зачёт ступени записан", async () => (await invoke("exercise_stats")).some((x) => x.exercise === "fret-guitar-1" && x.passed), 5000);
+  ok("тренажёр грифа: открытые струны — серия из 12 заданий засчитана, ступень 2 открыта");
+  await waitFor("к списку ступеней", () => click("К списку"));
+  await waitFor("ступень 2 открыта", () => js("return !document.querySelector(\"[data-fret-level='2']\")?.disabled;"));
+
+  await waitFor("главная", () => click("Главная"));
+  await waitFor("шаг «Гитара» сделан", () =>
+    js("return [...document.querySelectorAll('.today-step.done b')].some((b) => b.textContent === 'Гитара');"),
+  10000);
+  ok("главная: шаг «Гитара» в «Занятии на сегодня» отмечен сделанным");
+
   console.log("Сквозной тест: доводка");
   // Панель пьесы: редкое — в меню «⋯»; Esc закрывает только меню.
   await waitFor("вкладка пьес", () => click("Пьесы"));

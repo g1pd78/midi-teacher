@@ -3,6 +3,7 @@ import {
   api,
   listen,
   PADS_DEVICE,
+  type AccompNote,
   type AttemptRecord,
   type Converted,
   type GuitarConfig,
@@ -39,7 +40,7 @@ import { RetunePanel } from "../components/Tuner";
 import { TrackDialog } from "../components/TrackDialog";
 import { accompNotes, overrideFor, toggleOverride } from "../lib/midi";
 import { TheoryPlaque } from "../components/Theory";
-import { detectFeatures } from "../lib/theory";
+import { detectFeatures, tabFeatures } from "../lib/theory";
 import { Waterfall, type NoteState } from "../components/Waterfall";
 import { keyLabel } from "../lib/notes";
 import { fingerNotes, injectFingering, parseFinger, type Finger } from "../lib/fingering";
@@ -86,6 +87,8 @@ export interface PieceSource {
   backLabel?: string;
   /** Песня с партиями из библиотеки (Rocksmith, Guitar Pro, текстовый таб): выбираешь партию, остальные звучат. */
   songFile?: { id: string; format: SongFormat };
+  /** Что звучит вместе с учеником (упражнения под барабаны). */
+  accompaniment?: AccompNote[];
 }
 
 const NO_SETUP: PieceSetup = { transpose: 0, roles: null, handOverrides: [], instrument: null, part: 0 };
@@ -186,8 +189,11 @@ export interface ExerciseContext {
   /**
    * Барабанное упражнение: дорожка по барабанам и пэды вместо клавиатуры.
    * Ритм: однолинейный стан, дорожка из одной-двух строк, стучать любой клавишей или пэдом.
+   * Гитара/бас: табы и гриф.
    */
-  instrument?: "drums" | "rhythm";
+  instrument?: "drums" | "rhythm" | "guitar" | "bass";
+  /** Подсказка перед игрой (позиция, пальцы). */
+  hint?: string;
   /** Подсказки ступени (чтение с листа): начальные значения переключателей. */
   hints?: Hints;
   /** Сопоставление нажатий с нотами (ритм: любая клавиша / по рукам). */
@@ -259,7 +265,9 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const instrument: PieceInstrument = exercise
     ? exercise.instrument === "drums"
       ? "drums"
-      : "piano"
+      : exercise.instrument === "guitar" || exercise.instrument === "bass"
+        ? exercise.instrument
+        : "piano"
     : source.songFile
       ? filePart?.kind === "bass"
         ? "bass"
@@ -436,10 +444,12 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     () =>
       fileSong
         ? accompNotes(fileSong.accompaniment(partIndex)).map((n) => ({ ...n, id: `fs-${n.id}` }))
-        : converted
+        : source.accompaniment
+          ? accompNotes(source.accompaniment).map((n) => ({ ...n, id: `ex-${n.id}` }))
+          : converted
           ? accompNotes(drums ? [...converted.accompaniment, ...converted.handsAccompaniment] : converted.accompaniment)
           : [],
-    [converted, drums, fileSong, partIndex],
+    [converted, drums, fileSong, partIndex, source.accompaniment],
   );
 
   // Размер области нот: ширина — для раскладки страниц, полный размер — для рамок тактов.
@@ -593,10 +603,16 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   }, [fingerInput, fingerKey, strInst, drums]);
   const fingerOf = useMemo(() => new Map((fingers ?? []).map((f) => [f.id, f])), [fingers]);
   // Элементы нотной записи в пьесе — для плашек теории «Новое».
+  const tabTuningChanged = !!strInst && !!tab && !sameTuning(tab.tuning.map((m) => m - tab.capo), TUNINGS[strInst]);
   const theoryFeatures = useMemo(
-    () => (displayMei && scoreRef.current && !tab && !drums && !rhythmEx ? detectFeatures(displayMei, scoreRef.current.structure, scoreRef.current.notes) : []),
+    () =>
+      displayMei && tab
+        ? tabFeatures(displayMei, { capo: tab.capo, tuningChanged: tabTuningChanged, fingers: false })
+        : displayMei && scoreRef.current && !drums && !rhythmEx
+          ? detectFeatures(displayMei, scoreRef.current.structure, scoreRef.current.notes)
+          : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [displayMei, notesKey],
+    [displayMei, notesKey, tabTuningChanged],
   );
   const waterfallFingers = useMemo(
     () => (showFingers ? new Map((fingers ?? []).map((f) => [f.id, { finger: f.finger, auto: f.source === "auto" }])) : null),
@@ -1826,6 +1842,11 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
           Часть нот придётся играть на другом инструменте.
         </div>
       ))}
+      {exercise?.hint && (
+        <div className="notice info" data-ex-hint>
+          {exercise.hint}
+        </div>
+      )}
       {strInst && guitarOn === false && (
         <div className="notice info">
           Вход гитары выключен — приложение не услышит {strInst === "bass" ? "бас" : "гитару"}. Включи «Слушать вход» на

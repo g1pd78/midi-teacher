@@ -21,6 +21,8 @@ export interface TodayActions {
   reading: () => void;
   rhythm: () => void;
   piece: (id: string | null) => void;
+  /** Гитара или бас: упражнения на сегодня. */
+  guitar: (instrument: "guitar" | "bass") => void;
 }
 
 /** Сколько мелодий с листа и ритмов — в занятии на день. */
@@ -31,6 +33,8 @@ const RHYTHM_PER_DAY = 1;
 function Today({ actions }: { actions: TodayActions }) {
   const [st, setSt] = useState<TodayStatus | null>(null);
   const [drills, setDrills] = useState({ read: 0, rhythm: 0 });
+  // Шаг «Гитара» — если вход гитары включён или гитарные упражнения уже были.
+  const [gtr, setGtr] = useState<{ instrument: "guitar" | "bass"; today: number } | null>(null);
   useEffect(() => {
     api
       .todayStatus(dayStartSecs())
@@ -38,6 +42,12 @@ function Today({ actions }: { actions: TodayActions }) {
       .catch(() => setSt(null));
     Promise.all([api.exerciseHistory("read-", dayStartSecs()), api.exerciseHistory("rhythm-", dayStartSecs())])
       .then(([r, h]) => setDrills({ read: r.length, rhythm: h.length }))
+      .catch(() => {});
+    Promise.all([api.guitarState(), api.exerciseStats(), api.exerciseHistory("gtr-", dayStartSecs()), api.exerciseHistory("bass-", dayStartSecs()), api.exerciseHistory("fret-", dayStartSecs())])
+      .then(([g, stats, a, b, f]) => {
+        const used = g.config.enabled || stats.some((s) => /^(gtr|bass|fret)-/.test(s.exercise));
+        if (used) setGtr({ instrument: g.config.instrument, today: a.length + b.length + f.length });
+      })
       .catch(() => {});
   }, []);
   if (!st) return null;
@@ -68,6 +78,16 @@ function Today({ actions }: { actions: TodayActions }) {
       text: drills.rhythm ? `Ритмов сегодня: ${drills.rhythm}` : "Простучать один ритм",
       go: actions.rhythm,
     },
+    ...(gtr
+      ? [
+          {
+            done: gtr.today > 0,
+            title: gtr.instrument === "bass" ? "Бас" : "Гитара",
+            text: gtr.today ? `Упражнений сегодня: ${gtr.today}` : "Паучок и ещё одно упражнение",
+            go: () => actions.guitar(gtr.instrument),
+          },
+        ]
+      : []),
     {
       done: st.pieceAttempts > 0,
       title: st.lastPiece ? `«${st.lastPiece[1]}»` : "Пьеса",
