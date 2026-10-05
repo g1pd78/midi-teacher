@@ -4,6 +4,7 @@ import { BUILTIN_PIECES } from "../pieces";
 import { PieceView, type PieceSource } from "./PieceView";
 import { RecordPanel } from "../components/RecordPanel";
 import { FragmentStrip } from "./Progress";
+import { TabPaste } from "../components/TabPaste";
 
 export function Pieces({ initial, onInitialOpened }: { initial?: string | null; onInitialOpened?: () => void }) {
   const [listing, setListing] = useState<LibraryListing | null>(null);
@@ -13,6 +14,7 @@ export function Pieces({ initial, onInitialOpened }: { initial?: string | null; 
   const [open, setOpen] = useState<PieceSource | null>(null);
   const [progress, setProgress] = useState<Map<string, PieceProgress>>(new Map());
   const [recording, setRecording] = useState(false);
+  const [pasting, setPasting] = useState(false);
 
   const reload = useCallback(() => {
     api.libraryList().then(setListing).catch((e) => setError(String(e)));
@@ -23,7 +25,7 @@ export function Pieces({ initial, onInitialOpened }: { initial?: string | null; 
       if (!paths.length) return;
       try {
         const added = await api.libraryImport(paths);
-        setMessage(added.length ? `Добавлено: ${added.join(", ")}` : "Подходящих файлов нет (нужны .musicxml, .mxl, .mid или .psarc)");
+        setMessage(added.length ? `Добавлено: ${added.join(", ")}` : "Подходящих файлов нет (нужны .musicxml, .mxl, .mid, .psarc, .gp3–.gp5, .gp или .txt с табом)");
         reload();
       } catch (e) {
         setError(String(e));
@@ -70,7 +72,7 @@ export function Pieces({ initial, onInitialOpened }: { initial?: string | null; 
           return item.format === "mxl" ? { data: buf, zip: true } : { data: new TextDecoder().decode(buf), zip: false };
         },
         midi: item.format === "midi" ? item.id : undefined,
-        rocksmith: item.format === "psarc" ? item.id : undefined,
+        songFile: item.format === "psarc" || item.format === "gp" || item.format === "tab" ? { id: item.id, format: item.format } : undefined,
       }),
     [],
   );
@@ -140,6 +142,9 @@ export function Pieces({ initial, onInitialOpened }: { initial?: string | null; 
               ● Записать игру
             </button>
             <button onClick={async () => importPaths(await pickScoreFiles())}>Добавить файл…</button>
+            <button onClick={() => setPasting(true)} data-tab-paste-open>
+              Вставить таб…
+            </button>
             <button onClick={() => void api.libraryOpenFolder()}>Открыть папку</button>
           </span>
         </div>
@@ -153,6 +158,16 @@ export function Pieces({ initial, onInitialOpened }: { initial?: string | null; 
             }}
           />
         )}
+        {pasting && (
+          <TabPaste
+            onClose={() => setPasting(false)}
+            onSaved={(file) => {
+              setPasting(false);
+              setMessage(`Таб сохранён: ${file}`);
+              reload();
+            }}
+          />
+        )}
         {error && <div className="notice warn">{error}</div>}
         {message && <div className="notice info">{message}</div>}
         <p className="hint">
@@ -160,7 +175,9 @@ export function Pieces({ initial, onInitialOpened }: { initial?: string | null; 
           {listing ? <code>{listing.dir}</code> : "библиотеки"}. Можно просто перетащить файл в окно. Из MIDI приложение
           само строит ноты: при первом открытии выбери, какие дорожки играешь. Песни Rocksmith — пользовательские (CDLC,
           например с CustomsForge): скачай файл сам и добавь сюда — откроются табы гитары и баса с настоящим строем;
-          официальные DLC игры не открываются.
+          официальные DLC игры не открываются. Файлы Guitar Pro (.gp3, .gp4, .gp5, .gp) — все партии: гитара и бас
+          табами, фортепиано и мелодии нотами, барабаны — для пэдов; остальные партии звучат. Текстовый таб с сайта —
+          кнопка «Вставить таб…».
         </p>
         {listing && listing.items.length === 0 && <p className="muted">Пока пусто.</p>}
         <div className="piece-grid">
@@ -170,6 +187,8 @@ export function Pieces({ initial, onInitialOpened }: { initial?: string | null; 
               <div className="piece-composer">{item.id}</div>
               {item.format === "midi" && <span className="chip small">MIDI</span>}
               {item.format === "psarc" && <span className="chip small" title="Песня Rocksmith (CDLC): табы гитары и баса">Rocksmith</span>}
+              {item.format === "gp" && <span className="chip small" title="Guitar Pro: все партии, выбираешь свою">Guitar Pro</span>}
+              {item.format === "tab" && <span className="chip small" title="Текстовый таб">Таб</span>}
               {strip(`user:${item.id}`)}
             </button>
           ))}

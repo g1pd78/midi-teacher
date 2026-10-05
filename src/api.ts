@@ -547,7 +547,7 @@ export interface Progress {
 export interface LibraryItem {
   id: string;
   title: string;
-  format: "musicxml" | "mxl" | "midi" | "psarc";
+  format: "musicxml" | "mxl" | "midi" | "psarc" | "gp" | "tab";
   size: number;
   modified: number;
 }
@@ -700,6 +700,8 @@ export const api = {
   libraryRead: (id: string) => invoke<ArrayBuffer>("library_read", { id }),
   /** Песня Rocksmith (CDLC) из библиотеки: партии, строй, секции. */
   rocksmithOpen: (id: string) => invoke<RsSong>("rocksmith_open", { id }),
+  /** Сохранить вставленный текстовый таб в библиотеку; возвращает имя файла. */
+  libraryAddText: (name: string, text: string) => invoke<string>("library_add_text", { name, text }),
   libraryImport: (paths: string[]) => invoke<string[]>("library_import", { paths }),
   libraryOpenFolder: () => invoke<void>("library_open_folder"),
   pieceStart: (notes: PieceNoteIn[], config: PieceConfig) => invoke<number>("piece_start", { notes, config }),
@@ -773,7 +775,7 @@ export async function pickScoreFiles(): Promise<string[]> {
   const { open } = await import("@tauri-apps/plugin-dialog");
   const res = await open({
     multiple: true,
-    filters: [{ name: "Ноты и табы", extensions: ["musicxml", "xml", "mxl", "mid", "midi", "psarc"] }],
+    filters: [{ name: "Ноты и табы", extensions: ["musicxml", "xml", "mxl", "mid", "midi", "psarc", "gp3", "gp4", "gp5", "gp", "txt"] }],
   });
   if (!res) return [];
   return Array.isArray(res) ? res : [res];

@@ -470,11 +470,12 @@ export function meiToTab(
     }
     if (st === staff && t.name === "layer" && t.kind === "open") {
       layer++;
-      if (layer !== 1) {
+      // Готовые табы — все голоса (пальцевая игра: бас и мелодия); переложенные — только первый.
+      if (layer !== 1 && !already) {
         i = matching(toks, i);
         continue;
       }
-      out.push(`<layer${setAttr(t.attrs, "n", "1")}>`);
+      out.push(already ? t.raw : `<layer${setAttr(t.attrs, "n", "1")}>`);
       continue;
     }
     if (st === staff && fromFile && !already && t.name === "tabGrp" && t.kind === "open") {

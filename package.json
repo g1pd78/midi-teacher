@@ -12,6 +12,7 @@
     "fetch-soundfont": "node scripts/fetch-soundfont.mjs"
   },
   "dependencies": {
+    "@coderline/alphatab": "^1.8.4",
     "@tauri-apps/api": "^2.12.0",
     "@tauri-apps/plugin-dialog": "^2.8.0",
     "@tauri-apps/plugin-opener": "^2.6.0",

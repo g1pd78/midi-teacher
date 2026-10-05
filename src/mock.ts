@@ -59,6 +59,7 @@ export function createMock() {
     capo: 0,
   };
   let guitarSignal: { hz: number; until: number } | null = null;
+  const pastedTabs: { id: string; text: string }[] = [];
   let guitarRec: { start: number; secs: number; path: string } | null = null;
   let appChannel = 0;
 
@@ -378,11 +379,32 @@ export function createMock() {
       items: [
         { id: "Песня.mid", title: "Песня", format: "midi", size: 2048, modified: 0 },
         { id: "Test_Test_v1_p.psarc", title: "Test — Test", format: "psarc", size: 274432, modified: 0 },
+        { id: "Effects.gp5", title: "Effects", format: "gp", size: 4338, modified: 0 },
+        { id: "Барабаны.gp", title: "Барабаны", format: "gp", size: 17619, modified: 0 },
+        { id: "Гамма.txt", title: "Гамма", format: "tab", size: 400, modified: 0 },
+        ...pastedTabs.map((t) => ({ id: t.id, title: t.id.replace(/\.txt$/, ""), format: "tab" as const, size: t.text.length, modified: 0 })),
       ],
     }),
+    library_add_text: (args) => {
+      const a = args as unknown as { name: string; text: string };
+      const id = `${a.name || "Таб"}.txt`;
+      pastedTabs.push({ id, text: a.text });
+      return id;
+    },
     // Песня Rocksmith в демо — тестовый CDLC (разбирает ядро; здесь — готовый результат).
     rocksmith_open: () => import("./lib/fixtures/rocksmith-test.json").then((m) => m.default),
-    library_read: () => Promise.reject(new Error("в демо нет своих файлов")),
+    // В демо: файл Guitar Pro и табы — из тестовых данных.
+    library_read: async (args) => {
+      const a = args as unknown as { id: string };
+      const gp: Record<string, string> = {
+        "Effects.gp5": new URL("./lib/fixtures/gp/5-effects.gp5", import.meta.url).href,
+        "Барабаны.gp": new URL("./lib/fixtures/gp/7-drum-tabs.gp", import.meta.url).href,
+      };
+      if (gp[a.id]) return (await fetch(gp[a.id])).arrayBuffer();
+      const pasted = pastedTabs.find((t) => t.id === a.id);
+      if (pasted || a.id === "Гамма.txt") return new TextEncoder().encode(pasted?.text ?? DEMO_TAB).buffer;
+      throw new Error("в демо нет своих файлов");
+    },
     // MIDI в демо: дорожки выдуманы, ноты — «Ода к радости» (настоящий перевод делает ядро).
     midi_inspect: () => ({
       tracks: [
@@ -693,3 +715,14 @@ function spellMock(id: string, midi: number, clef: Clef): TrainerTarget {
   const base = sharp ? midi - 1 : midi + 1;
   return { id, midi, clef, step: STEP_NAMES[base % 12], alter: sharp ? 1 : -1, octave: Math.floor(base / 12) - 1 };
 }
+
+/** Таб в демо-библиотеке. */
+const DEMO_TAB = `Гамма до мажор · Темп: 100
+
+e|-----------------|-----------------|
+B|-----------------|---------0---1---|
+G|-----------------|-0---2-----------|
+D|-----0---2---3---|-----------------|
+A|-3---------------|-----------------|
+E|-----------------|-----------------|
+`;

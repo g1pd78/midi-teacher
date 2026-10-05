@@ -76,6 +76,10 @@ export interface DrumScore {
   bars: DrumBar[];
   /** Размер такта; по умолчанию 4/4. */
   meter?: [number, number];
+  /** Темп каждого такта (песни из табов): смена — с начала такта. */
+  tempos?: number[];
+  /** Части песни: подпись над тактом и двойная черта перед ним. */
+  sections?: (string | undefined)[];
 }
 
 /**
@@ -144,6 +148,10 @@ function noteXml(id: string, h: DrumHit, stem: "up" | "down", attrs: string, wit
   return verse ? `<note ${parts.join(" ")}>${verse}</note>` : `<note ${parts.join(" ")}/>`;
 }
 
+function xmlText(s: string): string {
+  return s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[c]!);
+}
+
 /** MEI для Verovio: ударный стан, руки штилями вверх, бочка — вниз. */
 export function drumMei(score: DrumScore, opts: { title?: string } = {}): string {
   let seq = 0;
@@ -190,8 +198,14 @@ export function drumMei(score: DrumScore, opts: { title?: string } = {}): string
       const empty = !b.cells.some((c) => c.some(v.pick));
       return `<layer n="${v.n}">${empty ? `<mRest/>` : beats.join("")}</layer>`;
     });
-    const right = m === score.bars.length - 1 ? ` right="end"` : "";
-    measures.push(`<measure n="${m + 1}"${right}><staff n="1">${layers.join("")}</staff></measure>`);
+    const right = m === score.bars.length - 1 ? ` right="end"` : score.sections?.[m + 1] ? ` right="dbl"` : "";
+    const controls: string[] = [];
+    const bpm = score.tempos?.[m];
+    if (bpm && m > 0 && bpm !== score.tempos![m - 1])
+      controls.push(`<tempo staff="1" tstamp="1" midi.bpm="${bpm}">${Math.abs(bpm - score.tempos![m - 1]) >= 3 ? `♩ = ${bpm}` : ""}</tempo>`);
+    const section = score.sections?.[m];
+    if (section) controls.push(`<dir staff="1" tstamp="1" place="above"><rend fontweight="bold">${xmlText(section)}</rend></dir>`);
+    measures.push(`<measure n="${m + 1}"${right}><staff n="1">${layers.join("")}</staff>${controls.join("")}</measure>`);
   });
   const title = opts.title ? `<title>${opts.title}</title>` : "<title/>";
   return (

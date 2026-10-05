@@ -688,7 +688,7 @@ try {
   const setValue = (selector, value, event = "input") =>
     js(
       "const [sel, v, ev] = arguments; const el = document.querySelector(sel); if (!el) return false;" +
-        "const proto = el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;" +
+        "const proto = el.tagName === 'SELECT' ? HTMLSelectElement.prototype : el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;" +
         "Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, String(v));" +
         "el.dispatchEvent(new Event(ev, { bubbles: true })); return true;",
       [selector, value, event],
@@ -1099,6 +1099,69 @@ try {
     return c.tuning === null && c.capo === 0;
   });
   ok("экран «Гитара»: Drop C — тюнер слышит низкое до, каподастр сохраняется");
+
+  console.log("Сквозной тест: Guitar Pro и текстовые табы");
+  // Файлы Guitar Pro и текстовые табы в папке библиотеки (тестовые примеры alphaTab, MPL-2.0).
+  const lib = join(docs, "MIDI Teacher");
+  mkdirSync(lib, { recursive: true });
+  writeFileSync(join(lib, "Хаммеры.gp5"), readFileSync(join(root, "src/lib/fixtures/gp/5-hammer.gp5")));
+  writeFileSync(join(lib, "Бит.gp"), readFileSync(join(root, "src/lib/fixtures/gp/7-drum-tabs.gp")));
+  writeFileSync(join(lib, "заметки.txt"), "просто заметки\nбез табов\n");
+  const openFile = async (file, ready) => {
+    await waitFor("главная", () => click("Главная"));
+    await waitFor("вкладка пьес", () => click("Пьесы"));
+    await waitFor(`карточка ${file}`, () => js("const c = document.querySelector('[data-file=\"' + arguments[0] + '\"]'); if (!c) return false; c.click(); return true;", [file]));
+    await waitFor(`${file}: ноты`, () => js(ready), 30000);
+  };
+  await waitFor("главная", () => click("Главная"));
+  await waitFor("вкладка пьес", () => click("Пьесы"));
+  await waitFor("карточки Guitar Pro", () =>
+    js("const c = (f) => document.querySelector('[data-file=\"' + f + '\"]')?.textContent ?? ''; return c('Хаммеры.gp5').includes('Guitar Pro') && c('Бит.gp').includes('Guitar Pro');"),
+  );
+  if (await js("return !!document.querySelector('[data-file=\"заметки.txt\"]');")) throw new Error("текст без таба попал в библиотеку");
+  ok("библиотека: файлы Guitar Pro с пометкой, текст без таба не показывается");
+
+  await openFile("Хаммеры.gp5", "return !!document.querySelector('.tab-score g.note');");
+  await waitFor("режим «Свободно»", () => click("Свободно"));
+  await waitFor("режим ожидания", () => click("Ожидание"));
+  const sortedNow = async () => (await pitches()).split(",").filter(Boolean).map(Number).sort((a, b) => a - b).join(",");
+  await waitFor("первый аккорд (си-ре-ля♯-до)", async () => (await sortedNow()) === "47,50,58,60", 15000);
+  const gpSteps = await playWait("Guitar Pro", async (p) => {
+    await invoke("simulate_midi", { device: "E2E", bytes: [0x90, p, 100] });
+    await invoke("simulate_midi", { device: "E2E", bytes: [0x80, p, 0] });
+  });
+  if (!(await js("return document.querySelector('.score-page svg')?.textContent.includes('H');"))) throw new Error("нет подписей хаммеров");
+  ok(`Guitar Pro: табы с хаммерами сыграны в ожидании — ${gpSteps} шагов, 0 ошибок`);
+
+  await openFile("Бит.gp", "return !!document.querySelector('[data-drum-pads]') && !!document.querySelector('.score-page svg g.note');");
+  await waitFor("режим ожидания", () => click("Ожидание"));
+  await waitFor("первый шаг барабанов", async () => !!(await pitches()), 15000);
+  const beatSteps = await playWait("барабаны из Guitar Pro", (p) => invoke("hit_drum", { drum: p, velocity: 100 }));
+  ok(`барабаны из Guitar Pro: партия на экранных пэдах — ${beatSteps} шагов, 0 ошибок`);
+
+  // Вставка текстового таба: текст → предпросмотр → сохранить → открыть и сыграть.
+  await waitFor("главная", () => click("Главная"));
+  await waitFor("вкладка пьес", () => click("Пьесы"));
+  await waitFor("«Вставить таб…»", () => js("const b = document.querySelector('[data-tab-paste-open]'); if (!b) return false; b.click(); return true;"));
+  const riff = "Бас-рифф · Темп: 100\n\nG|----------------|----------------|\nD|----------------|----------------|\nA|-----------0--2-|-3--2--0--------|\nE|-0--3--5--------|-----------3--0-|\n";
+  await waitFor("поле таба", () => setValue("[data-tab-text]", riff));
+  await setValue("[data-tab-name]", "Бас-рифф");
+  await setValue("[data-tab-rhythm]", "8", "change");
+  await waitFor("разбор таба", async () => (await js("return document.querySelector('[data-tab-summary]')?.dataset.tabSummary;")) === "4:2:10");
+  await waitFor("предпросмотр", () => js("return !!document.querySelector('.tab-preview svg');"), 15000);
+  await js("document.querySelector('[data-tab-save]').click();");
+  await waitFor("таб в библиотеке", () => js("return !!document.querySelector('[data-file=\"Бас-рифф.txt\"]');"));
+  const tabText = readFileSync(join(lib, "Бас-рифф.txt"), "utf8");
+  if (!tabText.startsWith("Темп: 100 · Размер: 4/4 · Ритм: восьмыми")) throw new Error(`заголовок таба: ${tabText.split("\n")[0]}`);
+  await openFile("Бас-рифф.txt", "return !!document.querySelector('.tab-score g.note') && !!document.querySelector('[data-fretboard]');");
+  await waitFor("режим ожидания", () => click("Ожидание"));
+  await waitFor("первая нота баса — ми (28)", async () => (await pitches()) === "28", 15000);
+  const tabSteps = await playWait("текстовый таб", async (p) => {
+    await invoke("simulate_midi", { device: "E2E", bytes: [0x90, p, 100] });
+    await invoke("simulate_midi", { device: "E2E", bytes: [0x80, p, 0] });
+  });
+  if (tabSteps !== 10) throw new Error(`нот в табе: ${tabSteps}`);
+  ok("текстовый таб: вставлен, сохранён в библиотеку (темп и ритм — в первой строке), сыгран на басу — 10 нот, 0 ошибок");
 
   console.log("Сквозной тест: доводка");
   // Панель пьесы: редкое — в меню «⋯»; Esc закрывает только меню.

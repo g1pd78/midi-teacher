@@ -33,7 +33,8 @@ import { RhythmPads } from "../components/RhythmPads";
 import { PASS_DYNAMICS, drumMei, drumPartFromMidi, dynamicsOf, evaluateDynamics } from "../lib/drums";
 import { FRETS, MIRROR, meiToTab, nearestPosition, readTuning, tabStaff, withStaff, type StringInstrument } from "../lib/tab";
 import { TUNINGS, openTuning, sameTuning, tuningLabel, TUNING_PRESETS } from "../lib/guitar";
-import { arrangementTitle, rsAccompaniment, rsChart, rsTuning, type RsChart, type RsSong } from "../lib/rocksmith";
+import { openSongFile, type FileSong, type SongFormat } from "../lib/filesong";
+import { PART_KIND_NAME } from "../lib/tabsong";
 import { RetunePanel } from "../components/Tuner";
 import { TrackDialog } from "../components/TrackDialog";
 import { accompNotes, overrideFor, toggleOverride } from "../lib/midi";
@@ -83,8 +84,8 @@ export interface PieceSource {
   keyMap?: KeyMap;
   /** Надпись кнопки «назад» (песни по буквам — «← Аккорды»). */
   backLabel?: string;
-  /** Песня Rocksmith (CDLC) из библиотеки: табы партий, строй, остальные партии звучат. */
-  rocksmith?: string;
+  /** Песня с партиями из библиотеки (Rocksmith, Guitar Pro, текстовый таб): выбираешь партию, остальные звучат. */
+  songFile?: { id: string; format: SongFormat };
 }
 
 const NO_SETUP: PieceSetup = { transpose: 0, roles: null, handOverrides: [], instrument: null, part: 0 };
@@ -237,11 +238,12 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const setup: PieceSetup = { ...NO_SETUP, ...prefs.pieceSetup?.[source.id] };
   const setSetup = (patch: Partial<PieceSetup>) =>
     setPrefs({ pieceSetup: { ...prefs.pieceSetup, [source.id]: { ...setup, ...patch } } });
-  const transpose = exercise || source.rocksmith ? 0 : setup.transpose;
-  // Песня Rocksmith: партии и выбранная партия (инструмент — по партии).
-  const [rsSong, setRsSong] = useState<RsSong | null>(null);
-  const rsArr = rsSong ? (rsSong.arrangements[setup.arrangement ?? 0] ?? rsSong.arrangements[0]) : null;
-  const rsChartData: RsChart | null = useMemo(() => (rsSong && rsArr ? rsChart(rsSong, rsArr) : null), [rsSong, rsArr]);
+  const transpose = exercise || source.songFile ? 0 : setup.transpose;
+  // Песня из файла с партиями: выбранная партия (инструмент — по ней).
+  const [fileSong, setFileSong] = useState<FileSong | null>(null);
+  const partIndex = fileSong ? Math.min(setup.arrangement ?? 0, fileSong.parts.length - 1) : 0;
+  const filePart = fileSong ? fileSong.parts[partIndex] : null;
+  const partMei = useMemo(() => (fileSong ? fileSong.chart(partIndex) : null), [fileSong, partIndex]);
   // На чём играем: фортепиано или гитара/бас (табы и гриф).
   const [guitarOn, setGuitarOn] = useState<boolean | null>(null);
   // Аппликатура своя для каждого тона: в другой тональности другие пальцы.
@@ -258,10 +260,14 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     ? exercise.instrument === "drums"
       ? "drums"
       : "piano"
-    : source.rocksmith
-      ? rsArr?.bass
+    : source.songFile
+      ? filePart?.kind === "bass"
         ? "bass"
-        : "guitar"
+        : filePart?.kind === "drums"
+          ? "drums"
+          : filePart?.kind === "piano" || filePart?.kind === "other"
+            ? "piano"
+            : "guitar"
     : drumsOnly
       ? "drums"
       : wantDrums && !(source.midi && (midiDrums || !converted))
@@ -271,7 +277,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   // Барабаны: ударный стан, дорожка по барабанам, пэды вместо клавиатуры.
   const drums = instrument === "drums";
   // Прогресс разучивания у гитары, баса и барабанов свой.
-  const practiceId = rsArr ? `${source.id}#${rsArr.id}` : instrument !== "piano" ? `${source.id}#${instrument}` : source.id;
+  const practiceId = filePart ? `${source.id}#${filePart.id}` : instrument !== "piano" ? `${source.id}#${instrument}` : source.id;
   const [editHands, setEditHands] = useState(false);
 
   const [mei, setMei] = useState<string | null>(null);
@@ -369,14 +375,13 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     warmUpVerovio();
     let alive = true;
     const fail = (e: unknown) => alive && setError(`Не удалось открыть ноты: ${(e as Error)?.message ?? e}`);
-    if (source.rocksmith) {
-      if (!rsSong)
-        api
-          .rocksmithOpen(source.rocksmith)
-          .then((song) => alive && setRsSong(song))
+    if (source.songFile) {
+      if (!fileSong)
+        openSongFile(source.songFile.id, source.songFile.format, source.title)
+          .then((song) => alive && setFileSong(song))
           .catch(fail);
-      else if (rsChartData)
-        loadScore(rsChartData.mei, false)
+      else if (partMei)
+        loadScore(partMei, false)
           .then((m) => alive && setMei(m))
           .catch(fail);
     } else if (source.midi) {
@@ -415,7 +420,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     };
     // setup.roles и setup.handOverrides входят в rolesKey и overridesKey
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, transpose, rolesKey, overridesKey, wantDrums, rsSong, rsChartData]);
+  }, [source, transpose, rolesKey, overridesKey, wantDrums, fileSong, partMei]);
   useEffect(
     () => () => {
       void api.pieceStop();
@@ -426,15 +431,15 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   );
   // Аккомпанемент из MIDI: звучит вместе с учеником, на нотах не показывается.
   // Играешь барабаны — руки тоже звучат аккомпанементом.
-  // Песня Rocksmith: остальные партии.
+  // Песня из файла: остальные партии.
   const accomp = useMemo(
     () =>
-      rsSong && rsArr && rsChartData
-        ? accompNotes(rsAccompaniment(rsSong, rsArr, rsChartData.barBeats)).map((n) => ({ ...n, id: `rs-${n.id}` }))
+      fileSong
+        ? accompNotes(fileSong.accompaniment(partIndex)).map((n) => ({ ...n, id: `fs-${n.id}` }))
         : converted
           ? accompNotes(drums ? [...converted.accompaniment, ...converted.handsAccompaniment] : converted.accompaniment)
           : [],
-    [converted, drums, rsSong, rsArr, rsChartData],
+    [converted, drums, fileSong, partIndex],
   );
 
   // Размер области нот: ширина — для раскладки страниц, полный размер — для рамок тактов.
@@ -462,17 +467,17 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const myOpen = strInst ? openTuning({ instrument: strInst, tuning: guitarCfg?.tuning ?? null }) : [];
   const myCapo = guitarCfg?.capo ?? 0;
   const fileTuning = useMemo(() => (mei && fileTab ? readTuning(mei, fileTab) : null), [mei, fileTab]);
-  const fixedTab = !!(rsArr || fileTab);
+  const fixedTab = !!((filePart?.tuning && strInst) || fileTab);
   const pieceOpen: number[] = !strInst
     ? []
-    : rsArr
-      ? rsTuning(rsArr)
+    : filePart?.tuning && filePart.tuning.length
+      ? filePart.tuning
       : fileTab
         ? (fileTuning ?? TUNINGS[strInst])
         : setup.tuning && setup.tuning.length === TUNINGS[strInst].length
           ? setup.tuning
           : myOpen;
-  const pieceCapo = rsArr ? rsArr.capo : fileTab ? 0 : (setup.capo ?? myCapo);
+  const pieceCapo = filePart?.tuning ? filePart.capo : fileTab ? 0 : (setup.capo ?? myCapo);
   const sounding = (t: number[], capo: number) => t.map((m) => m + capo);
   const tuningDiffers = !!strInst && !!guitarCfg && !sameTuning(sounding(pieceOpen, pieceCapo), sounding(myOpen, myCapo));
   const relayout = tuningDiffers && !!setup.relayout;
@@ -1416,7 +1421,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const setTranspose = (t: number) => setSetup({ transpose: Math.max(-TRANSPOSE_MAX, Math.min(TRANSPOSE_MAX, t)) });
   const pieceTools = exercise ? null : (
     <>
-      {!drums && !source.rocksmith && <span className="transpose" title="Транспонирование: сдвиг всей пьесы на полутоны">
+      {!drums && !source.songFile && <span className="transpose" title="Транспонирование: сдвиг всей пьесы на полутоны">
         Тон
         <button className="small" onClick={() => setTranspose(transpose - 1)} disabled={transpose <= -TRANSPOSE_MAX} data-transpose-down>
           −
@@ -1495,7 +1500,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
           {exercise?.backLabel ?? source.backLabel ?? (drums && exercise ? "← Барабаны" : exercise ? "← Упражнения" : "← Пьесы")}
         </button>
         <div className="piece-name">
-          {rsSong ? [rsSong.artist, rsSong.title].filter(Boolean).join(" — ") || source.title : source.title}
+          {fileSong ? [fileSong.artist, fileSong.title].filter(Boolean).join(" — ") || source.title : source.title}
           {strInst && tab && (
             <span className="rs-meta muted" data-tuning-meta={tab.tuning.join(",")} data-capo-meta={tab.capo}>
               {" · "}
@@ -1503,16 +1508,31 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
             </span>
           )}
         </div>
-        {rsSong && rsArr && (
-          <span className="segmented" title="Какую партию песни играть" data-arrangement-select>
-            {rsSong.arrangements.map((a, k) => (
-              <button key={a.id} className={a.id === rsArr.id ? "on" : ""} onClick={() => setSetup({ arrangement: k, relayout: false })} data-arrangement={a.name.toLowerCase()}>
-                {arrangementTitle(a)}
-              </button>
-            ))}
-          </span>
+        {fileSong && filePart && fileSong.parts.length > 1 && (
+          fileSong.parts.length <= 4 ? (
+            <span className="segmented" title="Какую партию песни играть" data-arrangement-select>
+              {fileSong.parts.map((a, k) => (
+                <button key={a.id} className={k === partIndex ? "on" : ""} onClick={() => setSetup({ arrangement: k, relayout: false })} data-arrangement={a.slug} data-part-kind={a.kind}>
+                  {a.title}
+                </button>
+              ))}
+            </span>
+          ) : (
+            <select
+              value={partIndex}
+              onChange={(e) => setSetup({ arrangement: Number(e.target.value), relayout: false })}
+              title="Какую партию песни играть"
+              data-arrangement-select
+            >
+              {fileSong.parts.map((a, k) => (
+                <option key={a.id} value={k} data-arrangement={a.slug}>
+                  {a.title} — {PART_KIND_NAME[a.kind].toLowerCase()}
+                </option>
+              ))}
+            </select>
+          )
         )}
-        {!exercise && !source.rocksmith && (
+        {!exercise && !source.songFile && (
           <span className="segmented" title="На чём играть: фортепиано — ноты и клавиатура, гитара и бас — табы и гриф" data-instrument-select>
             {(drumsOnly ? ["drums"] : ["piano", "guitar", "bass", ...(midiDrums ? ["drums"] : [])]).map((k) => (
               <button

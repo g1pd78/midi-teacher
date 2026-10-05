@@ -13,7 +13,7 @@ pub struct LibraryItem {
     /// Имя файла внутри папки библиотеки.
     id: String,
     title: String,
-    /// `musicxml`, `mxl`, `midi` или `psarc`.
+    /// `musicxml`, `mxl`, `midi`, `psarc`, `gp` (Guitar Pro) или `tab` (текстовый таб).
     format: String,
     size: u64,
     modified: u64,
@@ -45,6 +45,8 @@ fn format_of(path: &Path) -> Option<&'static str> {
         "mxl" => Some("mxl"),
         "mid" | "midi" => Some("midi"),
         "psarc" => Some("psarc"),
+        "gp3" | "gp4" | "gp5" | "gp" => Some("gp"),
+        "txt" if is_text_tab(path) => Some("tab"),
         _ => None,
     }
 }
@@ -72,6 +74,55 @@ pub fn title_of(path: &Path, format: &str) -> String {
         }
     }
     stem
+}
+
+/// Текстовый файл с табом: есть строки вида «e|---0---3---|».
+fn is_text_tab(path: &Path) -> bool {
+    let Ok(bytes) = std::fs::read(path) else {
+        return false;
+    };
+    let text = String::from_utf8_lossy(&bytes[..bytes.len().min(64 * 1024)]);
+    looks_like_tab(&text)
+}
+
+/// Хотя бы четыре подряд строки таба.
+pub fn looks_like_tab(text: &str) -> bool {
+    let mut run = 0;
+    for line in text.lines() {
+        let l = line.trim();
+        let body = l.trim_start_matches(|c: char| c.is_ascii_alphabetic() || c == '#');
+        let tabby = (body.starts_with('|') || body.starts_with(':'))
+            && body.matches('-').count() >= 4
+            && body
+                .chars()
+                .all(|c| c.is_ascii_digit() || r"-|:xXhpbr/\~()<>.*=sStT^ ".contains(c));
+        run = if tabby { run + 1 } else { 0 };
+        if run >= 4 {
+            return true;
+        }
+    }
+    false
+}
+
+/// Сохранить вставленный текстовый таб в библиотеку. Возвращает имя файла.
+#[tauri::command]
+pub fn library_add_text(app: AppHandle, name: String, text: String) -> Result<String, String> {
+    if !looks_like_tab(&text) {
+        return Err("в тексте нет таба (строк вида «e|---0---3---|»)".into());
+    }
+    let dir = library_dir(&app)?;
+    let clean: String = name
+        .chars()
+        .map(|c| if "\\/:*?\"<>|".contains(c) { '-' } else { c })
+        .collect();
+    let stem = clean.trim().trim_end_matches(".txt");
+    let file = unique_name(
+        &dir,
+        &format!("{}.txt", if stem.is_empty() { "Таб" } else { stem }),
+    );
+    std::fs::write(dir.join(&file), text)
+        .map_err(|e| format!("не удалось сохранить {file}: {e}"))?;
+    Ok(file)
 }
 
 /// Имя файла CustomsForge «Artist_Song-Name_v2_DD_p» → «Artist — Song Name».
@@ -270,6 +321,18 @@ mod tests {
         );
         assert_eq!(psarc_title("Artist_Song_p"), "Artist — Song");
         assert_eq!(psarc_title("test_p"), "test");
+        assert_eq!(format_of(Path::new("Song.GP5")), Some("gp"));
+        assert_eq!(format_of(Path::new("Song.gp")), Some("gp"));
+        let tab = dir.join("riff.txt");
+        std::fs::write(
+            &tab,
+            "Riff\ne|-----0---|\nB|---1-----|\nG|-2-------|\nD|---------|\n",
+        )
+        .unwrap();
+        assert_eq!(format_of(&tab), Some("tab"));
+        let notes = dir.join("notes.txt");
+        std::fs::write(&notes, "просто заметки\nбез табов\n").unwrap();
+        assert_eq!(format_of(&notes), None);
         std::fs::remove_dir_all(dir).ok();
     }
 }

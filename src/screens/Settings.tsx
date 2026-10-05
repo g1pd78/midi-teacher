@@ -475,6 +475,9 @@ function AboutSection() {
       <button onClick={() => void openUrl(BUILDS_URL)} data-builds>
         Открыть страницу сборок
       </button>
+      <p className="hint">
+        Ноты рисует Verovio (LGPL-3.0), файлы Guitar Pro открывает alphaTab (© Daniel Kuschny и соавторы, MPL-2.0).
+      </p>
     </section>
   );
 }

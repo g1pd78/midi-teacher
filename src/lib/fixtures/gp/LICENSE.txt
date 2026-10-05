@@ -1,0 +1,6 @@
+Тестовые файлы Guitar Pro из проекта alphaTab (https://github.com/CoderLine/alphaTab,
+каталог packages/alphatab/test-data): синтетические примеры авторов проекта (ноты, приёмы,
+повторы, темп, барабаны, слова). Распространяются по лицензии Mozilla Public License 2.0:
+https://mozilla.org/MPL/2.0/ — исходные файлы доступны по ссылке выше без изменений.
+
+Copyright © Daniel Kuschny and Contributors.
