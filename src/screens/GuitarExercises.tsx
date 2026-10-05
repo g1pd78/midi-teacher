@@ -16,11 +16,24 @@ import {
 import { partChart, songAccompaniment } from "../lib/tabsong";
 import { PieceView, type PieceSource } from "./PieceView";
 import { dayKey, dayStartSecs } from "./Exercises";
+import { useApp } from "../store";
 
 interface Run {
   list: GtrExercise[];
   index: number;
   warmup: boolean;
+  /** Подпись серии: «Разминка» (На сегодня) или «Подряд» (все варианты группы). */
+  label?: string;
+}
+
+/** Свёрнутые разделы (по инструменту): запоминаются на этом компьютере. */
+const COLLAPSED_KEY = "mt-gtr-collapsed";
+function loadCollapsed(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? "[]") as string[]);
+  } catch {
+    return new Set();
+  }
 }
 
 /** Упражнения для гитары и баса: те же правила, что у фортепианных, — открытие по порядку, зачёт в темпе. */
@@ -39,6 +52,25 @@ export function GuitarExercises({
   const [error, setError] = useState<string | null>(null);
   const [run, setRun] = useState<Run | null>(null);
   const [tuning, setTuning] = useState<{ open: number[]; capo: number } | null>(null);
+  const { prefs, setPrefs } = useApp();
+  const daily = useMemo(() => prefs.daily ?? [], [prefs.daily]);
+  const toggleDaily = (id: string) => {
+    const cur = useApp.getState().prefs.daily ?? [];
+    setPrefs({ daily: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
+  };
+  const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
+  const toggleCollapsed = (key: string) =>
+    setCollapsed((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      try {
+        localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]));
+      } catch {
+        /* без сохранения */
+      }
+      return next;
+    });
 
   const reload = useCallback(() => {
     api
@@ -65,7 +97,7 @@ export function GuitarExercises({
   const open = useMemo(() => gtrUnlocked(passed, instrument), [passed, instrument]);
   const statOf = useMemo(() => new Map((stats ?? []).map((s) => [s.exercise, s])), [stats]);
   const today = dayStartSecs();
-  const warm = useMemo(() => (stats ? gtrWarmup(stats, dayKey(), instrument) : []), [stats, instrument]);
+  const warm = useMemo(() => (stats ? gtrWarmup(stats, dayKey(), instrument, daily) : []), [stats, instrument, daily]);
   const startWarm = useCallback(() => warm.length && setRun({ list: warm, index: 0, warmup: true }), [warm]);
   useEffect(() => {
     if (startWarmup && warm.length && tuning) {
@@ -111,7 +143,7 @@ export function GuitarExercises({
           instrument,
           hint: current.hint,
           pass: GTR_PASS,
-          playlist: run.warmup ? { index: run.index, total: run.list.length } : undefined,
+          playlist: run.warmup ? { index: run.index, total: run.list.length, label: run.label } : undefined,
           next,
           onRecorded: reload,
         }}
@@ -144,6 +176,7 @@ export function GuitarExercises({
           <ol className="warmup-list">
             {warm.map((e) => (
               <li key={e.id} className={(statOf.get(e.id)?.lastAt ?? 0) >= today ? "done" : ""}>
+                {daily.includes(e.id) && <span className="daily-mark" title="Каждый день">★ </span>}
                 {e.title}
               </li>
             ))}
@@ -154,49 +187,108 @@ export function GuitarExercises({
         </div>
       </section>
       {error && <div className="notice warn">Результаты упражнений недоступны: {error}</div>}
+      <p className="hint ex-legend">
+        ★ — «каждый день»: упражнение всегда попадёт в «На сегодня». Обведены упражнения, сыгранные сегодня. Раздел
+        сворачивается кликом по заголовку.
+      </p>
       {GTR_CATEGORIES[instrument].map((c) => {
         const list = GTR_EXERCISES.filter((e) => e.instrument === instrument && e.category === c.id);
         const gate = gtrGate(instrument, c.id);
         const locked = !!gate && !passed.has(gate);
         const done = list.filter((e) => passed.has(e.id)).length;
         const groups = [...new Set(list.map((e) => e.group))];
-        return (
-          <section key={c.id} className={`card ex-category${locked ? " locked" : ""}`} data-category={c.id}>
-            <div className="ex-category-head">
-              <h2 className="section-h">{c.title}</h2>
-              <span className="muted">{locked ? `откроется после «${GTR_EXERCISE_BY_ID.get(gate!)!.title}»` : `засчитано ${done} из ${list.length}`}</span>
-            </div>
-            <p className="hint">{c.description}</p>
-            {!locked && (
-              <div className="ex-groups">
-                {groups.map((g) => (
-                  <div key={g} className="ex-group">
-                    <span className="ex-group-name">{g}</span>
-                    <span className="ex-variants">
-                      {list
-                        .filter((e) => e.group === g)
-                        .map((e) => {
-                          const st = statOf.get(e.id);
-                          const isOpen = open.has(e.id);
-                          const isPassed = passed.has(e.id);
-                          return (
-                            <button
-                              key={e.id}
-                              className={`ex-chip${isPassed ? " passed" : isOpen ? " open" : ""}`}
-                              disabled={!isOpen || !tuning}
-                              title={st ? `Попыток: ${st.attempts}, лучшая точность ${Math.round(st.bestAccuracy * 100)}%, ритм ±${Math.round(st.lastTimingSdMs)} мс` : isOpen ? "Ещё не играл" : "Откроется, когда будет засчитано предыдущее"}
-                              data-exercise={e.id}
-                              onClick={() => setRun({ list: [e], index: 0, warmup: false })}
-                            >
-                              {isPassed && "✓ "}
-                              {e.variant}
-                            </button>
-                          );
-                        })}
-                    </span>
-                  </div>
-                ))}
+        const key = `${instrument}:${c.id}`;
+        // Закрытый раздел — одной строкой; открытый сворачивается кликом по заголовку.
+        if (locked)
+          return (
+            <section key={c.id} className="card ex-category locked compact" data-category={c.id}>
+              <div className="ex-category-head">
+                <h2 className="section-h">{c.title}</h2>
+                <span className="muted">откроется после «{GTR_EXERCISE_BY_ID.get(gate!)!.title}»</span>
               </div>
+            </section>
+          );
+        const folded = collapsed.has(key);
+        const playedToday = list.filter((e) => (statOf.get(e.id)?.lastAt ?? 0) >= today).length;
+        return (
+          <section key={c.id} className={`card ex-category${folded ? " folded" : ""}`} data-category={c.id} data-folded={folded ? "1" : "0"}>
+            <button className="ex-category-head ex-fold" onClick={() => toggleCollapsed(key)} aria-expanded={!folded} data-category-toggle={c.id}>
+              <h2 className="section-h">
+                <span className="fold-mark">{folded ? "▸" : "▾"}</span> {c.title}
+              </h2>
+              <span className="muted">
+                засчитано {done} из {list.length}
+                {playedToday ? ` · сегодня ${playedToday}` : ""}
+              </span>
+            </button>
+            {!folded && (
+              <>
+                <p className="hint">{c.description}</p>
+                <div className="ex-groups">
+                  {groups.map((g) => {
+                    const inGroup = list.filter((e) => e.group === g);
+                    const openInGroup = inGroup.filter((e) => open.has(e.id));
+                    return (
+                      <div key={g} className="ex-group">
+                        <span className="ex-group-name">{g}</span>
+                        <span className="ex-variants">
+                          {inGroup.map((e) => {
+                            const st = statOf.get(e.id);
+                            const isOpen = open.has(e.id);
+                            const isPassed = passed.has(e.id);
+                            const isToday = (st?.lastAt ?? 0) >= today;
+                            const pinned = daily.includes(e.id);
+                            return (
+                              <span key={e.id} className="ex-chip-wrap">
+                                <button
+                                  className={`ex-chip${isPassed ? " passed" : isOpen ? " open" : ""}${isToday ? " today" : ""}`}
+                                  disabled={!isOpen || !tuning}
+                                  title={
+                                    (isToday ? "Сыграно сегодня. " : "") +
+                                    (st
+                                      ? `Попыток: ${st.attempts}, лучшая точность ${Math.round(st.bestAccuracy * 100)}%, ритм ±${Math.round(st.lastTimingSdMs)} мс`
+                                      : isOpen
+                                        ? "Ещё не играл"
+                                        : "Откроется, когда будет засчитано предыдущее")
+                                  }
+                                  data-exercise={e.id}
+                                  data-today={isToday ? "1" : undefined}
+                                  onClick={() => setRun({ list: [e], index: 0, warmup: false })}
+                                >
+                                  {isPassed && "✓ "}
+                                  {e.variant}
+                                </button>
+                                {isOpen && (
+                                  <button
+                                    className={`ex-star${pinned ? " on" : ""}`}
+                                    title={pinned ? "Убрать из «каждый день»" : "Каждый день: всегда в «На сегодня»"}
+                                    aria-pressed={pinned}
+                                    onClick={() => toggleDaily(e.id)}
+                                    data-daily-toggle={e.id}
+                                  >
+                                    {pinned ? "★" : "☆"}
+                                  </button>
+                                )}
+                              </span>
+                            );
+                          })}
+                          {openInGroup.length >= 2 && (
+                            <button
+                              className="small ex-all"
+                              disabled={!tuning}
+                              title="Сыграть все открытые варианты группы один за другим"
+                              onClick={() => setRun({ list: openInGroup, index: 0, warmup: true, label: "Подряд" })}
+                              data-group-all={g}
+                            >
+                              ▶ Все подряд
+                            </button>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </section>
         );

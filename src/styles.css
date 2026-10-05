@@ -2650,6 +2650,7 @@ kbd {
 }
 .song-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
@@ -2977,6 +2978,7 @@ button.danger {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-left: auto;
 }
 .song-shapes {
   display: inline-flex;
@@ -2994,4 +2996,60 @@ button.danger {
   font-size: 20px;
   letter-spacing: 2px;
   margin-right: 12px;
+}
+
+/* Гитарные упражнения: сворачивание, ★ каждый день, отметка «сегодня» */
+button.ex-fold {
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.ex-fold:hover .section-h {
+  color: var(--right-hand);
+}
+.fold-mark {
+  display: inline-block;
+  width: 1em;
+  color: var(--muted);
+}
+.ex-category.folded .ex-category-head {
+  margin-bottom: 0;
+}
+.ex-category.compact {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.ex-legend {
+  margin: 0 4px;
+}
+.ex-chip-wrap {
+  display: inline-flex;
+  align-items: center;
+}
+.ex-chip.today {
+  box-shadow: 0 0 0 2px var(--right-hand);
+}
+button.ex-star {
+  background: none;
+  border: 0;
+  padding: 0 4px 0 2px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+button.ex-star:hover {
+  color: var(--warn);
+}
+button.ex-star.on,
+.daily-mark {
+  color: var(--warn);
+}
+.ex-all {
+  margin-left: 6px;
 }

@@ -21,10 +21,13 @@ export function Fretboard({ tuning, frets, naming, marks }: { tuning: number[]; 
   const rowH = 26;
   const top = 14;
   const H = top * 2 + rowH * (n - 1) + 18;
-  const openW = 46; // место для открытых струн слева от порожка
+  // Слева — колонка подписей струн, за ней — место открытых струн до порожка:
+  // отметка на 0-м ладу стоит на струне и не закрывает подпись.
+  const labelW = 50;
+  const openW = 82;
   const fretW = (W - openW - 8) / frets;
   const xOfFret = (f: number) => openW + f * fretW; // правая граница лада f (порожек — 0)
-  const xCenter = (f: number) => (f === 0 ? openW / 2 + 6 : xOfFret(f) - fretW / 2);
+  const xCenter = (f: number) => (f === 0 ? (labelW + openW) / 2 : xOfFret(f) - fretW / 2);
   const yOf = (string: number) => top + (n - 1 - string) * rowH; // высокая струна сверху
   return (
     <svg className="fretboard" viewBox={`0 0 ${W} ${H}`} data-fretboard>
@@ -43,8 +46,8 @@ export function Fretboard({ tuning, frets, naming, marks }: { tuning: number[]; 
       ))}
       {tuning.map((open, s) => (
         <g key={s}>
-          <line x1={openW - 4} x2={W - 8} y1={yOf(s)} y2={yOf(s)} className="fb-string" strokeWidth={1 + (n - 1 - s) * 0.35} />
-          <text x={8} y={yOf(s) + 4} className="fb-open">
+          <line x1={labelW} x2={W - 8} y1={yOf(s)} y2={yOf(s)} className="fb-string" strokeWidth={1 + (n - 1 - s) * 0.35} />
+          <text x={4} y={yOf(s) + 5} className="fb-open">
             {pitchName(open, naming)}
           </text>
         </g>

@@ -504,19 +504,33 @@ export function gtrUnlocked(passed: Set<string>, instrument: GtrInstrument): Set
   return open;
 }
 
-/** Упражнения на сегодня для гитары/баса: паучок + одно из открытых разделов (постоянно в течение дня). */
-export function gtrWarmup(stats: ExerciseStatView[], day: string, instrument: GtrInstrument): GtrExercise[] {
+/**
+ * Упражнения на сегодня для гитары/баса (постоянны в течение дня):
+ * - отмеченные «★ каждый день» (если открыты);
+ * - паучок по кругу: каждый день другой из уже засчитанных вариантов;
+ * - следующий новый паучок (первый незасчитанный);
+ * - одно упражнение из других разделов.
+ */
+export function gtrWarmup(stats: ExerciseStatView[], day: string, instrument: GtrInstrument, daily: string[] = []): GtrExercise[] {
   const passed = new Set(stats.filter((s) => s.passed).map((s) => s.exercise));
   const open = gtrUnlocked(passed, instrument);
   const rnd = seeded([...day, instrument].reduce((h, c) => h * 31 + String(c).charCodeAt(0), 11));
+  const mine = (e: GtrExercise | undefined): e is GtrExercise => !!e && e.instrument === instrument && open.has(e.id);
   const pick = (cats: GtrCategory[]): GtrExercise | null => {
-    const list = GTR_EXERCISES.filter((e) => e.instrument === instrument && cats.includes(e.category) && open.has(e.id));
+    const list = GTR_EXERCISES.filter((e) => cats.includes(e.category) && mine(e));
     if (!list.length) return null;
     const frontier = list.filter((e) => !passed.has(e.id));
     if (frontier.length) return frontier[0];
     return list[Math.floor(rnd() * list.length)];
   };
-  const out = [pick(["spider"]), pick(rnd() < 0.5 ? ["strum", "pentatonic", "scales", "arpeggio"] : ["groove", "strum"]) ?? pick(["groove", "pentatonic"])];
+  const pinned = daily.map((id) => GTR_EXERCISE_BY_ID.get(id)).filter(mine);
+  const spiders = GTR_EXERCISES.filter((e) => e.category === "spider" && mine(e));
+  const spiderDone = spiders.filter((e) => passed.has(e.id));
+  const dayNo = Math.floor(Date.parse(`${day}T00:00:00Z`) / 86_400_000) || 0;
+  const rotation = spiderDone.length ? spiderDone[dayNo % spiderDone.length] : null;
+  const nextSpider = spiders.find((e) => !passed.has(e.id)) ?? null;
+  const other = pick(rnd() < 0.5 ? ["strum", "pentatonic", "scales", "arpeggio"] : ["groove", "strum"]) ?? pick(["groove", "pentatonic"]);
+  const out = [...pinned, rotation, nextSpider, other];
   return out.filter((e, i): e is GtrExercise => !!e && out.indexOf(e) === i);
 }
 

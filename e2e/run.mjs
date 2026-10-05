@@ -1209,6 +1209,17 @@ try {
   await waitFor("пентатоника и грувы открылись", () =>
     js("return !document.querySelector(\"[data-category='pentatonic']\")?.classList.contains('locked') && !document.querySelector(\"[data-exercise='gtr-groove-rock-90']\")?.disabled;"),
   10000);
+  // Отметка «сегодня», «▶ Все подряд», ★ каждый день, сворачивание раздела.
+  if (!(await js("return document.querySelector(\"[data-exercise='gtr-spider-1234-5-60']\")?.dataset.today === '1';")))
+    throw new Error("нет отметки «сыграно сегодня»");
+  if (!(await js("return !!document.querySelector(\"[data-group-all='1-2-3-4']\");"))) throw new Error("нет «Все подряд» у паучка 1-2-3-4");
+  await waitFor("★ каждый день", () => clickSel("[data-daily-toggle='gtr-spider-1324-5-60']"));
+  await waitFor("★ сохранено в настройках", async () => ((await invoke("get_state")).prefs.daily ?? []).includes("gtr-spider-1324-5-60"));
+  await waitFor("★ в «На сегодня»", () => js("return (document.querySelector('.warmup-list')?.innerText ?? '').includes('★ Паучок 1-3-2-4');"));
+  await js("document.querySelector(\"[data-category-toggle='pentatonic']\").click();");
+  await waitFor("раздел свёрнут", () => js("return document.querySelector(\"[data-category='pentatonic']\")?.dataset.folded === '1' && !document.querySelector(\"[data-category='pentatonic'] [data-exercise]\");"));
+  await js("document.querySelector(\"[data-category-toggle='pentatonic']\").click();");
+  ok("список упражнений: отметка «сегодня», «Все подряд», ★ каждый день в «На сегодня», раздел сворачивается");
   // Игра под барабаны: своя партия — гитара, барабаны звучат аккомпанементом.
   await waitFor("грув «Рок»", () => clickSel("[data-exercise='gtr-groove-rock-90']"));
   await waitFor("табы грува", () => js("return document.querySelectorAll('.tab-score g.note').length > 8;"), 30000);

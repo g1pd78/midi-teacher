@@ -628,19 +628,22 @@ function GuitarSongPlay({ song, onPlay }: { song: LeadSong; onPlay: (p: StrumPat
   const [pid, setPid] = useState(list[Math.min(list.length - 1, list.findIndex((p) => p.id === "pop") >= 0 ? list.findIndex((p) => p.id === "pop") : 0)]?.id ?? "");
   const pattern = list.find((p) => p.id === pid);
   if (!list.length) return <span className="muted">нет боя для {song.beats}/{song.unit}</span>;
+  // Схемы и выбор боя — отдельные части строки: на узком окне они переносятся, а не теснят друг друга.
   return (
-    <span className="song-strum">
+    <>
       <SongShapes song={song} />
-      <select value={pid} onChange={(e) => setPid(e.target.value)} data-song-strum title={pattern ? patternArrows(pattern) : ""}>
-        {list.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
-      <button onClick={() => pattern && onPlay(pattern)} data-song-strum-play>
-        ▶ Боем
-      </button>
-    </span>
+      <span className="song-strum">
+        <select value={pid} onChange={(e) => setPid(e.target.value)} data-song-strum title={pattern ? patternArrows(pattern) : ""}>
+          {list.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        <button onClick={() => pattern && onPlay(pattern)} data-song-strum-play>
+          ▶ Боем
+        </button>
+      </span>
+    </>
   );
 }

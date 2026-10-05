@@ -114,8 +114,7 @@ export function strumMarks(shape: ChordShape, tuning: number[], capo: number, mi
 function ShapeBoard({ shape, tuning, capo }: { shape: ChordShape; tuning: number[]; capo: number }) {
   const { prefs } = useApp();
   const marks: FretMark[] = shape.frets.flatMap((f, s) =>
-    // Открытые струны — только на схеме (на грифе слева подписи струн).
-    f <= 0 ? [] : [{ string: s, fret: f + capo, color: "#5AA9FF", label: shape.fingers[s] ? String(shape.fingers[s]) : undefined }],
+    f < 0 ? [] : [{ string: s, fret: f + capo, color: f === 0 ? "#4CC38A" : "#5AA9FF", label: f === 0 ? "○" : shape.fingers[s] ? String(shape.fingers[s]) : undefined }],
   );
   return (
     <section className="fret-board-wrap">

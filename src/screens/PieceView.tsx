@@ -1611,7 +1611,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
             )}
             {exercise.playlist && (
               <span className="chip small">
-                Разминка: {exercise.playlist.index + 1} из {exercise.playlist.total}
+                {exercise.playlist.label ?? "Разминка"}: {exercise.playlist.index + 1} из {exercise.playlist.total}
               </span>
             )}
             <span className="piece-progress">{progressText}</span>

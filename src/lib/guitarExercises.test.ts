@@ -135,6 +135,22 @@ describe("гитарные упражнения", () => {
     expect(w.length).toBeGreaterThanOrEqual(1);
     expect(gtrWarmup([], "2026-10-05", "bass")[0].id).toBe("bass-spider-1234-5-60");
   });
+
+  it("«На сегодня»: ★ каждый день — первыми, паучок по кругу из засчитанных, плюс следующий новый", () => {
+    const done = ["gtr-spider-1234-5-60", "gtr-spider-1234-5-80", "gtr-spider-1234-5-100"].map((id) => stat(id));
+    const days = ["2026-10-05", "2026-10-06", "2026-10-07"].map((d) => gtrWarmup(done, d, "guitar"));
+    // Каждый день — другой засчитанный вариант паучка, и все три по кругу.
+    expect(new Set(days.map((w) => w[0].id)).size).toBe(3);
+    for (const w of days) expect(w.map((e) => e.id)).toContain("gtr-spider-1234-1-80");
+    // Тот же день — тот же список.
+    expect(gtrWarmup(done, "2026-10-05", "guitar").map((e) => e.id)).toEqual(days[0].map((e) => e.id));
+    // Закреплённые — первыми; закрытые и чужого инструмента не попадают.
+    const w = gtrWarmup(done, "2026-10-05", "guitar", ["gtr-strum-quarters-emam-70", "gtr-scale-g-70", "bass-spider-1234-5-60"]);
+    expect(w[0].id).toBe("gtr-strum-quarters-emam-70");
+    expect(w.map((e) => e.id)).not.toContain("gtr-scale-g-70");
+    expect(w.map((e) => e.id)).not.toContain("bass-spider-1234-5-60");
+    expect(new Set(w.map((e) => e.id)).size).toBe(w.length);
+  });
 });
 
 describe("тренажёр грифа", () => {

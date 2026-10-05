@@ -166,6 +166,8 @@ export interface UiPrefs {
   pieceSetup: Record<string, PieceSetup>;
   /** Свои песни по буквам аккордов (раздел «Аккорды»). */
   songs?: LeadSong[];
+  /** Упражнения «★ каждый день»: всегда в «На сегодня». */
+  daily?: string[];
 }
 
 export interface TrackInfo {

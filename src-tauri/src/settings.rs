@@ -26,6 +26,8 @@ pub struct UiPrefs {
     pub piece_setup: BTreeMap<String, PieceSetup>,
     /// Свои песни по буквам аккордов (формат задаёт интерфейс, ядро хранит как есть).
     pub songs: Vec<serde_json::Value>,
+    /// Упражнения «★ каждый день»: всегда в «На сегодня» (id упражнений).
+    pub daily: Vec<String>,
 }
 
 /// Настройки одной пьесы.
@@ -134,6 +136,7 @@ impl Default for UiPrefs {
             theory_seen: Vec::new(),
             piece_setup: BTreeMap::new(),
             songs: Vec::new(),
+            daily: Vec::new(),
         }
     }
 }
@@ -187,6 +190,7 @@ mod tests {
         s.prefs.songs =
             vec![serde_json::json!({ "id": "my-1", "title": "Песня", "chords": "C | G" })];
         s.prefs.piece.staff_with_tab = true;
+        s.prefs.daily = vec!["gtr-spider-1234-5-60".into()];
         s.prefs.piece_setup.insert(
             "user:song_p.psarc".into(),
             PieceSetup {

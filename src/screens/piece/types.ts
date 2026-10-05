@@ -29,7 +29,7 @@ export interface PieceSource {
 export interface ExerciseContext {
   id: string;
   /** Место в разминке дня: «2 из 4». */
-  playlist?: { index: number; total: number };
+  playlist?: { index: number; total: number; label?: string };
   next?: { label: string; go: () => void } | null;
   onRecorded?: (ev: Evaluation) => void;
   /**
