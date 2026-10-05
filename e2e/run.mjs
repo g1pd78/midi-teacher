@@ -801,12 +801,28 @@ try {
     const appUs = await invoke("clock_now");
     const rtt = Date.now() - t0;
     const localOf = (us) => t0 + rtt / 2 + (us - appUs) / 1000;
+    // Ноты одного момента (аккорд, удар по струнам) — одним вызовом, почти одновременно.
+    const groups = [];
     for (const [ms, pitch] of notes) {
+      const last = groups[groups.length - 1];
+      if (last && last.ms === ms) last.pitches.push(pitch);
+      else groups.push({ ms, pitches: [pitch] });
+    }
+    for (const { ms, pitches } of groups) {
       const at = localOf(originUs + ((ms - pos0) / tempo) * 1000);
       const wait = at - Date.now() - 4;
       if (wait > 0) await sleep(wait);
-      await invoke("simulate_midi", { device: "E2E", bytes: [0x90, pitchOf(pitch), 100] });
-      await invoke("simulate_midi", { device: "E2E", bytes: [0x80, pitchOf(pitch), 0] });
+      const ps = pitches.map(pitchOf);
+      if (ps.length === 1) {
+        await invoke("simulate_midi", { device: "E2E", bytes: [0x90, ps[0], 100] });
+        await invoke("simulate_midi", { device: "E2E", bytes: [0x80, ps[0], 0] });
+        continue;
+      }
+      await jsAsync(
+        "const [ps, done] = arguments; const inv = (b) => window.__TAURI_INTERNALS__.invoke('simulate_midi', { device: 'E2E', bytes: b });" +
+          "Promise.all(ps.map((p) => inv([0x90, p, 100]))).then(() => Promise.all(ps.map((p) => inv([0x80, p, 0])))).then(() => done(1), () => done(0));",
+        [ps],
+      );
     }
   };
   await waitFor("вкладка тренажёров", () => click("Тренажёры"));
