@@ -3,6 +3,7 @@ name = "midi-teacher"
 version = "0.1.0"
 edition = "2021"
 description = "Обучение игре на фортепиано с MIDI-клавиатурой"
+license = "GPL-3.0-or-later"
 
 [lib]
 name = "midi_teacher_lib"

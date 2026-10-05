@@ -136,7 +136,19 @@ e2e/              сквозной тест через WebDriver (tauri-driver)
 docs/             план, архитектура, чеклисты
 ```
 
-## Лицензии
+## Лицензия
+
+MIDI Teacher — свободная программа: её можно использовать, изучать, менять и распространять на условиях
+[GNU General Public License версии 3](LICENSE) или (по вашему выбору) любой более поздней версии
+(SPDX: `GPL-3.0-or-later`). Программа распространяется без каких-либо гарантий.
+
+© 2026 g1pd78 и участники проекта.
+
+Сторонние библиотеки, звуки и тестовые файлы — под своими лицензиями, список — в
+[THIRD_PARTY.md](THIRD_PARTY.md). Сборка для Windows включает ASIO SDK © Steinberg Media Technologies,
+который используется по GPLv3.
+
+### Звуки и встроенные пьесы
 
 Встроенный рояль: YDP Grand Piano © Roberto Gordo Saez (проект FreePats),
 [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).

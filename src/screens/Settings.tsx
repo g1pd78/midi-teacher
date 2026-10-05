@@ -476,7 +476,9 @@ function AboutSection() {
         Открыть страницу сборок
       </button>
       <p className="hint">
-        Ноты рисует Verovio (LGPL-3.0), файлы Guitar Pro открывает alphaTab (© Daniel Kuschny и соавторы, MPL-2.0).
+        MIDI Teacher — свободная программа, лицензия GNU GPL версии 3 или новее; исходный код открыт. Ноты рисует Verovio
+        (LGPL-3.0), файлы Guitar Pro открывает alphaTab (© Daniel Kuschny и соавторы, MPL-2.0), ASIO — © Steinberg (GPLv3),
+        звуки — YDP Grand Piano (CC BY 3.0) и GeneralUser GS.
       </p>
     </section>
   );
