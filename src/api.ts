@@ -207,6 +207,8 @@ export interface AccompNote {
   /** Канал дорожки (0–15, 9 — барабаны) и её инструмент General MIDI. */
   channel: number;
   program: number | null;
+  /** Сила звука (громкость партии); по умолчанию — обычная. */
+  velocity?: number;
 }
 
 /** Такт барабанной партии из MIDI: клеток на четверть 4 (шестнадцатые) или 3 (триоли). */
@@ -396,6 +398,8 @@ export interface PieceNoteIn {
   /** Аккомпанемент MIDI: канал и инструмент для GM-синтезатора. */
   channel?: number | null;
   program?: number | null;
+  /** Сила звука ноты аккомпанемента. */
+  velocity?: number | null;
 }
 
 /** Руки ученика в сессии; `none` — приложение играет всё (прослушивание). */
@@ -732,7 +736,7 @@ export const api = {
   midiPreview: (id: string, track: number) => invoke<void>("midi_preview", { id, track }),
   midiPreviewStop: () => invoke<void>("midi_preview_stop"),
   /** Проиграть ноты (задания тренажёра слуха): инструментом GM или звуком приложения (`program` = null). */
-  playNotes: (notes: { startMs: number; durMs: number; pitch: number; velocity: number }[], program: number | null) =>
+  playNotes: (notes: { startMs: number; durMs: number; pitch: number; velocity: number; channel?: number; program?: number | null }[], program: number | null) =>
     invoke<void>("play_notes", { notes, program }),
   recordStart: (bpm: number, beatsPerBar: number, metronome: boolean, countIn: boolean) =>
     invoke<void>("record_start", { bpm, beatsPerBar, metronome, countIn }),

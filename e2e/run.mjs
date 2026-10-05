@@ -1399,6 +1399,48 @@ try {
   10000);
   ok("главная: шаг «Слух» отмечен сделанным");
 
+  console.log("Сквозной тест: бас");
+  await waitFor("вкладка тренажёров", () => click("Тренажёры"));
+  await waitFor("раздел «Аккорды»", () => clickSel("[data-trainer-section='chords']"));
+  await waitFor("режим «Бас»", () => clickSel("[data-chords-instrument='bass']"));
+  await waitFor("ступень 1 «Найди основной тон»", () => clickSel("[data-root-level='1']"));
+  await waitFor("старт серии", () => clickSel("[data-root-start]"));
+  const rootAttr = (a) => js(`return document.querySelector('[data-root-phase]')?.dataset.${a} ?? '';`);
+  await waitFor("часы серии", () => rootAttr("rootT0"), 5000);
+  // Бот играет в самой странице по её часам: в момент каждой доли из плана — нужная нота (одна — мимо).
+  await js(
+    "const el = document.querySelector('[data-root-phase]'); const t0 = Number(el.dataset.rootT0), bm = Number(el.dataset.rootBeatMs);" +
+      "const plan = el.dataset.rootPlan.split(',').map((x) => x.split(':').map(Number));" +
+      "const inv = (b) => window.__TAURI_INTERNALS__.invoke('simulate_midi', { device: 'E2E', bytes: b });" +
+      "(async () => { let i = 0; for (const [beat, pitch] of plan) { while (performance.now() < t0 + beat * bm + 30) await new Promise((r) => setTimeout(r, 3));" +
+      "const p = i === 1 ? pitch + 2 : pitch; await inv([0x90, p, 100]); inv([0x80, p, 0]); i++; } })();",
+  );
+  const rootDone = await waitFor("итог серии баса", () => rootAttr("rootDone"), 45000);
+  const rootOkCount = await rootAttr("rootOk");
+  if (rootDone !== "passed" || rootOkCount !== "5") throw new Error(`основной тон: ${rootDone}, верно ${rootOkCount}`);
+  await waitFor("зачёт записан", async () => (await invoke("exercise_stats")).some((x) => x.exercise === "bassroot-1" && x.passed), 5000);
+  ok("бас: «Найди основной тон» — под барабаны и аккорды 5 из 6 основных тонов вовремя, серия засчитана");
+  await waitFor("к списку", () => click("К списку"));
+
+  // Песня по буквам басом (walking bass) в темпе: итог с оценкой грува.
+  await waitFor("стиль «Walking bass»", () =>
+    js("const s = document.querySelector(\"[data-song='builtin-ode'] [data-song-bass-style]\"); if (!s) return false; s.value = 'walking'; s.dispatchEvent(new Event('change', { bubbles: true })); return true;"),
+  );
+  await waitFor("▶ Басом", () => clickSel("[data-song='builtin-ode'] [data-song-bass-play]"));
+  await waitFor("табы баса с буквами аккордов", () => js("return !!document.querySelector('.tab-score g.note') && document.querySelector('.score-page svg').textContent.includes('C');"), 30000);
+  await waitFor("режим «в темпе»", () => click("В темпе"));
+  await js("document.querySelector('.score-scroll')?.removeAttribute('data-transport');");
+  await waitFor("старт", () => click("▶ Старт"));
+  await playInTempo();
+  await waitFor("итог песни басом", () => js("return !!document.querySelector('.exercise-summary');"), 40000);
+  if ((await scroll("exResult")) !== "passed") throw new Error(`бас не засчитан:\n${await js("return document.querySelector('.exercise-summary').innerText;")}`);
+  const grooveMean = await waitFor("оценка грува", () => js("return document.querySelector('[data-groove-mean]')?.dataset.grooveMean ?? '';"), 5000);
+  if (Math.abs(Number(grooveMean)) > 40) throw new Error(`грув: ${grooveMean} мс`);
+  if (!(await js("return document.querySelectorAll('.groove-col').length >= 4;"))) throw new Error("нет полосок грува по долям");
+  ok(`бас: «Ода к радости» walking bass в темпе — засчитано, грув ${grooveMean} мс от барабанов, полоски по долям`);
+  await waitFor("к списку песен", () => click("К списку"));
+  await waitFor("режим «Фортепиано»", () => clickSel("[data-chords-instrument='piano']"));
+
   console.log("Сквозной тест: доводка");
   // Панель пьесы: редкое — в меню «⋯»; Esc закрывает только меню.
   await waitFor("вкладка пьес", () => click("Пьесы"));

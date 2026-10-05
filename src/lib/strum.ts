@@ -1,7 +1,7 @@
 // Бой (страмминг): схемы ударов ↓↑ по клеткам такта и песня из табов с аккордами
 // под барабаны. Удар вниз — все струны формы, вверх — верхние 3–4.
 
-import { TPQ, type TabSong, type TsBeat, type TsNote, type TsPart } from "./tabsong";
+import { TPQ, writtenDuration, type TabSong, type TsBeat, type TsNote, type TsPart } from "./tabsong";
 import { patternPart } from "./drumPattern";
 import { chordShape, shapeForTuning, type ChordForm } from "./guitarChords";
 import { parseChart, barLen, type LeadSong } from "./songs";
@@ -66,11 +66,7 @@ export function strumSong(o: { bars: StrumBar[]; pattern: StrumPattern; bpm: num
   const n = p.slots.length;
   const slot = barTicks / n;
   // Записанная длительность удара: до следующего удара (четверть, четверть с точкой…), если так пишется одной нотой.
-  const noteValue = (ticks: number): { type: number; dots: number } | null => {
-    for (const t of [1, 2, 4, 8, 16, 32])
-      for (const dots of [0, 1]) if (Math.abs(((TPQ * 4) / t) * (dots ? 1.5 : 1) - ticks) < 1) return { type: t, dots };
-    return null;
-  };
+  const noteValue = writtenDuration;
   const capo = o.capo ?? 0;
   const bars: TsBeat[][] = o.bars.map((bar) => {
     const beats: TsBeat[] = [];

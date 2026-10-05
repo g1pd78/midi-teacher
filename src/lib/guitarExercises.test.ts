@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import createVerovioModule from "verovio/wasm";
 import { VerovioToolkit } from "verovio/esm";
-import { GTR_CATEGORIES, GTR_EXERCISES, GTR_EXERCISE_BY_ID, gtrUnlocked, gtrWarmup, positionNotes } from "./guitarExercises";
+import { GTR_CATEGORIES, GTR_EXERCISES, GTR_EXERCISE_BY_ID, gtrUnlocked, gtrWarmup, positionNotes, riff } from "./guitarExercises";
 import { FRET_LEVELS, fretSeries, fretUnlocked, judgeFret, fretLevelId } from "./fretboard";
 import { partChart, songAccompaniment, type TabSong } from "./tabsong";
 import { TUNINGS } from "./guitar";
@@ -117,6 +117,72 @@ describe("гитарные упражнения", () => {
       const end = (song.masters.length * 4 * 60000) / e.bpm;
       expect(Math.max(...drums.map((n) => n.startMs))).toBeGreaterThan(end * 0.8);
     }
+  });
+
+  it("рифф строкой: струны по буквам, глушёные ноты и подписи приёмов", () => {
+    expect(riff("E0 . Ax D2/H G12/↗")).toEqual([
+      { string: 0, fret: 0, tech: undefined },
+      null,
+      { string: 1, fret: 0, dead: true, tech: undefined },
+      { string: 2, fret: 2, tech: "H" },
+      { string: 3, fret: 12, tech: "↗" },
+    ]);
+    expect(() => riff("Q3")).toThrow();
+  });
+
+  it("бас: грув ступенями — все грувы играются; ноты тянутся до следующей, глушёные — без высоты", () => {
+    const bass = GTR_EXERCISES.filter((e) => e.instrument === "bass");
+    const grooves = [...new Set(bass.filter((e) => e.category === "groove").map((e) => e.group))];
+    expect(grooves.length).toBeGreaterThanOrEqual(10);
+    for (const e of bass.filter((x) => ["groove", "technique", "shapes"].includes(x.category))) {
+      const song = e.build(TUNINGS.bass);
+      const { notes, log } = play(partChart(song, 0).mei);
+      expect(log, e.id).not.toMatch(/\[Error\]/);
+      const model = songAccompaniment({ ...song, parts: [song.parts[0]] }, -1);
+      expect(notes.map((n) => n.pitch), e.id).toEqual(model.map((n) => n.pitch));
+      // Моменты нот — как в модели (до мс).
+      notes.forEach((n, i) => expect(Math.abs(n.startMs - model[i].startMs), e.id).toBeLessThan(3));
+    }
+    // «Тон — квинта» четвертями: восьмая и пауза слились в четверть.
+    const rf = GTR_EXERCISE_BY_ID.get("bass-groove-rootfifth-80")!.build(TUNINGS.bass);
+    expect(rf.parts[0].staves[0].bars[0][0].map((b) => b.type)).toEqual([4, 4, 4, 4]);
+    // Шаффл: «длинная — короткая» триолью.
+    const sh = GTR_EXERCISE_BY_ID.get("bass-groove-shuffle-80")!.build(TUNINGS.bass);
+    expect(sh.parts[0].staves[0].bars[0][0].slice(0, 2).map((b) => [b.type, b.tuplet])).toEqual([[4, [3, 2]], [8, [3, 2]]]);
+    expect(sh.parts[1].staves[0].bars[0][0][0].tuplet).toEqual([3, 2]);
+    // Фанк: глушёные ноты подписаны «X» и не требуются.
+    const fk = GTR_EXERCISE_BY_ID.get("bass-groove-funk-80")!.build(TUNINGS.bass);
+    expect(fk.parts[0].staves[0].bars[0][0].some((b) => b.notes[0].dead)).toBe(true);
+    expect(partChart(fk, 0).mei).toContain(">X<");
+  });
+
+  it("бас: формы на грифе — звуки аккорда от основного тона, форма одна для всех аккордов", () => {
+    const pitches = (id: string) => pitchesOf(GTR_EXERCISE_BY_ID.get(id)!.build(TUNINGS.bass));
+    // C–F–G–C, тон — квинта — октава.
+    expect(pitches("bass-shape-r58-70").slice(0, 8)).toEqual([36, 43, 48, 43, 36, 43, 48, 43]);
+    expect(pitches("bass-shape-r58-70").slice(8, 12)).toEqual([29, 36, 41, 36]);
+    // Минор: малая терция; септаккорд — малая септима.
+    expect(pitches("bass-shape-minor-70").slice(0, 4)).toEqual([33, 36, 40, 45]);
+    expect(pitches("bass-shape-seventh-70").slice(0, 4)).toEqual([33, 37, 40, 43]);
+    // Квинта снизу — на струне ниже.
+    const fb = GTR_EXERCISE_BY_ID.get("bass-shape-fifthbelow-70")!.build(TUNINGS.bass);
+    const [r, f] = fb.parts[0].staves[0].bars[0][0].map((b) => b.notes[0]);
+    expect(f.string).toBe(r.string! - 1);
+    expect(f.fret).toBe(r.fret);
+    // Буква аккорда — над первой нотой такта.
+    expect(fb.parts[0].staves[0].bars.map((v) => v[0][0].chord).slice(0, 4)).toEqual(["A", "D", "E", "A"]);
+  });
+
+  it("бас: приёмы и формы открываются после первого паучка и первого грува", () => {
+    expect(gtrUnlocked(new Set(), "bass").has("bass-tech-alternate-70")).toBe(false);
+    const open1 = gtrUnlocked(new Set(["bass-spider-1234-5-60"]), "bass");
+    expect(open1.has("bass-tech-alternate-70")).toBe(true);
+    expect(open1.has("bass-groove-roots-90")).toBe(true);
+    expect(open1.has("bass-groove-rootfifth-80")).toBe(false);
+    expect(open1.has("bass-shape-r58-70")).toBe(false);
+    const open2 = gtrUnlocked(new Set(["bass-spider-1234-5-60", "bass-groove-roots-90"]), "bass");
+    expect(open2.has("bass-groove-rootfifth-80")).toBe(true);
+    expect(open2.has("bass-shape-r58-70")).toBe(true);
   });
 
   it("открытие: сначала только паучок и бой, после первого паучка — пентатоника и грувы", () => {

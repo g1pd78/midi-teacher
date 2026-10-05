@@ -7,14 +7,14 @@ import { grandStaffMei, snippetMei } from "./snippet";
 import { STRUM_BY_ID, strumSong } from "./strum";
 import { partChart, TPQ, type TabSong, type TsNote } from "./tabsong";
 
-/** Пример табулатуры: [струна от низкой, лад, подписи] восьмыми; `null` — пауза. */
-function tabExample(steps: ([number, number, string?] | null)[], opts: { bass?: boolean; capo?: number; tuning?: number[] } = {}): string {
+/** Пример табулатуры: [струна от низкой, лад, подпись, аккорд] восьмыми; `null` — пауза. */
+function tabExample(steps: ([number, number, string?, string?] | null)[], opts: { bass?: boolean; capo?: number; tuning?: number[] } = {}): string {
   const tuning = opts.tuning ?? (opts.bass ? [28, 33, 38, 43] : [40, 45, 50, 55, 59, 64]);
   const capo = opts.capo ?? 0;
   const len = TPQ / 2;
   const beats = steps.map((st, i) => {
     const notes: TsNote[] = st ? [{ pitch: tuning[st[0]] + capo + st[1], string: st[0], fret: st[1], techniques: st[2] ? [st[2]] : undefined }] : [];
-    return { tick: (i % 8) * len, dur: len, type: 8, dots: 0, notes, bar: Math.floor(i / 8) };
+    return { tick: (i % 8) * len, dur: len, type: 8, dots: 0, notes, bar: Math.floor(i / 8), chord: st?.[3] };
   });
   const count = Math.max(1, Math.ceil(steps.length / 8));
   const song: TabSong = {
@@ -504,6 +504,50 @@ export const CARDS: TheoryCard[] = [
       "Искусственный (P.H., pinch harmonic): медиатор и край большого пальца задевают струну одновременно — визг, любимый приём рок-гитаристов.",
     ],
   },
+  {
+    id: "finger-alt",
+    group: "Гитара и бас",
+    title: "Пальцы правой руки на басу (i, m)",
+    short: "i — указательный, m — средний: щипай струны по очереди, даже при смене струны.",
+    body: [
+      "На басу струны щиплют подушечками пальцев: указательным (i) и средним (m), строго по очереди. Так оба пальца отдыхают и ритм ровнее — как шаги ногами.",
+      "Палец после щипка ложится на соседнюю, более низкую струну и глушит её. Большой палец опирается на звукосниматель или лежит на нижней струне.",
+    ],
+    example: () => tabExample([[0, 0, "i"], [0, 0, "m"], [1, 0, "i"], [1, 0, "m"], [2, 0, "i"], [2, 0, "m"], [3, 0, "i"], [3, 0, "m"]], { bass: true }),
+  },
+  {
+    id: "slap",
+    group: "Гитара и бас",
+    title: "Слэп и поп (T, P)",
+    short: "T — удар большим пальцем по струне, P — поддеть струну и отпустить со щелчком.",
+    body: [
+      "Слэп (T, thumb): косточка большого пальца ударяет по струне у конца грифа и сразу отскакивает — звук яркий, ударный. Обычно так играют низкие струны.",
+      "Поп (P): указательный или средний поддевает высокую струну и отпускает — она щёлкает о лады. Вместе с глушёными ударами (X) получается фанк.",
+    ],
+    example: () => tabExample([[0, 0, "T"], null, [2, 2, "P"], null, [0, 0, "T"], [0, 0, "T"], [2, 2, "P"], null], { bass: true }),
+  },
+  {
+    id: "bass-line",
+    group: "Гитара и бас",
+    title: "Басовая линия по аккордам",
+    short: "Бас играет основной тон аккорда, потом квинту, октаву и проходящие ноты к следующему аккорду.",
+    body: [
+      "Буква над нотами — аккорд, который звучит у остальных. Самая простая линия — основной тон аккорда (его буква) на каждую долю. Дальше добавляют квинту (соседняя струна, два лада выше) и октаву (через струну, два лада выше).",
+      "Проходящая нота в конце такта ведёт к следующему аккорду: на полтона ниже или выше его основного тона. Walking bass — четверти без остановки: основной тон, звуки аккорда и проходящие, каждая доля — новая нота.",
+    ],
+    example: () => tabExample([[1, 3, undefined, "C"], [1, 3], [2, 5], [2, 2], [0, 3, undefined, "G"], [0, 3], [1, 5], [1, 2]], { bass: true }),
+  },
+  {
+    id: "groove",
+    group: "Гитара и бас",
+    title: "Грув: бас и бочка",
+    short: "Бас и бочка — одно целое: начало ноты совпадает с ударом бочки, длина ноты — тоже часть ритма.",
+    body: [
+      "Грув — это когда ритм «качает». Басист слушает прежде всего бочку и малый барабан: ноты на «раз» и на ударах бочки должны с ними слиться.",
+      "После упражнения в итоге видно, раньше или позже барабанов ты играешь в среднем и как ровно. Небольшое постоянное «чуть позже» — это стиль, а вот разброс туда-сюда грув ломает. Лишние струны глуши: незаглушённый гул мешает ритму.",
+    ],
+    example: () => tabExample([[1, 0], null, null, null, [1, 0], [1, 0], null, null], { bass: true }),
+  },
 ];
 
 export const CARD_BY_ID = new Map(CARDS.map((c) => [c.id, c]));
@@ -557,14 +601,17 @@ export function trainerFeatures(level: number, grandStaff: boolean, bass: boolea
 }
 
 /** Элементы табулатуры в пьесе: подписи приёмов, каподастр, строй. */
-export function tabFeatures(mei: string, opts: { capo: number; tuningChanged: boolean; fingers: boolean }): string[] {
+export function tabFeatures(mei: string, opts: { capo: number; tuningChanged: boolean; fingers: boolean; bass?: boolean; drums?: boolean }): string[] {
   const found = new Set<string>(["tab", "strings-frets"]);
   const labels = [...mei.matchAll(/<rend[^>]*fontsize="x-small"[^>]*>([^<]*)<\/rend>/g)].flatMap((m) => m[1].split(" "));
   const has = (l: string) => labels.includes(l);
   if (opts.fingers || labels.some((l) => /^[1-4]$/.test(l))) found.add("left-fingers");
   if (opts.tuningChanged) found.add("tuning");
   if (opts.capo > 0) found.add("capo");
-  if (has("H") || has("P")) found.add("hammer-pull");
+  if (has("H") || (has("P") && !has("T"))) found.add("hammer-pull");
+  if (has("T")) found.add("slap");
+  if (has("i") || has("m")) found.add("finger-alt");
+  if (opts.bass && opts.drums) found.add("groove");
   if (has("↗") || has("↘")) found.add("slide");
   if (labels.some((l) => /^B/.test(l))) found.add("bend");
   if (has("PM")) found.add("palm-mute");
@@ -574,8 +621,13 @@ export function tabFeatures(mei: string, opts: { capo: number; tuningChanged: bo
   if (has("↓") || has("↑")) found.add("strum");
   // Аккорды над табами — схемы; пауэр-аккорды и баррэ — по их формам.
   const harms = [...mei.matchAll(/<harm\b[^>]*>([^<]+)<\/harm>/g)].map((m) => m[1].trim());
-  if (harms.length) found.add("chord-shape");
-  if (harms.some((h) => /5$/.test(h))) found.add("power-chord");
-  if (harms.some((h) => !!chordShape(h)?.barre && chordShape(h)?.form.startsWith("barre"))) found.add("barre");
+  if (opts.bass) {
+    // Бас: буквы над нотами — аккорды остальных, по ним строится линия.
+    if (harms.length) found.add("bass-line");
+  } else {
+    if (harms.length) found.add("chord-shape");
+    if (harms.some((h) => /5$/.test(h))) found.add("power-chord");
+    if (harms.some((h) => !!chordShape(h)?.barre && chordShape(h)?.form.startsWith("barre"))) found.add("barre");
+  }
   return CARDS.map((c) => c.id).filter((id) => found.has(id));
 }

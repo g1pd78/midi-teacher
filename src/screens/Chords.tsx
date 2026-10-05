@@ -34,6 +34,9 @@ import { LevelCard } from "../components/LevelCard";
 import { PieceView } from "./PieceView";
 import { ChordChanges, GuitarChordDrill, GuitarChordsList, GuitarSongView, SongShapes } from "./GuitarChords";
 import { patternArrows, patternsFor, type StrumPattern } from "../lib/strum";
+import { BassAccompControls, BassSongPlay, BassSongView, RootDrill, RootTrainerList, useBassAccomp } from "./Bass";
+import type { BassStyle } from "../lib/bassline";
+import type { RootLevel } from "../lib/bassRoot";
 import { accuracyToChanges, changeId, type ChangePair, type GtrChordLevel } from "../lib/guitarChordDrill";
 
 const STYLES: Style[] = ["block", "oompah", "alberti"];
@@ -45,13 +48,17 @@ type View =
   | { kind: "edit"; song: LeadSong; isNew: boolean }
   | { kind: "gdrill"; level: GtrChordLevel; seed: number }
   | { kind: "changes"; pair: ChangePair }
-  | { kind: "gsong"; song: LeadSong; pattern: StrumPattern };
+  | { kind: "gsong"; song: LeadSong; pattern: StrumPattern }
+  | { kind: "bsong"; song: LeadSong; style: BassStyle }
+  | { kind: "root"; level: RootLevel; seed: number };
 
-type ChordInstrument = "piano" | "guitar";
+type ChordInstrument = "piano" | "guitar" | "bass";
 const INSTRUMENT_KEY = "mt-chords-instrument";
+const INSTRUMENT_NAME: Record<ChordInstrument, string> = { piano: "Фортепиано", guitar: "Гитара", bass: "Бас" };
 function loadInstrument(): ChordInstrument {
   try {
-    return localStorage.getItem(INSTRUMENT_KEY) === "guitar" ? "guitar" : "piano";
+    const v = localStorage.getItem(INSTRUMENT_KEY);
+    return v === "guitar" || v === "bass" ? v : "piano";
   } catch {
     return "piano";
   }
@@ -71,6 +78,7 @@ export function Chords({ tabs }: { tabs: React.ReactNode }) {
     }
   };
   const [stats, setStats] = useState<ExerciseStatView[]>([]);
+  const [bassAccomp, setBassAccomp] = useBassAccomp();
   const reload = useCallback(() => {
     api.exerciseStats().then(setStats).catch(() => setStats([]));
   }, []);
@@ -137,6 +145,31 @@ export function Chords({ tabs }: { tabs: React.ReactNode }) {
       />
     );
   if (view.kind === "gsong") return <GuitarSongView song={view.song} pattern={view.pattern} onBack={() => setView({ kind: "list" })} />;
+  if (view.kind === "bsong")
+    return (
+      <BassSongView
+        song={view.song}
+        style={view.style}
+        onBack={() => {
+          setView({ kind: "list" });
+          reload();
+        }}
+      />
+    );
+  if (view.kind === "root")
+    return (
+      <RootDrill
+        key={`${view.level.id}-${view.seed}`}
+        level={view.level}
+        seed={view.seed}
+        onAgain={() => setView({ ...view, seed: view.seed + 1 })}
+        onBack={() => {
+          setView({ kind: "list" });
+          reload();
+        }}
+        onRecorded={reload}
+      />
+    );
   if (view.kind === "song" && songSource) return <PieceView key={songSource.id} source={songSource} onBack={() => setView({ kind: "list" })} />;
   if (view.kind === "edit")
     return (
@@ -177,6 +210,8 @@ export function Chords({ tabs }: { tabs: React.ReactNode }) {
         </div>
         {instrument === "guitar" ? (
           <GuitarSongPlay song={song} onPlay={(pattern) => setView({ kind: "gsong", song, pattern })} />
+        ) : instrument === "bass" ? (
+          <BassSongPlay onPlay={(style) => setView({ kind: "bsong", song, style })} />
         ) : (
           <span className="segmented song-styles">
             {STYLES.map((st) => (
@@ -201,9 +236,9 @@ export function Chords({ tabs }: { tabs: React.ReactNode }) {
       <section className="card">
         <h1>Аккорды</h1>
         <span className="segmented ex-instrument">
-          {(["piano", "guitar"] as const).map((i) => (
+          {(["piano", "guitar", "bass"] as const).map((i) => (
             <button key={i} className={instrument === i ? "on" : ""} onClick={() => setInstrument(i)} data-chords-instrument={i}>
-              {i === "piano" ? "Фортепиано" : "Гитара"}
+              {INSTRUMENT_NAME[i]}
             </button>
           ))}
         </span>
@@ -213,13 +248,19 @@ export function Chords({ tabs }: { tabs: React.ReactNode }) {
             с указанным басом). Серия — {CHORD_SERIES} аккордов; зачёт — от {Math.round(CHORD_PASS_ACCURACY * 100)}% с первой попытки и в
             среднем до {CHORD_PASS_TIME_MS / 1000} с на аккорд.
           </p>
-        ) : (
+        ) : instrument === "guitar" ? (
           <p className="hint">
             Аккорды на гитаре: схемы (квадратики) и форма на грифе, проверка по звуку — все звуки аккорда и ничего лишнего.
             Формы — под строй с вкладки «Гитара»; с каподастром лады считаются от него.
           </p>
+        ) : (
+          <p className="hint">
+            Бас по аккордам: найди основной тон под барабаны и аккорды, а в песнях по буквам — басовые линии табами, от
+            основных тонов до walking bass. В итоге — верные ноты и грув: раньше или позже барабанов ты играешь.
+          </p>
         )}
       </section>
+      {instrument === "bass" && <RootTrainerList stats={stats} onLevel={(level) => setView({ kind: "root", level, seed: Math.floor(Date.now() / 1000) % 100000 })} />}
       {instrument === "guitar" && (
         <GuitarChordsList
           stats={stats}
@@ -260,7 +301,15 @@ export function Chords({ tabs }: { tabs: React.ReactNode }) {
             + Своя песня
           </button>
         </div>
-        {instrument === "guitar" ? (
+        {instrument === "bass" ? (
+          <>
+            <p className="hint">
+              Бас: линия по аккордам песни табами — выбери стиль (основной тон, тон — квинта, октавы, проходящие, walking bass).
+              Буквы аккордов — над нотами; звучат барабаны и аккорды. Свои песни — «+ Своя песня» или из любой пьесы.
+            </p>
+            <BassAccompControls accomp={bassAccomp} onChange={setBassAccomp} />
+          </>
+        ) : instrument === "guitar" ? (
           <p className="hint">
             Гитара: аккорды песни боем под барабаны. Выбери схему боя — табы с аккордами и стрелками ↓↑, схемы аккордов
             сверху. Засчитываются ритм и верно взятые аккорды. Свои песни — «+ Своя песня» (аккорды текстом) или из любой

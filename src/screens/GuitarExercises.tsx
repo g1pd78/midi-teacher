@@ -143,6 +143,7 @@ export function GuitarExercises({
           instrument,
           hint: current.hint,
           pass: GTR_PASS,
+          groove: instrument === "bass" ? { bpm: current.bpm, beats: 4, drums: (source.accompaniment?.length ?? 0) > 0 } : undefined,
           playlist: run.warmup ? { index: run.index, total: run.list.length, label: run.label } : undefined,
           next,
           onRecorded: reload,

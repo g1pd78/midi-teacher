@@ -554,6 +554,8 @@ export interface Evaluation {
   passed: boolean;
   /** Барабаны: акценты и тихие ноты. */
   dynamics?: import("./drums").DynamicsEval;
+  /** Бас: раньше или позже барабанов, по местам в такте. */
+  groove?: import("./groove").GrooveStats;
 }
 
 export const PASS_ACCURACY = 0.95;

@@ -132,10 +132,20 @@ pub fn midi_preview(
     let notes = midifile::track_preview(&data, track, PREVIEW_SECS);
     // Если GM-банк загружен — дорожка звучит своим инструментом (барабаны — барабанами).
     let voice = midifile::track_voice(&data, track).filter(|_| hub.audio.status().gm.is_some());
-    spawn_playback(Arc::clone(&hub), notes, voice)
+    let notes = notes
+        .into_iter()
+        .map(|(start, dur, pitch, velocity)| Playback {
+            start,
+            dur,
+            pitch,
+            velocity,
+            voice,
+        })
+        .collect();
+    spawn_playback(Arc::clone(&hub), notes)
 }
 
-/// Нота для проигрывания из интерфейса (задания тренажёра слуха).
+/// Нота для проигрывания из интерфейса (тренажёр слуха, аккомпанемент тренажёра баса).
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayNote {
@@ -143,63 +153,90 @@ pub struct PlayNote {
     dur_ms: u32,
     pitch: u8,
     velocity: u8,
+    /// Свой канал GM (9 — барабаны) и инструмент; без него — общий `program` вызова.
+    #[serde(default)]
+    channel: Option<u8>,
+    #[serde(default)]
+    program: Option<u8>,
 }
 
 /// Канал GM для заданий с тембром (не 1-й — там звук приложения, не 10-й — барабаны).
 const PLAY_CHANNEL: u8 = 2;
 
-/// Проиграть ноты: инструментом GM (`program`, если банк загружен) или звуком приложения.
-/// Новый вызов и `midi_preview_stop` обрывают предыдущий.
+/// Проиграть ноты: инструментом GM (`program` или свой канал ноты, если банк загружен) или
+/// звуком приложения; барабаны без GM-банка не звучат. Новый вызов и `midi_preview_stop`
+/// обрывают предыдущий.
 #[tauri::command]
 pub fn play_notes(
     hub: State<Arc<MidiHub>>,
     notes: Vec<PlayNote>,
     program: Option<u8>,
 ) -> Result<(), String> {
-    let voice = program
-        .filter(|_| hub.audio.status().gm.is_some())
-        .map(|p| (PLAY_CHANNEL, Some(p.min(127))));
+    let gm = hub.audio.status().gm.is_some();
     let notes = notes
         .into_iter()
+        .filter(|n| gm || n.channel != Some(DRUM_CHANNEL))
         .map(|n| {
-            (
-                n.start_ms,
-                n.dur_ms.max(1),
-                n.pitch.min(127),
-                n.velocity.clamp(1, 127),
-            )
+            let voice = if !gm {
+                None
+            } else if let Some(ch) = n.channel {
+                Some((ch.min(15), n.program.map(|p| p.min(127))))
+            } else {
+                program.map(|p| (PLAY_CHANNEL, Some(p.min(127))))
+            };
+            Playback {
+                start: n.start_ms,
+                dur: n.dur_ms.max(1),
+                pitch: n.pitch.min(127),
+                velocity: n.velocity.clamp(1, 127),
+                voice,
+            }
         })
         .collect();
-    spawn_playback(Arc::clone(&hub), notes, voice)
+    spawn_playback(Arc::clone(&hub), notes)
 }
 
-/// Нить проигрывания нот (время мс, длительность мс, высота, сила): прежнее проигрывание обрывается.
-fn spawn_playback(
-    hub: Arc<MidiHub>,
-    notes: Vec<(u32, u32, u8, u8)>,
-    voice: Option<(u8, Option<u8>)>,
-) -> Result<(), String> {
+/// Голос GM: канал и инструмент; `None` — звук приложения.
+type Voice = Option<(u8, Option<u8>)>;
+
+/// Нота проигрывания: начало и длительность (мс), высота, сила, голос.
+struct Playback {
+    start: u32,
+    dur: u32,
+    pitch: u8,
+    velocity: u8,
+    voice: Voice,
+}
+
+/// Нить проигрывания нот: прежнее проигрывание обрывается.
+fn spawn_playback(hub: Arc<MidiHub>, notes: Vec<Playback>) -> Result<(), String> {
     hub.stop_preview();
     let gen = hub.preview_gen.load(Ordering::SeqCst);
     thread::Builder::new()
         .name("mt-preview".into())
         .spawn(move || {
-            // События: (время мс, нажатие?, высота, сила); отпускания раньше нажатий.
-            let mut events: Vec<(u32, bool, u8, u8)> = notes
+            // События: (время мс, нажатие?, высота, сила, голос); отпускания раньше нажатий.
+            let mut events: Vec<(u32, bool, u8, u8, Voice)> = notes
                 .iter()
-                .flat_map(|&(s, d, p, v)| [(s, true, p, v), (s + d, false, p, 0)])
+                .flat_map(|n| {
+                    [
+                        (n.start, true, n.pitch, n.velocity, n.voice),
+                        (n.start + n.dur, false, n.pitch, 0, n.voice),
+                    ]
+                })
                 .collect();
             events.sort_by_key(|e| (e.0, e.1));
+            let gm_voice = notes.iter().any(|n| n.voice.is_some());
             let t0 = clock::now_us();
-            let mut sounding: Vec<u8> = Vec::new();
-            let play = |msg: MidiMessage| match voice {
+            let mut sounding: Vec<(u8, Voice)> = Vec::new();
+            let play = |voice: Voice, msg: MidiMessage| match voice {
                 Some((channel, program)) => hub.audio.gm_send(channel, program, msg),
                 None => hub.devices.play_app(msg),
             };
-            if voice.is_some() {
+            if gm_voice {
                 hub.devices.set_extra_sound_demand(true);
             }
-            for (ms, on, pitch, velocity) in events {
+            for (ms, on, pitch, velocity, voice) in events {
                 loop {
                     if hub.preview_gen.load(Ordering::SeqCst) != gen {
                         break;
@@ -215,20 +252,24 @@ fn spawn_playback(
                     break;
                 }
                 if on {
-                    play(MidiMessage::NoteOn {
-                        note: pitch,
-                        velocity,
-                    });
-                    sounding.push(pitch);
-                } else if let Some(i) = sounding.iter().position(|&p| p == pitch) {
+                    play(
+                        voice,
+                        MidiMessage::NoteOn {
+                            note: pitch,
+                            velocity,
+                        },
+                    );
+                    sounding.push((pitch, voice));
+                } else if let Some(i) = sounding.iter().position(|&(p, v)| p == pitch && v == voice)
+                {
                     sounding.swap_remove(i);
-                    play(MidiMessage::NoteOff { note: pitch });
+                    play(voice, MidiMessage::NoteOff { note: pitch });
                 }
             }
-            for pitch in sounding {
-                play(MidiMessage::NoteOff { note: pitch });
+            for (pitch, voice) in sounding {
+                play(voice, MidiMessage::NoteOff { note: pitch });
             }
-            if voice.is_some() {
+            if gm_voice {
                 hub.devices.set_extra_sound_demand(false);
             }
         })

@@ -3,6 +3,7 @@
 import type { PieceSummary, RhythmSummary } from "../../api";
 import { PASS_DYNAMICS } from "../../lib/drums";
 import { PASS_ACCURACY, PASS_TIMING_SD_MS, type Evaluation } from "../../lib/exercises";
+import { grooveTendency, worstSlot, type GrooveStats } from "../../lib/groove";
 import { formatTime, percent } from "./helpers";
 import type { WaitResult } from "./types";
 
@@ -141,6 +142,7 @@ export function ExerciseSummary({
   ev,
   tempo,
   pass,
+  grooveDrums,
   backLabel,
   next,
   onAgain,
@@ -150,6 +152,7 @@ export function ExerciseSummary({
   ev: Evaluation;
   tempo: number;
   pass?: { accuracy: number; timingSdMs: number };
+  grooveDrums?: boolean;
   backLabel?: string;
   next: { label: string; go: () => void } | null;
   onAgain: () => void;
@@ -205,6 +208,7 @@ export function ExerciseSummary({
               : "Пэды передают одну и ту же силу удара — акценты и тихие ноты не оцениваются."}
           </p>
         )}
+        {ev.groove && <GrooveBlock groove={ev.groove} drums={grooveDrums ?? true} />}
         {!ev.passed && reasons.length > 0 && <p className="hint">Для зачёта нужно: {reasons.join(", ")}.</p>}
         {ev.passed && !pass && <p className="hint">Следующее упражнение открыто.</p>}
         {ev.crossingMs !== null && ev.otherMs !== null && ev.crossingMs > ev.otherMs + 20 && (
@@ -267,6 +271,38 @@ export function Trouble({ measures }: { measures: { measure: number; errors: num
           такт {m.measure} — {m.errors}
         </span>
       ))}
+    </div>
+  );
+}
+
+/** Грув: раньше/позже барабанов в среднем и полоски отклонений по местам в такте (вверх — позже, вниз — раньше). */
+export function GrooveBlock({ groove, drums }: { groove: GrooveStats; drums: boolean }) {
+  const cap = 80;
+  const worst = worstSlot(groove);
+  return (
+    <div className="groove-block" data-groove-mean={groove.meanMs}>
+      <p className="hint">
+        {grooveTendency(groove, drums)}
+        {worst && ` Заметнее всего — на «${worst.label === "·" ? "шестнадцатых" : worst.label}»: ${worst.meanMs > 0 ? "+" : ""}${worst.meanMs} мс.`}
+      </p>
+      <div className="groove-bars" title="Среднее отклонение по местам в такте: вверх — позже, вниз — раньше">
+        {groove.slots.map((s) => {
+          const h = (Math.min(cap, Math.abs(s.meanMs)) / cap) * 50;
+          const tone = Math.abs(s.meanMs) <= 15 ? "ok" : Math.abs(s.meanMs) <= 40 ? "mid" : "bad";
+          return (
+            <div key={s.slot} className="groove-col" title={`${s.count} нот, ${s.meanMs > 0 ? "+" : ""}${s.meanMs} мс`}>
+              <div className="groove-track">
+                <div className={`groove-bar ${tone} ${s.meanMs >= 0 ? "late" : "early"}`} style={{ height: `${h}%` }} />
+              </div>
+              <span className="groove-label">{s.label}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="groove-legend muted">
+        <span>↑ позже</span>
+        <span>↓ раньше</span>
+      </div>
     </div>
   );
 }

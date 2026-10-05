@@ -1652,6 +1652,68 @@ button.link.piece-link:hover {
   font-size: 13px;
   margin-left: 6px;
 }
+/* Грув: отклонения по местам в такте (вверх — позже, вниз — раньше) */
+.groove-block {
+  margin: 4px 0 12px;
+}
+.groove-bars {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.groove-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.groove-track {
+  position: relative;
+  width: 18px;
+  height: 64px;
+  background: #1a1d23;
+  border-radius: 4px;
+}
+.groove-track::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1px solid var(--line);
+}
+.groove-bar {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  border-radius: 2px;
+}
+.groove-bar.late {
+  bottom: 50%;
+}
+.groove-bar.early {
+  top: 50%;
+}
+.groove-bar.ok {
+  background: var(--good);
+}
+.groove-bar.mid {
+  background: var(--warn);
+}
+.groove-bar.bad {
+  background: var(--bad);
+}
+.groove-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+.groove-legend {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  margin-top: 4px;
+}
 .exercise-summary .summary-stats {
   grid-template-columns: repeat(3, 1fr);
 }
@@ -3102,4 +3164,67 @@ button.ex-star.on,
 }
 .dictation-slot.bad {
   border-color: var(--bad);
+}
+
+/* Бас: аккомпанемент и «Найди основной тон» */
+.bass-accomp {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 8px 0;
+  font-size: 14px;
+}
+.bass-accomp input[type="range"] {
+  width: 90px;
+  vertical-align: middle;
+}
+.root-now {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.root-beats {
+  display: flex;
+  gap: 8px;
+}
+.root-beat {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--line);
+}
+.root-beat.on {
+  background: var(--right-hand);
+}
+.root-last {
+  font-size: 15px;
+}
+.root-results {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 14px 0 6px;
+}
+.root-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: #1a1d23;
+  border: 1px solid var(--line);
+}
+.root-dot.root {
+  width: 14px;
+}
+.root-dot.ok {
+  background: var(--good);
+  border-color: var(--good);
+}
+.root-dot.bad {
+  background: var(--bad);
+  border-color: var(--bad);
+}
+.root-dot.miss {
+  background: #3a3f4b;
 }

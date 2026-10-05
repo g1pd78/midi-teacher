@@ -318,6 +318,7 @@ impl RhythmSession {
             }
             let (pitch, end, channel, program) =
                 (n.pitch, n.start_ms + n.dur_ms, n.channel, n.program);
+            let velocity = n.velocity.unwrap_or(APP_VELOCITY);
             if self.sounding.iter().any(|s| s.0 == pitch && s.2 == channel) {
                 out.push(off_action(pitch, channel));
                 self.sounding.retain(|s| !(s.0 == pitch && s.2 == channel));
@@ -327,12 +328,9 @@ impl RhythmSession {
                     channel,
                     program,
                     pitch,
-                    velocity: APP_VELOCITY,
+                    velocity,
                 },
-                None => Action::AppNoteOn {
-                    pitch,
-                    velocity: APP_VELOCITY,
-                },
+                None => Action::AppNoteOn { pitch, velocity },
             });
             self.sounding.push((pitch, end, channel));
         }
@@ -597,6 +595,7 @@ mod tests {
             measure,
             channel: None,
             program: None,
+            velocity: None,
         }
     }
 

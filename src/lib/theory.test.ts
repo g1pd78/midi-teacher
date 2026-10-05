@@ -53,7 +53,7 @@ describe("карточки теории", () => {
       const svg = tk.renderToSVG(1);
       expect(svg.length, c.id).toBeGreaterThan(1000);
       // Пример содержит элемент своей карточки.
-      const found = c.group === "Гитара и бас" ? tabFeatures(mei, { capo: c.id === "capo" ? 2 : 0, tuningChanged: c.id === "tuning", fingers: false }) : features(mei);
+      const found = c.group === "Гитара и бас" ? tabFeatures(mei, { capo: c.id === "capo" ? 2 : 0, tuningChanged: c.id === "tuning", fingers: false, bass: ["bass-line", "groove"].includes(c.id), drums: c.id === "groove" }) : features(mei);
       expect(found, c.id).toContain(c.id);
     }
   });

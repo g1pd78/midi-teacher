@@ -116,6 +116,9 @@ pub struct PieceNote {
     pub channel: Option<u8>,
     #[serde(default)]
     pub program: Option<u8>,
+    /// Сила звука ноты аккомпанемента (громкость партии); `None` — обычная.
+    #[serde(default)]
+    pub velocity: Option<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -387,11 +390,11 @@ impl PieceSession {
             return;
         }
         self.accompanied = true;
-        let notes: Vec<(u8, u32, Option<u8>, Option<u8>)> = self
-            .others(self.index)
-            .map(|n| (n.pitch, n.start_ms + n.dur_ms, n.channel, n.program))
-            .collect();
-        for (pitch, end, channel, program) in notes {
+        let notes: Vec<PieceNote> = self.others(self.index).cloned().collect();
+        for n in notes {
+            let (pitch, end, channel, program) =
+                (n.pitch, n.start_ms + n.dur_ms, n.channel, n.program);
+            let velocity = n.velocity.unwrap_or(APP_VELOCITY);
             // Та же высота уже звучит — сначала снять, чтобы нота прозвучала заново.
             if self.sounding.iter().any(|s| s.0 == pitch && s.2 == channel) {
                 out.push(off_action(pitch, channel));
@@ -402,12 +405,9 @@ impl PieceSession {
                     channel,
                     program,
                     pitch,
-                    velocity: APP_VELOCITY,
+                    velocity,
                 },
-                None => Action::AppNoteOn {
-                    pitch,
-                    velocity: APP_VELOCITY,
-                },
+                None => Action::AppNoteOn { pitch, velocity },
             });
             self.sounding.push((pitch, end, channel));
         }
@@ -610,6 +610,7 @@ mod tests {
             measure,
             channel: None,
             program: None,
+            velocity: None,
         }
     }
 

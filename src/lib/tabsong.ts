@@ -96,6 +96,13 @@ export interface TabSong {
   parts: TsPart[];
 }
 
+/** Записанная длительность одной нотой (четверть, восьмая с точкой…) или `null`, если одной не записать. */
+export function writtenDuration(ticks: number): { type: number; dots: number } | null {
+  for (const t of [1, 2, 4, 8, 16, 32])
+    for (const dots of [0, 1]) if (Math.abs(((TPQ * 4) / t) * (dots ? 1.5 : 1) - ticks) < 1) return { type: t, dots };
+  return null;
+}
+
 export const PART_KIND_NAME: Record<PartKind, string> = {
   guitar: "Гитара",
   bass: "Бас",

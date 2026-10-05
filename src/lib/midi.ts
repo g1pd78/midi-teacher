@@ -154,6 +154,7 @@ export function accompNotes(acc: AccompNote[]): PieceNoteIn[] {
     measure: a.measure,
     channel: a.channel,
     program: a.program,
+    velocity: a.velocity ?? null,
   }));
 }
 

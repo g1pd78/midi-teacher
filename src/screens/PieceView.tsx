@@ -38,6 +38,7 @@ import { PART_KIND_NAME } from "../lib/tabsong";
 import { RetunePanel } from "../components/Tuner";
 import { TrackDialog } from "../components/TrackDialog";
 import { accompNotes, overrideFor, toggleOverride } from "../lib/midi";
+import { grooveStats } from "../lib/groove";
 import { TheoryPlaque } from "../components/Theory";
 import { detectFeatures, tabFeatures } from "../lib/theory";
 import { Waterfall, type NoteState } from "../components/Waterfall";
@@ -509,7 +510,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const theoryFeatures = useMemo(
     () =>
       displayMei && tab
-        ? tabFeatures(displayMei, { capo: tab.capo, tuningChanged: tabTuningChanged, fingers: false })
+        ? tabFeatures(displayMei, { capo: tab.capo, tuningChanged: tabTuningChanged, fingers: false, bass: strInst === "bass", drums: !!source.accompaniment })
         : displayMei && scoreRef.current && !drums && !rhythmEx
           ? detectFeatures(displayMei, scoreRef.current.structure, scoreRef.current.notes)
           : [],
@@ -747,6 +748,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     }
     const ev = evaluate(hitLog.current, s.requiredNotes, s.extras, score.notes, fingerMap, tempo);
     if (exercise.pass) ev.passed = ev.accuracy >= exercise.pass.accuracy && ev.timingSdMs <= exercise.pass.timingSdMs && tempo >= 0.999;
+    if (exercise.groove) ev.groove = grooveStats(hitLog.current, score.notes, 60000 / exercise.groove.bpm, exercise.groove.beats) ?? undefined;
     // Барабаны: акценты и тихие ноты — по силе удара относительно обычных ударов.
     if (drums && displayMei) {
       ev.dynamics = evaluateDynamics(hitLog.current, dynamicsOf(displayMei));
@@ -2036,6 +2038,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
           ev={exResult}
           tempo={tempo}
           pass={exercise.pass}
+          grooveDrums={exercise.groove?.drums}
           backLabel={exercise.backLabel}
           next={exercise.next ?? null}
           onAgain={() => void startRhythm()}

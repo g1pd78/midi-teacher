@@ -5,12 +5,13 @@
 import { TUNINGS } from "./guitar";
 import type { ExerciseStatView } from "./exercises";
 import { seeded } from "./exercises";
-import { TPQ, type TabSong, type TsBeat, type TsNote, type TsPart } from "./tabsong";
+import { TPQ, writtenDuration, type TabSong, type TsBeat, type TsNote, type TsPart } from "./tabsong";
+import { parseChord, rootPc } from "./chords";
 import { STRUM_BY_ID, patternArrows, strumSong } from "./strum";
 import { patternPart } from "./drumPattern";
 
 export type GtrInstrument = "guitar" | "bass";
-export type GtrCategory = "spider" | "strum" | "pentatonic" | "scales" | "arpeggio" | "groove";
+export type GtrCategory = "spider" | "strum" | "pentatonic" | "scales" | "arpeggio" | "groove" | "technique" | "shapes";
 
 export const GTR_CATEGORIES: Record<GtrInstrument, { id: GtrCategory; title: string; description: string }[]> = {
   guitar: [
@@ -23,10 +24,17 @@ export const GTR_CATEGORIES: Record<GtrInstrument, { id: GtrCategory; title: str
   ],
   bass: [
     { id: "spider", title: "Паучок и хроматика", description: "1-2-3-4 и перестановки по четырём струнам: пальцы левой руки и ровное чередование пальцев правой." },
+    {
+      id: "groove",
+      title: "Грув под барабаны",
+      description:
+        "Басовые линии под бит, ступенями: основные тоны, тон — квинта, вместе с бочкой, октавы, проходящие ноты, буги, шаффл, регги, синкопы, фанк с глушёными нотами. В итоге — раньше или позже бочки ты играешь и насколько ровно.",
+    },
+    { id: "technique", title: "Приёмы", description: "Чередование пальцев правой руки, короткие ноты и глушение, хаммер и пулл-офф, слайды, слэп и поп. Приём показан над нотой; оцениваются высота и ритм." },
+    { id: "shapes", title: "Формы на грифе", description: "Где на грифе квинта, октава, терция и септима от основного тона: одна форма руки переносится на любой аккорд." },
     { id: "pentatonic", title: "Пентатоника", description: "Минорная пентатоника в позиции — из неё строится большинство басовых линий." },
     { id: "scales", title: "Гаммы в позиции", description: "Мажор и натуральный минор, палец на лад." },
     { id: "arpeggio", title: "Арпеджио", description: "Звуки аккорда по струнам: основа басовой линии." },
-    { id: "groove", title: "Игра под барабаны", description: "Басовые линии под бит: восьмые по основным тонам, октавы, буги, основной тон — квинта." },
   ],
 };
 
@@ -44,11 +52,32 @@ export interface GtrExercise {
   build: (tuning: number[]) => TabSong;
 }
 
-/** Нота упражнения: струна от низкой, лад, палец (0 — открытая). */
+/** Нота упражнения: струна от низкой, лад, палец (0 — открытая), глушёная нота, подпись приёма. */
 interface Step {
   string: number;
   fret: number;
   finger?: number;
+  dead?: boolean;
+  tech?: string;
+}
+
+const STRING_LETTERS = "EADGBe";
+
+/**
+ * Рифф строкой: клетка — «A3» (струна по букве, лад), «Ax» — глушёная, «A3/H» — с подписью приёма,
+ * «.» — пауза. Буквы — открытые струны стандартного строя от низкой: E A D G (B e у гитары).
+ */
+export function riff(text: string): (Step | null)[] {
+  return text
+    .trim()
+    .split(/\s+/)
+    .map((tok) => {
+      if (tok === ".") return null;
+      const m = /^([EADGBe])(x|\d+)(?:\/(.+))?$/.exec(tok);
+      if (!m) throw new Error(`рифф: «${tok}»`);
+      const string = STRING_LETTERS.indexOf(m[1]);
+      return m[2] === "x" ? { string, fret: 0, dead: true, tech: m[3] } : { string, fret: Number(m[2]), tech: m[3] };
+    });
 }
 
 /** Последовательность одинаковых длительностей → такты 4/4 (с паузой до конца последнего такта). */
@@ -62,18 +91,34 @@ function seqSong(o: {
   fingers?: boolean;
   drums?: string[][];
   triplets?: boolean;
+  /** Нота звучит до следующей (паузы между ними — часть ноты), если так записывается одной нотой. */
+  sustain?: boolean;
 }): TabSong {
   const len = o.triplets ? TPQ / 3 : (TPQ * 4) / o.type;
   const barTicks = TPQ * 4;
   const perBar = Math.round(barTicks / len);
   const bars: TsBeat[][] = [];
+  // Записанная длительность k клеток: в триолях — восьмая или четверть внутри доли.
+  const written = (i: number, k: number): { type: number; dots: number; tuplet?: [number, number] } | null => {
+    if (!o.triplets) return writtenDuration(k * len);
+    if ((i % 3) + k > 3) return null;
+    return k === 1 ? { type: 8, dots: 0, tuplet: [3, 2] } : k === 2 ? { type: 4, dots: 0, tuplet: [3, 2] } : null;
+  };
   o.steps.forEach((s, i) => {
     const b = Math.floor(i / perBar);
     (bars[b] ??= []);
     if (!s) return;
+    let k = 1;
+    if (o.sustain && !s.dead) {
+      while ((i + k) % perBar !== 0 && i + k < o.steps.length && !o.steps[i + k]) k++;
+      while (k > 1 && !written(i, k)) k--;
+    }
+    const w = written(i, k) ?? { type: o.triplets ? 8 : o.type, dots: 0, tuplet: o.triplets ? ([3, 2] as [number, number]) : undefined };
     const note: TsNote = { pitch: o.tuning[s.string] + s.fret, string: s.string, fret: s.fret };
-    if (o.fingers && s.finger) note.techniques = [String(s.finger)];
-    bars[b].push({ tick: (i % perBar) * len, dur: len, type: o.triplets ? 8 : o.type, dots: 0, tuplet: o.triplets ? [3, 2] : undefined, notes: [note] });
+    if (s.dead) note.dead = true;
+    const labels = [o.fingers && s.finger ? String(s.finger) : "", s.tech ?? ""].filter(Boolean);
+    if (labels.length) note.techniques = labels;
+    bars[b].push({ tick: (i % perBar) * len, dur: k * len, type: w.type, dots: w.dots, tuplet: w.tuplet, notes: [note] });
   });
   const drumBars = o.drums ?? [];
   const count = Math.max(bars.length, drumBars.length);
@@ -89,13 +134,13 @@ function seqSong(o: {
       staves: [{ tab: true, clef: o.kind === "bass" ? "F8" : "G8", bars: masters.map((_, i) => [bars[i] ?? []]) }],
     },
   ];
-  if (drumBars.length) parts.push(patternPart(drumBars, masters.length));
+  if (drumBars.length) parts.push(o.triplets ? patternPart(drumBars, masters.length, 12, TPQ / 3) : patternPart(drumBars, masters.length));
   return { title: o.title, artist: "", album: "", tempo: o.bpm, masters, order: masters.map((_, i) => ({ master: i, tempos: [], pass: 0 })), parts };
 }
 
 // --- Барабаны ---
 
-/** Узоры барабанов по 16 клеток (шестнадцатые): бочка, малый, хэт (или райд). */
+/** Узоры барабанов по 16 клеток (шестнадцатые): бочка, малый, хэт (или райд); шаффл — 12 клеток триолями. */
 const BEATS: Record<string, string[]> = {
   //      1   2   3   4   (по 4 клетки на долю)
   rock: ["k:x.......x.x....", "s:....x.......x...", "h:x.x.x.x.x.x.x.x."],
@@ -103,6 +148,11 @@ const BEATS: Record<string, string[]> = {
   funk: ["k:x.....x...x....", "s:....x..x.x..x...", "h:xxxxxxxxxxxxxxxx"],
   pop: ["k:x.......x.......", "s:....x.......x...", "h:x.x.x.x.x.x.x.x."],
   disco: ["k:x...x...x...x...", "s:....x.......x...", "o:..x...x...x...x."],
+  reggae: ["k:........x.......", "s:........x.......", "h:x.x.x.x.x.x.x.x."],
+  motown: ["k:x.......x.......", "s:....x.......x...", "h:x.x.x.x.x.x.x.x.", "c:x..............."],
+  sync: ["k:x..x..x...x.....", "s:....x.......x...", "h:x.x.x.x.x.x.x.x."],
+  //        1  2  3  4  (по 3 клетки триолью на долю)
+  shuffle: ["k:x.....x.....", "s:...x.....x..", "r:x.xx.xx.xx.x"],
 };
 
 // --- Позиции: звуки лада в окне ладов ---
@@ -334,6 +384,47 @@ function buildCatalog(): GtrExercise[] {
           });
         }
       }
+    // Приёмы и формы на грифе (бас).
+    if (instrument === "bass") {
+      for (const t of BASS_TECHNIQUES)
+        for (const bpm of t.tempos)
+          out.push({
+            id: `bass-tech-${t.id}-${bpm}`,
+            instrument,
+            category: "technique",
+            group: t.name,
+            variant: `${bpm} уд/мин`,
+            title: `${t.name}, ${bpm} уд/мин (бас)`,
+            bpm,
+            hint: t.hint,
+            build: (tuning) => {
+              const steps = Array.from({ length: t.repeat }, () => riff(t.riff)).flat();
+              return seqSong({ steps, type: t.type, sustain: t.sustain, bpm, tuning, kind: instrument, title: t.name, drums: Array.from({ length: Math.ceil(steps.length / t.type) }, () => BEATS[t.beat]) });
+            },
+          });
+      for (const f of BASS_SHAPES)
+        for (const bpm of [70, 90])
+          out.push({
+            id: `bass-shape-${f.id}-${bpm}`,
+            instrument,
+            category: "shapes",
+            group: f.name,
+            variant: `${f.chords.join("–")} · ${bpm}`,
+            title: `${f.name}: ${f.chords.join(" – ")}, ${bpm} уд/мин (бас)`,
+            bpm,
+            hint: f.hint,
+            build: (tuning) => {
+              const steps = [...f.chords, ...f.chords].flatMap((c) => shapeSteps(c, f.tones, tuning));
+              const song = seqSong({ steps, type: 8, bpm, tuning, kind: instrument, title: f.name, drums: Array.from({ length: f.chords.length * 2 }, () => BEATS.pop) });
+              // Буква аккорда — над первой нотой такта.
+              song.parts[0].staves[0].bars.forEach((voices, b) => {
+                const first = voices[0]?.[0];
+                if (first) first.chord = f.chords[b % f.chords.length];
+              });
+              return song;
+            },
+          });
+    }
     // Игра под барабаны.
     for (const g of GROOVES[instrument])
       for (const bpm of g.tempos) {
@@ -347,9 +438,20 @@ function buildCatalog(): GtrExercise[] {
           bpm,
           hint: g.hint,
           build: (tuning) => {
-            const bar = g.bar.map((x) => (x ? { string: x[0], fret: x[1] } : null));
+            const bar = g.riff ? riff(g.riff) : (g.bar ?? []).map((x) => (x ? { string: x[0], fret: x[1] } : null));
             const steps = Array.from({ length: g.repeat }, () => bar).flat();
-            return seqSong({ steps, type: g.type, bpm, tuning, kind: instrument, title: g.name, drums: Array.from({ length: Math.ceil((steps.length * (g.type === 16 ? 1 : 2)) / 16) }, () => BEATS[g.beat]) });
+            const perBar = g.triplets ? 12 : g.type;
+            return seqSong({
+              steps,
+              type: g.type,
+              triplets: g.triplets,
+              sustain: g.sustain,
+              bpm,
+              tuning,
+              kind: instrument,
+              title: g.name,
+              drums: Array.from({ length: Math.ceil(steps.length / perBar) }, () => BEATS[g.beat]),
+            });
           },
         });
       }
@@ -370,8 +472,23 @@ const STRUM_PLAN: [string, [string, number][]][] = [
   ["sixteenths", [["Em Am", 60], ["D A Bm G", 70]]],
 ];
 
+interface Groove {
+  id: string;
+  name: string;
+  beat: string;
+  type: 8 | 16;
+  /** Клетки: [струна от низкой, лад] (null — пауза) или рифф строкой (см. `riff`). */
+  bar?: ([number, number] | null)[];
+  riff?: string;
+  triplets?: boolean;
+  sustain?: boolean;
+  repeat: number;
+  tempos: number[];
+  hint: string;
+}
+
 /** Риффы под бит: [струна от низкой, лад] на каждую восьмую/шестнадцатую, null — пауза. */
-const GROOVES: Record<GtrInstrument, { id: string; name: string; beat: string; type: 8 | 16; bar: ([number, number] | null)[]; repeat: number; tempos: number[]; hint: string }[]> = {
+const GROOVES: Record<GtrInstrument, Groove[]> = {
   guitar: [
     {
       id: "rock",
@@ -419,49 +536,236 @@ const GROOVES: Record<GtrInstrument, { id: string; name: string; beat: string; t
       hint: "По звуку аккорда на восьмую: Am, F, C, G — по такту на аккорд.",
     },
   ],
+  // Бас: группы по порядку трудности, каждая открывается после первого варианта предыдущей.
   bass: [
     {
       id: "roots",
       name: "Восьмые по основным тонам",
       beat: "rock",
       type: 8,
-      bar: [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [1, 0], [1, 0], [1, 0], [1, 0], [1, 2], [1, 2], [1, 2], [1, 2]],
+      riff: "E0 E0 E0 E0 E0 E0 E0 E0 A0 A0 A0 A0 A2 A2 A2 A2",
       repeat: 2,
       tempos: [90, 110],
       hint: "Ровные восьмые вместе с бочкой и хэтом: ми, ля, си.",
-    },
-    {
-      id: "octaves",
-      name: "Октавы (диско)",
-      beat: "disco",
-      type: 8,
-      bar: [[0, 0], [2, 2], [0, 0], [2, 2], [0, 0], [2, 2], [0, 0], [2, 2], [1, 0], [3, 2], [1, 0], [3, 2], [1, 0], [3, 2], [1, 0], [3, 2]],
-      repeat: 2,
-      tempos: [100, 115],
-      hint: "Нижняя нота — указательным, октава через струну — безымянным или мизинцем.",
-    },
-    {
-      id: "boogie",
-      name: "Буги на ми",
-      beat: "boogie",
-      type: 8,
-      bar: [[0, 0], [0, 4], [1, 2], [1, 4], [1, 5], [1, 4], [1, 2], [0, 4], [1, 0], [1, 4], [2, 2], [2, 4], [2, 5], [2, 4], [2, 2], [1, 4]],
-      repeat: 2,
-      tempos: [90, 110],
-      hint: "Основной тон — терция — квинта — секста — септима и обратно.",
     },
     {
       id: "rootfifth",
       name: "Основной тон — квинта",
       beat: "pop",
       type: 8,
-      bar: [[1, 3], null, [2, 5], null, [1, 3], null, [2, 5], null, [0, 3], null, [1, 5], null, [0, 3], null, [1, 5], null, [0, 5], null, [1, 7], null, [0, 5], null, [1, 7], null, [0, 1], null, [1, 3], null, [0, 1], null, [1, 3], null],
+      riff: "A3 . D5 . A3 . D5 . E3 . A5 . E3 . A5 . E5 . A7 . E5 . A7 . E1 . A3 . E1 . A3 .",
+      sustain: true,
       repeat: 2,
       tempos: [80, 100],
-      hint: "Четвертями: основной тон аккорда и квинта над ним — C, G, Am, F.",
+      hint: "Четвертями: основной тон аккорда и квинта над ним (соседняя струна, два лада выше) — C, G, Am, F.",
+    },
+    {
+      id: "kick",
+      name: "Вместе с бочкой",
+      beat: "rock",
+      type: 16,
+      riff: "A0 . . . . . . . A0 . A0 . . . . . E1 . . . . . . . E1 . E1 . . . . .",
+      sustain: true,
+      repeat: 2,
+      tempos: [85, 100],
+      hint: "Бас звучит ровно вместе с бочкой: на «раз», на «три» и сразу после. Слушай барабаны — бас и бочка должны слиться в один удар.",
+    },
+    {
+      id: "octaves",
+      name: "Октавы (диско)",
+      beat: "disco",
+      type: 8,
+      riff: "E0 D2 E0 D2 E0 D2 E0 D2 A0 G2 A0 G2 A0 G2 A0 G2",
+      repeat: 2,
+      tempos: [100, 115],
+      hint: "Нижняя нота — указательным, октава через струну — безымянным или мизинцем.",
+    },
+    {
+      id: "motown",
+      name: "Проходящие ноты (мотаун)",
+      beat: "motown",
+      type: 8,
+      riff: "A3 . A3 . D2 . E4 . E5 . E5 . A3 . A4 . A5 . A5 . D3 . D4 . E3 . E3 . D0 . A2 .",
+      sustain: true,
+      repeat: 2,
+      tempos: [90, 105],
+      hint: "Основной тон на «раз», звук аккорда — на «три», а в конце такта — проходящая нота, ведущая к следующему аккорду (C – Am – Dm – G).",
+    },
+    {
+      id: "boogie",
+      name: "Буги на ми",
+      beat: "boogie",
+      type: 8,
+      riff: "E0 E4 A2 A4 A5 A4 A2 E4 A0 A4 D2 D4 D5 D4 D2 A4",
+      repeat: 2,
+      tempos: [90, 110],
+      hint: "Основной тон — терция — квинта — секста — септима и обратно.",
+    },
+    {
+      id: "shuffle",
+      name: "Шаффл",
+      beat: "shuffle",
+      type: 8,
+      triplets: true,
+      riff: "E0 . E0 A2 . A2 A4 . A4 A2 . A2 A0 . A0 D2 . D2 D4 . D4 D2 . D2",
+      sustain: true,
+      repeat: 2,
+      tempos: [80, 100],
+      hint: "«Длинная — короткая»: восьмые триолью, средняя пропущена. Качай вместе с райдом: та-та, та-та.",
+    },
+    {
+      id: "reggae",
+      name: "Регги",
+      beat: "reggae",
+      type: 16,
+      riff: ". . . . E5 . E5 . . . A3 . A2 . . . . . . . A5 . A5 . . . D3 . D2 . . .",
+      sustain: true,
+      repeat: 2,
+      tempos: [75, 90],
+      hint: "На «раз» — пауза, бас вступает после неё; бочка и малый — на «три». Ноты глубокие и короткие: Am, Dm.",
+    },
+    {
+      id: "sync",
+      name: "Синкопы 3-3-2",
+      beat: "sync",
+      type: 16,
+      riff: "E5 . . E5 . . E5 . . . A3 . A2 . . . E3 . . E3 . . E3 . . . A0 . A2 . . .",
+      sustain: true,
+      repeat: 2,
+      tempos: [85, 100],
+      hint: "Удары на «раз», на последнюю шестнадцатую первой доли и на «и» второй: раз-и-и-ИИ-и-ИИ… Бочка играет этот же ритм.",
+    },
+    {
+      id: "funk",
+      name: "Фанк с глушёными нотами",
+      beat: "funk",
+      type: 16,
+      riff: "E0 . Ex E0 . . D2 . Ex . E3 . E5 . Ex .",
+      sustain: true,
+      repeat: 4,
+      tempos: [80, 95],
+      hint: "X — глушёная нота: пальцы левой руки лежат на струне, не прижимая её; щелчок без высоты держит ритм. Оцениваются остальные ноты.",
     },
   ],
 };
+
+/** Приёмы для баса: рифф, бит, темпы. */
+const BASS_TECHNIQUES: { id: string; name: string; beat: string; type: 8 | 16; riff: string; sustain?: boolean; repeat: number; tempos: number[]; hint: string }[] = [
+  {
+    id: "alternate",
+    name: "Чередование пальцев (i, m)",
+    beat: "pop",
+    type: 8,
+    riff: "E0/i E0/m E0/i E0/m A0/i A0/m A0/i A0/m D0/i D0/m D0/i D0/m G0/i G0/m G0/i G0/m G0/i G0/m D0/i D0/m A0/i A0/m E0/i E0/m",
+    repeat: 1,
+    tempos: [70, 90],
+    hint: "Указательный (i) и средний (m) — строго по очереди, даже при переходе на другую струну. Большой палец опирается на звукосниматель или на нижнюю струну.",
+  },
+  {
+    id: "short",
+    name: "Короткие ноты и глушение",
+    beat: "pop",
+    type: 8,
+    riff: "A3 . A3 . A3 . A3 . E3 . E3 . E3 . E3 . E5 . E5 . E5 . E5 . E1 . E1 . E1 . E1 .",
+    repeat: 1,
+    tempos: [80, 100],
+    hint: "Каждая нота — восьмая, потом пауза: сразу после щипка ослабь палец левой руки, не отрывая его от струны. Свободные струны глуши пальцами правой руки.",
+  },
+  {
+    id: "hammer",
+    name: "Хаммер и пулл-офф",
+    beat: "pop",
+    type: 8,
+    riff: "A3/H A5 A5/P A3 D3/H D5 D5/P D3 E3/H E5 E5/P E3 A2/H A3 A3/P A2",
+    repeat: 2,
+    tempos: [70, 85],
+    hint: "H — второй палец ударяет по ладу без щипка, P — палец срывается со струны, и звучит нота ниже. Щипок — только на первой ноте пары.",
+  },
+  {
+    id: "slide",
+    name: "Слайды",
+    beat: "pop",
+    type: 8,
+    riff: "E3/↗ E5 . . A3/↗ A5 . . A5/↘ A3 . . E5/↘ E3 . .",
+    sustain: true,
+    repeat: 2,
+    tempos: [70, 85],
+    hint: "↗ — проведи палец по струне вверх на два лада, не отпуская; ↘ — обратно. Щипок только на первой ноте, вторая звучит от скольжения.",
+  },
+  {
+    id: "slap",
+    name: "Слэп и поп",
+    beat: "funk",
+    type: 16,
+    riff: "E0/T . Ex/T . D2/P . . . E0/T . Ex/T . D2/P . E0/T . A0/T . Ax/T . G2/P . . . A0/T . Ax/T . G2/P . A0/T .",
+    sustain: true,
+    repeat: 2,
+    tempos: [75, 90],
+    hint: "T — удар косточкой большого пальца по струне у конца грифа (палец отскакивает), P — поддеть струну указательным и отпустить, чтобы она щёлкнула о лады. X — глушёный удар большим.",
+  },
+];
+
+/** Формы на грифе: интервалы от основного тона по восьмым и аккорды по тактам. */
+const BASS_SHAPES: { id: string; name: string; tones: number[]; chords: string[]; hint: string }[] = [
+  {
+    id: "r58",
+    name: "Тон — квинта — октава",
+    tones: [0, 7, 12, 7, 0, 7, 12, 7],
+    chords: ["C", "F", "G", "C"],
+    hint: "Квинта — на соседней струне на два лада выше, октава — через струну на два лада выше. Форма одна, двигается вместе с аккордом.",
+  },
+  {
+    id: "major",
+    name: "Мажорное трезвучие",
+    tones: [0, 4, 7, 12, 12, 7, 4, 0],
+    chords: ["C", "F", "G", "C"],
+    hint: "Большая терция — на соседней струне на лад ниже основного тона, квинта — на два лада выше, октава — через струну.",
+  },
+  {
+    id: "minor",
+    name: "Минорное трезвучие",
+    tones: [0, 3, 7, 12, 12, 7, 3, 0],
+    chords: ["Am", "Dm", "Em", "Am"],
+    hint: "Малая терция — на соседней струне на два лада ниже основного тона (или на 3-м ладу выше на той же).",
+  },
+  {
+    id: "seventh",
+    name: "Септаккорд (7)",
+    tones: [0, 4, 7, 10, 12, 10, 7, 4],
+    chords: ["A7", "D7", "E7", "A7"],
+    hint: "Малая септима — через струну на том же ладу, что и основной тон; октава — на два лада выше неё.",
+  },
+  {
+    id: "fifthbelow",
+    name: "Квинта снизу",
+    tones: [0, -5, 0, 7, 12, 7, 0, -5],
+    chords: ["A", "D", "E", "A"],
+    hint: "Та же квинта, но на струне ниже на том же ладу: основной тон — на ля или ре, квинта — под ним.",
+  },
+];
+
+/**
+ * Форма на грифе: основной тон на струне, где он ложится на лады 1–9 (с запасом струн для формы),
+ * остальные звуки — на струнах по формуле интервала (кварта между струнами).
+ */
+function shapeSteps(symbol: string, tones: number[], tuning: number[]): Step[] {
+  const c = parseChord(symbol)!;
+  const pc = rootPc(c);
+  const lowOff = Math.min(0, ...tones.map((t) => Math.round(t / 5)));
+  const highOff = Math.max(0, ...tones.map((t) => Math.round(t / 5)));
+  let best: { string: number; fret: number } | null = null;
+  for (let st = -lowOff; st + highOff < tuning.length; st++) {
+    const fret = (((pc - tuning[st]) % 12) + 12) % 12;
+    if (fret < 1 || fret > 9) continue;
+    if (!best || fret < best.fret) best = { string: st, fret };
+  }
+  const root = best ?? { string: -lowOff, fret: (((pc - tuning[-lowOff]) % 12) + 12) % 12 };
+  const rootPitch = tuning[root.string] + root.fret;
+  return tones.map((t) => {
+    const string = root.string + Math.round(t / 5);
+    return { string, fret: rootPitch + t - tuning[string] };
+  });
+}
 
 export const GTR_EXERCISES: GtrExercise[] = buildCatalog();
 export const GTR_EXERCISE_BY_ID = new Map(GTR_EXERCISES.map((e) => [e.id, e]));
@@ -475,7 +779,10 @@ export function gtrGate(instrument: GtrInstrument, category: GtrCategory): strin
       return null;
     case "pentatonic":
     case "groove":
+    case "technique":
       return `${pre}-spider-1234-5-60`;
+    case "shapes":
+      return "bass-groove-roots-90";
     case "scales":
       return `${pre}-penta-am-updown`;
     case "arpeggio":
@@ -529,7 +836,7 @@ export function gtrWarmup(stats: ExerciseStatView[], day: string, instrument: Gt
   const dayNo = Math.floor(Date.parse(`${day}T00:00:00Z`) / 86_400_000) || 0;
   const rotation = spiderDone.length ? spiderDone[dayNo % spiderDone.length] : null;
   const nextSpider = spiders.find((e) => !passed.has(e.id)) ?? null;
-  const other = pick(rnd() < 0.5 ? ["strum", "pentatonic", "scales", "arpeggio"] : ["groove", "strum"]) ?? pick(["groove", "pentatonic"]);
+  const other = pick(rnd() < 0.5 ? ["strum", "pentatonic", "scales", "arpeggio", "shapes"] : ["groove", "strum", "technique"]) ?? pick(["groove", "pentatonic"]);
   const out = [...pinned, rotation, nextSpider, other];
   return out.filter((e, i): e is GtrExercise => !!e && out.indexOf(e) === i);
 }
