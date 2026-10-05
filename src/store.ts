@@ -47,6 +47,34 @@ interface AppStore {
 
 export const SCREEN_DEVICE = "Экранная клавиатура";
 
+/**
+ * Запись настроек на диск: первая правка — сразу, серия правок подряд (ползунок темпа, переключатели)
+ * — одной записью в конце серии, а не файлом на каждое движение.
+ */
+const SAVE_GAP_MS = 150;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingPrefs: UiPrefs | null = null;
+function savePrefs(prefs: UiPrefs) {
+  if (saveTimer) {
+    pendingPrefs = prefs;
+    return;
+  }
+  void api.setPrefs(prefs);
+  const tick = () => {
+    if (pendingPrefs) {
+      void api.setPrefs(pendingPrefs);
+      pendingPrefs = null;
+      saveTimer = setTimeout(tick, SAVE_GAP_MS);
+    } else saveTimer = null;
+  };
+  saveTimer = setTimeout(tick, SAVE_GAP_MS);
+}
+if (typeof window !== "undefined")
+  window.addEventListener("pagehide", () => {
+    if (pendingPrefs) void api.setPrefs(pendingPrefs);
+    pendingPrefs = null;
+  });
+
 export const useApp = create<AppStore>((set, get) => ({
   ready: false,
   prefs: {
@@ -78,7 +106,17 @@ export const useApp = create<AppStore>((set, get) => ({
       audio: s.audio,
       audioDevices: s.audioDevices,
     });
-    await listen("devices", (devices) => set({ devices }));
+    await listen("devices", (devices) =>
+      set((st) => {
+        // Отключённое устройство не пришлёт «отпущено» — его клавиши не должны залипнуть.
+        const gone = new Set(devices.inputs.filter((d) => !d.connected).map((d) => d.name));
+        const stuck = Object.entries(st.held).filter(([, h]) => gone.has(h.device));
+        if (!stuck.length) return { devices };
+        const held = { ...st.held };
+        for (const [k] of stuck) delete held[Number(k)];
+        return { devices, held };
+      }),
+    );
     await listen("audio", (audio) => set({ audio }));
     await listen("midi", (ev) => {
       set((st) => {
@@ -104,7 +142,7 @@ export const useApp = create<AppStore>((set, get) => ({
   setPrefs: (patch) => {
     const prefs = { ...get().prefs, ...patch };
     set({ prefs });
-    void api.setPrefs(prefs);
+    savePrefs(prefs);
   },
 
   setAudioConfig: (patch) => {

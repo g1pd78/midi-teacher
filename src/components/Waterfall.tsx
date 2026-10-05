@@ -40,11 +40,9 @@ const COLORS = {
 export function Waterfall({ notes, low, high, getPos, windowMs, includes, states, bars, loop, fingers }: WaterfallProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const keys = useMemo(() => new Map(keyboardLayout(low, high).map((k) => [k.note, k])), [low, high]);
-  // Сначала белые, потом чёрные — чёрные поверх.
-  const ordered = useMemo(
-    () => [...notes].sort((a, b) => Number(keys.get(a.pitch)?.black ?? 0) - Number(keys.get(b.pitch)?.black ?? 0)),
-    [notes, keys],
-  );
+  // Ноты по началу: каждый кадр перебираются только видимые (двоичный поиск окна).
+  const byStart = useMemo(() => [...notes].sort((a, b) => a.startMs - b.startMs), [notes]);
+  const maxDur = useMemo(() => notes.reduce((m, n) => Math.max(m, n.durMs), 0), [notes]);
   const props = useRef({ getPos, windowMs, includes, bars, loop, fingers });
   props.current = { getPos, windowMs, includes, bars, loop, fingers };
 
@@ -80,9 +78,15 @@ export function Waterfall({ notes, low, high, getPos, windowMs, includes, states
         ctx.fillRect(0, Math.round(yOf(b)), w, 1);
       }
 
-      for (const n of ordered) {
+      // Видимые ноты: начались не раньше «самой длинной ноты» до окна и не позже его верха.
+      const from = firstAtOrAfter(byStart, pos - windowMs * 0.15 - maxDur);
+      const visible: ScoreNote[] = [];
+      for (let i = from; i < byStart.length && byStart[i].startMs <= pos + windowMs; i++) visible.push(byStart[i]);
+      // Сначала белые, потом чёрные — чёрные поверх.
+      visible.sort((a, b) => Number(keys.get(a.pitch)?.black ?? 0) - Number(keys.get(b.pitch)?.black ?? 0));
+      for (const n of visible) {
         const end = n.startMs + n.durMs;
-        if (n.startMs > pos + windowMs || end < pos - windowMs * 0.15) continue;
+        if (end < pos - windowMs * 0.15) continue;
         const k = keys.get(n.pitch);
         if (!k) continue;
         const state = states.current.get(n.id);
@@ -126,9 +130,21 @@ export function Waterfall({ notes, low, high, getPos, windowMs, includes, states
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [ordered, keys, states]);
+  }, [byStart, maxDur, keys, states]);
 
   return <canvas ref={canvasRef} className="waterfall" />;
+}
+
+/** Индекс первой ноты с началом не раньше `ms` (ноты отсортированы по началу). */
+export function firstAtOrAfter(notes: { startMs: number }[], ms: number): number {
+  let lo = 0;
+  let hi = notes.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (notes[mid].startMs < ms) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {

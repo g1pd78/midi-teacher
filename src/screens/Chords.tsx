@@ -30,6 +30,7 @@ import {
 import { renderSvg } from "../lib/verovio";
 import { verovioOptions } from "../lib/staffOptions";
 import { deviceColor, useApp } from "../store";
+import { LevelCard } from "../components/LevelCard";
 import { PieceView } from "./PieceView";
 import { ChordChanges, GuitarChordDrill, GuitarChordsList, GuitarSongView, SongShapes } from "./GuitarChords";
 import { patternArrows, patternsFor, type StrumPattern } from "../lib/strum";
@@ -235,26 +236,18 @@ export function Chords({ tabs }: { tabs: React.ReactNode }) {
             const isOpen = l.id <= open;
             const st = stats.find((s) => s.exercise === chordLevelId(l.id));
             return (
-              <button
+              <LevelCard
                 key={l.id}
-                className={`drum-item${passed ? " passed" : isOpen ? " open" : ""}${l.id === open && !passed ? " current" : ""}`}
-                disabled={!isOpen}
+                n={l.id}
+                title={l.title}
+                hint={l.description}
+                status={st ? `Серий: ${st.attempts}, лучшая ${Math.round(st.bestAccuracy * 100)}%` : "Ещё не играл"}
+                passed={passed}
+                open={isOpen}
+                current={l.id === open && !passed}
                 onClick={() => setView({ kind: "drill", level: l, seed: Math.floor(Date.now() / 1000) % 100000 })}
-                data-chord-level={l.id}
-              >
-                <span className="drum-item-title">
-                  {passed && "✓ "}
-                  {l.id}. {l.title}
-                </span>
-                <span className="drum-item-hint">{l.description}</span>
-                <span className="drum-item-hint muted">
-                  {!isOpen
-                    ? "Откроется после предыдущей ступени"
-                    : st
-                      ? `Серий: ${st.attempts}, лучшая ${Math.round(st.bestAccuracy * 100)}%`
-                      : "Ещё не играл"}
-                </span>
-              </button>
+                data={{ "chord-level": l.id }}
+              />
             );
           })}
         </div>

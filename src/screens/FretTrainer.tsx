@@ -22,6 +22,7 @@ import { verovioOptions } from "../lib/staffOptions";
 import { Fretboard, type FretMark } from "../components/Fretboard";
 import { PADS_DEVICE } from "../api";
 import { deviceColor, useApp, useMidi } from "../store";
+import { LevelCard } from "../components/LevelCard";
 
 const MODE_NAME = { find: "найди на струне", staff: "нота на стане", place: "точка на грифе", all: "все места" } as const;
 
@@ -95,24 +96,19 @@ export function FretTrainer({ tabs }: { tabs: React.ReactNode }) {
             const passed = !!st?.passed;
             const isOpen = l.id <= open;
             return (
-              <button
+              <LevelCard
                 key={l.id}
-                className={`drum-item${passed ? " passed" : isOpen ? " open" : ""}${l.id === open && !passed ? " current" : ""}`}
-                disabled={!isOpen || !tuning}
+                n={l.id}
+                title={l.title}
+                hint={`${MODE_NAME[l.mode]} · ${l.description}`}
+                status={st ? `Серий: ${st.attempts}, лучшая ${Math.round(st.bestAccuracy * 100)}%` : "Ещё не играл"}
+                passed={passed}
+                open={isOpen}
+                current={l.id === open && !passed}
+                disabled={!tuning}
                 onClick={() => setDrill({ level: l, seed: Math.floor(Date.now() / 1000) % 100000 })}
-                data-fret-level={l.id}
-              >
-                <span className="drum-item-title">
-                  {passed && "✓ "}
-                  {l.id}. {l.title}
-                </span>
-                <span className="drum-item-hint">
-                  {MODE_NAME[l.mode]} · {l.description}
-                </span>
-                <span className="drum-item-hint muted">
-                  {!isOpen ? "Откроется после предыдущей ступени" : st ? `Серий: ${st.attempts}, лучшая ${Math.round(st.bestAccuracy * 100)}%` : "Ещё не играл"}
-                </span>
-              </button>
+                data={{ "fret-level": l.id }}
+              />
             );
           })}
         </div>

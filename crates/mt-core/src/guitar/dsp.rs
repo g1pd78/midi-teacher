@@ -413,6 +413,9 @@ pub fn read_wav(bytes: &[u8]) -> Option<(Vec<f32>, u32)> {
             let (format, channels, rate, bits) = fmt?;
             let data = &bytes[body..(body + len).min(bytes.len())];
             let step = channels.max(1) * (bits as usize / 8);
+            if step == 0 {
+                return None;
+            }
             let samples = data
                 .chunks_exact(step)
                 .map(|f| match (format, bits) {
@@ -640,5 +643,11 @@ mod tests {
         assert_eq!(rate, 8000);
         assert_eq!(back.len(), sig.len());
         assert!(back.iter().zip(&sig).all(|(a, b)| (a - b).abs() < 1e-3));
+        // Испорченный заголовок (0 бит на сэмпл) — не паника, а отказ.
+        let mut bad = wav_bytes(&sig, 8000);
+        bad[34] = 0;
+        bad[35] = 0;
+        assert!(read_wav(&bad).is_none());
+        assert!(read_wav(b"RIFF").is_none());
     }
 }

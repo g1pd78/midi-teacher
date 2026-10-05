@@ -2,6 +2,7 @@
 // под барабаны. Удар вниз — все струны формы, вверх — верхние 3–4.
 
 import { TPQ, type TabSong, type TsBeat, type TsNote, type TsPart } from "./tabsong";
+import { patternPart } from "./drumPattern";
 import { chordShape, shapeForTuning, type ChordForm } from "./guitarChords";
 import { parseChart, barLen, type LeadSong } from "./songs";
 
@@ -51,17 +52,6 @@ function strumStrings(frets: number[], up: boolean): number[] {
   const played = frets.map((f, s) => (f >= 0 ? s : -1)).filter((s) => s >= 0);
   if (!up) return played;
   return played.slice(-Math.min(played.length, played.length >= 5 ? 4 : 3));
-}
-
-/** Барабаны: узоры «k:x...» по шестнадцатым (длина узора — длина такта). */
-const GM: Record<string, number> = { k: 36, s: 38, h: 42, o: 46, r: 51, c: 49 };
-function drumBar(lines: string[], cells: number): TsBeat[] {
-  const out: number[][] = Array.from({ length: cells }, () => []);
-  for (const l of lines) {
-    const [d, pat] = l.split(":");
-    [...pat.slice(0, cells)].forEach((ch, i) => ch !== "." && out[i].push(GM[d]));
-  }
-  return out.flatMap((c, i) => (c.length ? [{ tick: i * (TPQ / 4), dur: TPQ / 4, type: 16, dots: 0, notes: c.map((p) => ({ pitch: p })) }] : []));
 }
 
 export interface StrumBar {
@@ -117,17 +107,7 @@ export function strumSong(o: { bars: StrumBar[]; pattern: StrumPattern; bpm: num
       staves: [{ tab: true, clef: "G8", bars: bars.map((b) => [b]) }],
     },
   ];
-  if (o.drums !== false) {
-    const cells = Math.round(barTicks / (TPQ / 4));
-    parts.push({
-      id: "drums",
-      name: "Барабаны",
-      kind: "drums",
-      program: 0,
-      capo: 0,
-      staves: [{ tab: false, clef: "G", bars: masters.map(() => [drumBar(p.drums, cells)]) }],
-    });
-  }
+  if (o.drums !== false) parts.push(patternPart([p.drums], masters.length, Math.round(barTicks / (TPQ / 4))));
   return { title: o.title, artist: "", album: "", tempo: o.bpm, masters, order: masters.map((_, i) => ({ master: i, tempos: [], pass: 0 })), parts };
 }
 

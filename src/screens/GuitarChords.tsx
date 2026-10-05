@@ -25,6 +25,7 @@ import {
   type GtrChordLevel,
 } from "../lib/guitarChordDrill";
 import { useApp, useMidi } from "../store";
+import { LevelCard } from "../components/LevelCard";
 import { missingShapes, patternArrows, songStrumBars, strumSong, type StrumPattern } from "../lib/strum";
 import { parseChart, type LeadSong } from "../lib/songs";
 import { partChart, songAccompaniment } from "../lib/tabsong";
@@ -150,22 +151,18 @@ export function GuitarChordsList({
             const passed = !!st?.passed;
             const isOpen = l.id <= open;
             return (
-              <button
+              <LevelCard
                 key={l.id}
-                className={`drum-item${passed ? " passed" : isOpen ? " open" : ""}${l.id === open && !passed ? " current" : ""}`}
-                disabled={!isOpen}
+                n={l.id}
+                title={l.title}
+                hint={l.description}
+                status={st ? `Серий: ${st.attempts}, лучшая ${Math.round(st.bestAccuracy * 100)}%` : "Ещё не играл"}
+                passed={passed}
+                open={isOpen}
+                current={l.id === open && !passed}
                 onClick={() => onDrill(l)}
-                data-gchord-level={l.id}
-              >
-                <span className="drum-item-title">
-                  {passed && "✓ "}
-                  {l.id}. {l.title}
-                </span>
-                <span className="drum-item-hint">{l.description}</span>
-                <span className="drum-item-hint muted">
-                  {!isOpen ? "Откроется после предыдущей ступени" : st ? `Серий: ${st.attempts}, лучшая ${Math.round(st.bestAccuracy * 100)}%` : "Ещё не играл"}
-                </span>
-              </button>
+                data={{ "gchord-level": l.id }}
+              />
             );
           })}
         </div>

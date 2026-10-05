@@ -1,18 +1,33 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useApp } from "./store";
 import { Header } from "./components/Header";
 import { Hotkeys } from "./components/Hotkeys";
 import { Home } from "./screens/Home";
-import { Exercises, type ExInstrument } from "./screens/Exercises";
-import { Guitar } from "./screens/Guitar";
-import { Drums } from "./screens/Drums";
-import { Studio } from "./screens/Studio";
-import { Pieces } from "./screens/Pieces";
-import { Progress } from "./screens/Progress";
-import { Reference } from "./screens/Reference";
-import { Settings } from "./screens/Settings";
-import { Trainers, type TrainerSection } from "./screens/Trainers";
+import type { ExInstrument } from "./screens/Exercises";
+import type { TrainerSection } from "./screens/Trainers";
 import { Wizard } from "./screens/Wizard";
+
+// Разделы грузятся отдельно: при запуске — только главная, остальное подгружается в фоне сразу после.
+const screens = {
+  exercises: () => import("./screens/Exercises"),
+  guitar: () => import("./screens/Guitar"),
+  drums: () => import("./screens/Drums"),
+  studio: () => import("./screens/Studio"),
+  pieces: () => import("./screens/Pieces"),
+  progress: () => import("./screens/Progress"),
+  reference: () => import("./screens/Reference"),
+  settings: () => import("./screens/Settings"),
+  trainers: () => import("./screens/Trainers"),
+};
+const Exercises = lazy(() => screens.exercises().then((m) => ({ default: m.Exercises })));
+const Guitar = lazy(() => screens.guitar().then((m) => ({ default: m.Guitar })));
+const Drums = lazy(() => screens.drums().then((m) => ({ default: m.Drums })));
+const Studio = lazy(() => screens.studio().then((m) => ({ default: m.Studio })));
+const Pieces = lazy(() => screens.pieces().then((m) => ({ default: m.Pieces })));
+const Progress = lazy(() => screens.progress().then((m) => ({ default: m.Progress })));
+const Reference = lazy(() => screens.reference().then((m) => ({ default: m.Reference })));
+const Settings = lazy(() => screens.settings().then((m) => ({ default: m.Settings })));
+const Trainers = lazy(() => screens.trainers().then((m) => ({ default: m.Trainers })));
 
 export type Screen = "home" | "pieces" | "exercises" | "trainer" | "guitar" | "drums" | "studio" | "reference" | "progress" | "settings";
 
@@ -46,6 +61,12 @@ export function App() {
   useEffect(() => {
     init().catch((e) => setError(String(e)));
   }, [init]);
+  // Когда главная показана — подгрузить остальные разделы, чтобы переходы были мгновенными.
+  useEffect(() => {
+    if (!ready) return;
+    const t = setTimeout(() => Object.values(screens).forEach((load) => void load().catch(() => {})), 300);
+    return () => clearTimeout(t);
+  }, [ready]);
 
   if (error) return <div className="fatal">Не удалось запустить ядро приложения: {error}</div>;
   if (!ready) return <div className="loading">Загрузка…</div>;
@@ -90,6 +111,7 @@ export function App() {
           }}
         />
       )}
+      <Suspense fallback={<div className="loading">Загрузка…</div>}>
       {screen === "pieces" && <Pieces initial={openPiece} onInitialOpened={() => setOpenPiece(null)} />}
       {screen === "progress" && (
         <Progress
@@ -113,6 +135,7 @@ export function App() {
       {screen === "drums" && <Drums />}
       {screen === "studio" && <Studio />}
       {screen === "settings" && <Settings />}
+      </Suspense>
     </div>
   );
 }

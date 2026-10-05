@@ -7,6 +7,7 @@ import type { ExerciseStatView } from "./exercises";
 import { seeded } from "./exercises";
 import { TPQ, type TabSong, type TsBeat, type TsNote, type TsPart } from "./tabsong";
 import { STRUM_BY_ID, patternArrows, strumSong } from "./strum";
+import { patternPart } from "./drumPattern";
 
 export type GtrInstrument = "guitar" | "bass";
 export type GtrCategory = "spider" | "strum" | "pentatonic" | "scales" | "arpeggio" | "groove";
@@ -88,36 +89,13 @@ function seqSong(o: {
       staves: [{ tab: true, clef: o.kind === "bass" ? "F8" : "G8", bars: masters.map((_, i) => [bars[i] ?? []]) }],
     },
   ];
-  if (drumBars.length) parts.push(drumPart(drumBars, masters.length));
+  if (drumBars.length) parts.push(patternPart(drumBars, masters.length));
   return { title: o.title, artist: "", album: "", tempo: o.bpm, masters, order: masters.map((_, i) => ({ master: i, tempos: [], pass: 0 })), parts };
 }
 
 // --- Барабаны ---
 
-/** Строки-узоры барабанов по 16 клеток: «x» — удар. Порядок: бочка, малый, хэт (или райд). */
-const GM: Record<string, number> = { k: 36, s: 38, h: 42, o: 46, r: 51, c: 49 };
-
-/** Такт из узоров «k:x.......x.......» → удары. */
-function drumBar(lines: string[]): TsBeat[] {
-  const cells: number[][] = Array.from({ length: 16 }, () => []);
-  for (const l of lines) {
-    const [d, pat] = l.split(":");
-    [...pat].forEach((ch, i) => ch !== "." && cells[i].push(GM[d]));
-  }
-  return cells.flatMap((c, i) => (c.length ? [{ tick: i * (TPQ / 4), dur: TPQ / 4, type: 16, dots: 0, notes: c.map((p) => ({ pitch: p })) }] : []));
-}
-
-function drumPart(bars: string[][], count: number): TsPart {
-  return {
-    id: "drums",
-    name: "Барабаны",
-    kind: "drums",
-    program: 0,
-    capo: 0,
-    staves: [{ tab: false, clef: "G", bars: Array.from({ length: count }, (_, i) => [drumBar(bars[i % bars.length])]) }],
-  };
-}
-
+/** Узоры барабанов по 16 клеток (шестнадцатые): бочка, малый, хэт (или райд). */
 const BEATS: Record<string, string[]> = {
   //      1   2   3   4   (по 4 клетки на долю)
   rock: ["k:x.......x.x....", "s:....x.......x...", "h:x.x.x.x.x.x.x.x."],

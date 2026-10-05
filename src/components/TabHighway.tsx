@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import type { NoteState } from "./Waterfall";
+import { useEffect, useMemo, useRef } from "react";
+import { firstAtOrAfter, type NoteState } from "./Waterfall";
 
 export interface HighwayNote {
   id: string;
@@ -43,8 +43,11 @@ export function TabHighway({
   loop?: [number, number] | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const props = useRef({ notes, strings, getPos, windowMs, bars, loop });
-  props.current = { notes, strings, getPos, windowMs, bars, loop };
+  // Ноты по началу: каждый кадр перебираются только видимые.
+  const sorted = useMemo(() => [...notes].sort((a, b) => a.startMs - b.startMs), [notes]);
+  const maxDur = useMemo(() => notes.reduce((m, n) => Math.max(m, n.durMs), 0), [notes]);
+  const props = useRef({ notes: sorted, maxDur, strings, getPos, windowMs, bars, loop });
+  props.current = { notes: sorted, maxDur, strings, getPos, windowMs, bars, loop };
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -52,7 +55,7 @@ export function TabHighway({
     let raf = 0;
     const draw = () => {
       raf = requestAnimationFrame(draw);
-      const { notes, strings, getPos, windowMs, bars, loop } = props.current;
+      const { notes, maxDur, strings, getPos, windowMs, bars, loop } = props.current;
       const dpr = window.devicePixelRatio || 1;
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
@@ -79,7 +82,8 @@ export function TabHighway({
       }
 
       const bh = Math.min(26, rowH * 0.72);
-      for (const n of notes) {
+      for (let i = firstAtOrAfter(notes, pos - windowMs * 0.3 - maxDur); i < notes.length && notes[i].startMs <= pos + windowMs; i++) {
+        const n = notes[i];
         const x0 = xOf(n.startMs);
         const x1 = xOf(n.startMs + n.durMs);
         if (x0 > w || x1 < -20) continue;

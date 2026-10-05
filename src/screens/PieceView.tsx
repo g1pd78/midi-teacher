@@ -3,7 +3,6 @@ import {
   api,
   listen,
   PADS_DEVICE,
-  type AccompNote,
   type AttemptRecord,
   type Converted,
   type GuitarConfig,
@@ -34,7 +33,7 @@ import { RhythmPads } from "../components/RhythmPads";
 import { PASS_DYNAMICS, drumMei, drumPartFromMidi, dynamicsOf, evaluateDynamics } from "../lib/drums";
 import { FRETS, MIRROR, meiToTab, nearestPosition, readTuning, tabStaff, withStaff, type StringInstrument } from "../lib/tab";
 import { TUNINGS, openTuning, sameTuning, tuningLabel, TUNING_PRESETS } from "../lib/guitar";
-import { openSongFile, type FileSong, type SongFormat } from "../lib/filesong";
+import { openSongFile, type FileSong } from "../lib/filesong";
 import { PART_KIND_NAME } from "../lib/tabsong";
 import { RetunePanel } from "../components/Tuner";
 import { TrackDialog } from "../components/TrackDialog";
@@ -44,19 +43,17 @@ import { detectFeatures, tabFeatures } from "../lib/theory";
 import { Waterfall, type NoteState } from "../components/Waterfall";
 import { keyLabel } from "../lib/notes";
 import { fingerNotes, injectFingering, parseFinger, type Finger } from "../lib/fingering";
-import { PASS_ACCURACY, PASS_TIMING_SD_MS, evaluate, type Evaluation, type HitRecord } from "../lib/exercises";
+import { PASS_ACCURACY, evaluate, type Evaluation, type HitRecord } from "../lib/exercises";
 import type { Hints } from "../lib/reading";
 import { songFromScore } from "../lib/songs";
 import { RHYTHM_LEFT, RHYTHM_RIGHT } from "../lib/rhythm";
 import {
-  LEVELS,
   STREAK_TO_ADVANCE,
   levelPreset,
   levelTempo,
   measureHands,
   phraseEnds,
   rhythmAccuracy,
-  unitLabel,
   waitAccuracy,
 } from "../lib/practice";
 import {
@@ -68,165 +65,47 @@ import {
   loopRangeMs,
   measureStarts,
   parseMei,
-  type MeiStructure,
-  type ScoreNote,
 } from "../lib/score";
 import { ClockSync, stepAt, transportPos, type Transport } from "../lib/transport";
 import { loadScore, renderScore, warmUpVerovio } from "../lib/verovio";
 import { SCREEN_DEVICE, deviceColor, useApp } from "../store";
+import { Toggle } from "../components/Toggle";
+import { GuidePanel, SuggestionBar } from "./piece/GuidePanel";
+import { ExerciseSummary, ExerciseWaitSummary, RhythmSummaryPanel, WaitSummary } from "./piece/Summaries";
+import {
+  ACCID,
+  HAND_COLOR,
+  HAND_NAME,
+  INSTRUMENT_NAME,
+  NO_SETUP,
+  SOLFEGE,
+  TEMPO_MAX,
+  TEMPO_MIN,
+  TRANSPOSE_MAX,
+  WATERFALL_SEC,
+  alignRows,
+  capPageWidth,
+  clampTempo,
+  measureAt,
+  percent,
+  streakOf,
+  toIn,
+  verovioLayout,
+  type Current,
+  type Loop,
+  type Rect,
+  type Score,
+} from "./piece/helpers";
+import type { ExerciseContext, PieceSource, WaitResult } from "./piece/types";
+import { useGuitarHints } from "./piece/useGuitarHints";
 
-export interface PieceSource {
-  id: string;
-  title: string;
-  load: () => Promise<{ data: string | ArrayBuffer; zip: boolean }>;
-  /** MIDI-файл библиотеки: ноты строятся из него с выбранными дорожками. */
-  midi?: string;
-  /** Сопоставление нажатий (песни по буквам: аккорды в любой октаве). */
-  keyMap?: KeyMap;
-  /** Надпись кнопки «назад» (песни по буквам — «← Аккорды»). */
-  backLabel?: string;
-  /** Песня с партиями из библиотеки (Rocksmith, Guitar Pro, текстовый таб): выбираешь партию, остальные звучат. */
-  songFile?: { id: string; format: SongFormat };
-  /** Что звучит вместе с учеником (упражнения под барабаны). */
-  accompaniment?: AccompNote[];
-  /** Инструмент задан заранее (песня боем — гитара). */
-  instrument?: PieceInstrument;
-  /** Полоса над нотами (схемы аккордов песни). */
-  banner?: React.ReactNode;
-}
-
-const NO_SETUP: PieceSetup = { transpose: 0, roles: null, handOverrides: [], instrument: null, part: 0 };
-const INSTRUMENT_NAME: Record<PieceInstrument, string> = { piano: "Фортепиано", guitar: "Гитара", bass: "Бас", drums: "Барабаны" };
-const TRANSPOSE_MAX = 12;
-
-const HAND_COLOR = { right: "#5AA9FF", left: "#FFB454" } as const;
-/** Видимая высота падающих нот в секундах реального времени. */
-const WATERFALL_SEC = 3;
-const TEMPO_MIN = 0.3;
-const TEMPO_MAX = 1.2;
-
-const SOLFEGE: Record<string, string> = { c: "до", d: "ре", e: "ми", f: "фа", g: "соль", a: "ля", b: "си" };
-const ACCID: Record<string, string> = { s: "♯", f: "♭", ss: "𝄪", ff: "𝄫" };
-const HAND_NAME: Record<PlayHands, string> = { right: "правая рука", left: "левая рука", both: "обе руки", none: "слушаем" };
-
-function verovioLayout(layout: "line" | "pages", width: number, tab = false, tabWithStaff = false): Record<string, unknown> {
-  const common = {
-    // Ноты над табом — станы ближе друг к другу, чтобы строка не мельчала.
-    ...(tabWithStaff ? { spacingStaff: 2 } : {}),
-    // Цифры ладов в табулатуре мелкие — таб крупнее нот.
-    scale: tab ? 58 : 42,
-    header: "none",
-    footer: "none",
-    svgViewBox: true,
-    svgRemoveXlink: true,
-    adjustPageHeight: true,
-    pageMarginTop: tab ? 15 : 60,
-    pageMarginBottom: tab ? 15 : 60,
-    pageMarginLeft: 40,
-    pageMarginRight: 40,
-    lyricSize: 2.5,
-  };
-  return layout === "line"
-    ? { ...common, breaks: "none", pageWidth: 60000, pageHeight: 60000, adjustPageWidth: true }
-    : // Ширина страницы в единицах Verovio подбирается под окно: ~2 единицы на пиксель при scale 42.
-      { ...common, breaks: "auto", pageWidth: Math.max(1500, Math.round(width * 2)), pageHeight: 60000 };
-}
-
-// «Страницы»: ширина страницы в Verovio — ~2 единицы на пиксель окна, отсюда масштаб
-// ~1,24 от собственного размера SVG. Короткое упражнение (одна неполная строка) Verovio
-// обрезает по содержимому — без ограничения оно растянулось бы на всю ширину и стало огромным.
-const PAGE_ZOOM = 1.24;
-function capPageWidth(svg: string): string {
-  const m = /viewBox="0 0 ([\d.]+) /.exec(svg);
-  return m ? svg.replace("<svg", `<svg style="max-width:${Math.round(Number(m[1]) * PAGE_ZOOM)}px"`) : svg;
-}
-
-function formatTime(ms: number): string {
-  const s = Math.round(ms / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
-
-function percent(x: number): string {
-  return `${Math.round(x * 100)}%`;
-}
-
-interface Current {
-  index: number;
-  noteIds: string[];
-  required: number[];
-}
-
-interface Loop {
-  from: number;
-  to: number;
-}
-
-interface Score {
-  notes: ScoreNote[];
-  structure: MeiStructure;
-  starts: number[];
-  tempoBpm: number;
-  endMs: number;
-}
-
-interface Rect {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
-
-/** Серия хороших проходов на уровне: для уровня 1 — у руки, которая сейчас играет. */
-function streakOf(unit: UnitView): number {
-  const s = unit.state;
-  if (s.level === 1) return unit.hand === "left" ? s.leftStreak : unit.hand === "right" ? s.rightStreak : s.streak;
-  return s.streak;
-}
-
-/** Упражнение: тот же экран игры, но своя оценка (ровность ритма и громкости) и свои кнопки. */
-export interface ExerciseContext {
-  id: string;
-  /** Место в разминке дня: «2 из 4». */
-  playlist?: { index: number; total: number };
-  next?: { label: string; go: () => void } | null;
-  onRecorded?: (ev: Evaluation) => void;
-  /**
-   * Барабанное упражнение: дорожка по барабанам и пэды вместо клавиатуры.
-   * Ритм: однолинейный стан, дорожка из одной-двух строк, стучать любой клавишей или пэдом.
-   * Гитара/бас: табы и гриф.
-   */
-  instrument?: "drums" | "rhythm" | "guitar" | "bass";
-  /** Подсказка перед игрой (позиция, пальцы). */
-  hint?: string;
-  /** Подсказки ступени (чтение с листа): начальные значения переключателей. */
-  hints?: Hints;
-  /** Сопоставление нажатий с нотами (ритм: любая клавиша / по рукам). */
-  keyMap?: KeyMap;
-  /** Свои пороги зачёта вместо упражнений (95% и ±60 мс). */
-  pass?: { accuracy: number; timingSdMs: number };
-  /** Зачёт и в режиме ожидания: результат пишется под этим id (точность без ошибок нажатий). */
-  waitRecord?: string;
-  /** Режим при открытии; «только в темпе» — без переключателя режима (ритм). */
-  defaultMode?: "wait" | "rhythm";
-  rhythmOnly?: boolean;
-  /** Кнопка «▶ Послушать»: приложение играет всё само. */
-  listen?: boolean;
-  /** Надпись кнопки «назад». */
-  backLabel?: string;
-}
-
-/** Результат упражнения в режиме ожидания. */
-interface WaitResult {
-  accuracy: number;
-  errors: number;
-  durationMs: number;
-  passed: boolean;
-}
+export type { ExerciseContext, PieceSource } from "./piece/types";
 
 export function PieceView({ source, onBack, exercise }: { source: PieceSource; onBack: () => void; exercise?: ExerciseContext }) {
   const { prefs, setPrefs, held, devices } = useApp();
   const p = prefs.piece;
-  const setPiece = (patch: Partial<PiecePrefs>) => setPrefs({ piece: { ...p, ...patch } });
+  // Свежие настройки из хранилища: две правки подряд (до перерисовки) не затирают друг друга.
+  const setPiece = (patch: Partial<PiecePrefs>) => setPrefs({ piece: { ...useApp.getState().prefs.piece, ...patch } });
   const naming = prefs.noteNames;
   const guided = !exercise && p.guided;
   // Упражнения: режим, темп и метроном — свои, не из настроек пьес.
@@ -246,8 +125,10 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const hitLog = useRef<HitRecord[]>([]);
   // Настройки этой пьесы: тон, дорожки MIDI, правка рук.
   const setup: PieceSetup = { ...NO_SETUP, ...prefs.pieceSetup?.[source.id] };
-  const setSetup = (patch: Partial<PieceSetup>) =>
-    setPrefs({ pieceSetup: { ...prefs.pieceSetup, [source.id]: { ...setup, ...patch } } });
+  const setSetup = (patch: Partial<PieceSetup>) => {
+    const all = useApp.getState().prefs.pieceSetup ?? {};
+    setPrefs({ pieceSetup: { ...all, [source.id]: { ...NO_SETUP, ...all[source.id], ...patch } } });
+  };
   const transpose = exercise || source.songFile ? 0 : setup.transpose;
   // Песня из файла с партиями: выбранная партия (инструмент — по ней).
   const [fileSong, setFileSong] = useState<FileSong | null>(null);
@@ -380,6 +261,13 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
 
   const scoreRef = useRef(score);
   scoreRef.current = score;
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   // Загрузка файла → MEI. MIDI сначала переводится в MusicXML с выбранными дорожками;
   // если дорожки ещё не выбраны — сначала окно дорожек.
@@ -474,7 +362,9 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   // Рендер нот и разбор пьесы.
   const layoutKey = p.layout === "pages" ? `pages-${width}` : "line";
   // Названия нот — только у рук, которые играет ученик: так строка нот ниже и крупнее.
-  const staves = useMemo(() => (mei ? parseMei(mei).staves : 0), [mei]);
+  // Разбор MEI пьесы — один раз на файл (он нужен табам, аккомпанементу и числу станов).
+  const meiInfo = useMemo(() => (mei ? parseMei(mei) : null), [mei]);
+  const staves = meiInfo?.staves ?? 0;
   // Гитара/бас: одна партия в табулатуре (готовые табы из файла — как есть).
   const fileTab = useMemo(() => (mei ? tabStaff(mei) : null), [mei]);
   const partStaff = strInst ? (fileTab ?? Math.min(Math.max(1, staves), setup.part || (strInst === "bass" && staves >= 2 ? 2 : 1))) : 0;
@@ -503,7 +393,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const tab = useMemo(
     () =>
       strInst && mei
-        ? meiToTab(mei, partStaff, strInst, parseMei(mei).meter, fixedTab && !relayout ? {} : { tuning: tabOpen, capo: tabCapo, relayout })
+        ? meiToTab(mei, partStaff, strInst, meiInfo!.meter, fixedTab && !relayout ? {} : { tuning: tabOpen, capo: tabCapo, relayout })
         : null,
     // tabOpen, tabCapo и relayout входят в tabKey
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -564,8 +454,9 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     renderScore(mei, verovioLayout("line", 1200))
       .then((r) => {
         if (!alive) return;
-        const all = buildNotes(r.timemap, r.midi, parseMei(mei));
-        const staffOf = parseMei(mei).staffOf;
+        const info = meiInfo ?? parseMei(mei);
+        const all = buildNotes(r.timemap, r.midi, info);
+        const staffOf = info.staffOf;
         setOtherNotes(all.filter((n) => staffOf.get(n.id) !== partStaff).map((n) => ({ ...toIn(n), id: `o-${n.id}`, hand: "accomp" })));
       })
       .catch(() => {})
@@ -602,10 +493,15 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   );
   useEffect(() => {
     if (!fingerInput.length || strInst || drums) return;
+    // Ответ для прежнего тона или пьесы не должен перезаписать новый.
+    let alive = true;
     api
       .fingeringGet(fingerKey, fingerInput)
-      .then(setFingers)
-      .catch(() => setFingers(null));
+      .then((f) => alive && setFingers(f))
+      .catch(() => alive && setFingers(null));
+    return () => {
+      alive = false;
+    };
   }, [fingerInput, fingerKey, strInst, drums]);
   const fingerOf = useMemo(() => new Map((fingers ?? []).map((f) => [f.id, f])), [fingers]);
   // Элементы нотной записи в пьесе — для плашек теории «Новое».
@@ -644,6 +540,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   useEffect(() => {
     const sc = scoreRef.current;
     if (!sc || !sc.notes.length || exercise) return;
+    let alive = true;
     api
       .practiceOpen({
         id: practiceId,
@@ -653,10 +550,14 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         measureHands: measureHands(sc.notes, sc.structure.measures),
       })
       .then((v) => {
+        if (!alive) return;
         setPractice(v);
         setPracticeError(null);
       })
-      .catch((e) => setPracticeError(String(e)));
+      .catch((e) => alive && setPracticeError(String(e)));
+    return () => {
+      alive = false;
+    };
   }, [notesKey, practiceId]);
 
   // Выбранный отрезок пропал (поменяли границы) — к текущему.
@@ -675,34 +576,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     return { onsets, ids: onsets.map((t) => byStart.get(t)!) };
   }, [notes]);
 
-  // Подсказка распознаванию гитары: какие ноты сейчас ждём (ошибки на октаву).
-  const expectKey = strInst
-    ? rhythmMode
-      ? steps.ids.slice(Math.max(0, rhythmStep), Math.max(0, rhythmStep) + 3).flat().map((id) => noteById.get(id)?.pitch ?? 0).join(",")
-      : (current?.required ?? []).join(",")
-    : "";
-  useEffect(() => {
-    if (!strInst) return;
-    void api.guitarExpect(expectKey ? expectKey.split(",").map(Number).filter(Boolean) : []).catch(() => {});
-  }, [strInst, expectKey]);
-  useEffect(() => () => void api.guitarExpect([]).catch(() => {}), []);
-  // Аккорды впереди (бой, аккорды в табах): удар по струнам проверяется по спектру, а не по одной ноте.
-  // Кандидаты — текущий и соседние шаги; режим аккорда — если среди них есть аккорд от 3 звуков.
-  const chordKey = useMemo(() => {
-    if (!strInst) return "[]";
-    const sets: number[][] = rhythmMode
-      ? steps.ids.slice(Math.max(0, rhythmStep - 1), Math.max(0, rhythmStep) + 3).map((ids) => ids.map((id) => noteById.get(id)?.pitch ?? 0).filter(Boolean))
-      : current
-        ? [current.required]
-        : [];
-    const uniq = [...new Map(sets.map((s) => [[...s].sort((a, b) => a - b).join(","), [...s].sort((a, b) => a - b)])).values()].filter((s) => s.length);
-    return JSON.stringify(uniq.some((s) => s.length >= 3) ? uniq : []);
-  }, [strInst, rhythmMode, steps, rhythmStep, noteById, current]);
-  useEffect(() => {
-    if (!strInst) return;
-    void api.guitarExpectChords(JSON.parse(chordKey)).catch(() => {});
-  }, [strInst, chordKey]);
-  useEffect(() => () => void api.guitarExpectChords([]).catch(() => {}), []);
+  useGuitarHints(strInst, rhythmMode, steps, rhythmStep, noteById, current);
 
   const resetMarks = useCallback(() => {
     noteStates.current = new Map();
@@ -738,6 +612,8 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     const sc = scoreRef.current;
     if (!sc) return;
     await clock.current.sync();
+    // Пока сверяли часы, экран могли закрыть — тогда не запускать музыку.
+    if (!mounted.current) return;
     resetMarks();
     setRhythmSummary(null);
     setExResult(null);
@@ -755,6 +631,10 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
       beatMs: Math.round(beatDuration(sc.structure.meter, sc.tempoBpm)),
       keyMap,
     });
+    if (!mounted.current) {
+      void api.rhythmStop();
+      return;
+    }
     setPlaying(true);
   }, [hands, accompany, tempo, countIn, metronome, loopMs, resetMarks, accompAll, keyMap]);
   const startRhythmRef = useRef(startRhythm);
@@ -1035,6 +915,24 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
       : []
     : (current?.noteIds ?? []);
 
+  // Элементы нот в SVG по id (с копиями «ноты над табами») — строятся один раз на отрисовку,
+  // а не поиском по всему SVG на каждой перерисовке во время игры.
+  // Ключ — сам HTML страниц: он меняется и при смене вида «строка/страницы».
+  const noteEls = useRef<{ pages: string[]; map: Map<string, Element[]> }>({ pages: [], map: new Map() });
+  const elsOf = (root: HTMLElement, id: string): Element[] => {
+    if (noteEls.current.pages !== pageHtml) {
+      const map = new Map<string, Element[]>();
+      for (const el of root.querySelectorAll("g[id]")) {
+        const key = el.id.endsWith(MIRROR) ? el.id.slice(0, -MIRROR.length) : el.id;
+        const list = map.get(key);
+        if (list) list.push(el);
+        else map.set(key, [el]);
+      }
+      noteEls.current = { pages: pageHtml, map };
+    }
+    return noteEls.current.map.get(id) ?? [];
+  };
+
   // Подсветка нот в SVG: текущий шаг, сыгранные, пропущенные.
   useLayoutEffect(() => {
     const root = scrollRef.current;
@@ -1043,7 +941,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
       el.classList.remove("mark-right", "mark-left", "mark-app", "mark-hit", "mark-poor", "mark-miss", "mark-select");
     marked.current = [];
     const mark = (id: string, cls: string) => {
-      for (const el of root.querySelectorAll(`g[id="${id}"], g[id="${id}${MIRROR}"]`)) {
+      for (const el of elsOf(root, id)) {
         el.classList.add(cls);
         marked.current.push(el);
       }
@@ -1065,6 +963,11 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     }
     if (editFingers && selNote) mark(selNote, "mark-select");
   });
+
+  // Для сквозных тестов: моменты нот упражнения (бот играет в темпе).
+  const onsetsAttr = useMemo(() => (exercise ? notes.map((n) => `${Math.round(n.startMs)}:${n.pitch}`).join(",") : undefined), [exercise, notes]);
+  // Готовый HTML страниц: не пересчитывать большие SVG на каждой перерисовке во время игры.
+  const pageHtml = useMemo(() => (p.layout === "pages" ? pages.map(capPageWidth) : pages), [pages, p.layout]);
 
   // Прокрутка к текущему месту.
   const cursorKey = cursorIds[0] ?? "";
@@ -1991,12 +1894,12 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
           data-hands={hands}
           data-ex-result={exResult ? (exResult.passed ? "passed" : "failed") : waitResult ? (waitResult.passed ? "passed" : "failed") : ""}
           data-listening={listening ? "1" : "0"}
-          data-onsets={exercise ? notes.map((n) => `${Math.round(n.startMs)}:${n.pitch}`).join(",") : undefined}
+          data-onsets={onsetsAttr}
         >
           <div ref={contentRef} className="score-content" onClick={onScoreClick}>
             {!pages.length && !error && <div className="muted score-loading">Загрузка нот…</div>}
-            {pages.map((svg, i) => (
-              <div key={i} className="score-page" dangerouslySetInnerHTML={{ __html: p.layout === "pages" ? capPageWidth(svg) : svg }} />
+            {pageHtml.map((html, i) => (
+              <div key={i} className="score-page" dangerouslySetInnerHTML={{ __html: html }} />
             ))}
             {heatRects.map((h) => (
               <div
@@ -2141,464 +2044,5 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         />
       )}
     </main>
-  );
-}
-
-/** Панель ведущего режима: отрезки в порядке разучивания и уровень подсказок. */
-function GuidePanel({
-  practice,
-  unit,
-  editBounds,
-  onSelect,
-  onLevel,
-  onEditBounds,
-  editFingers,
-  fingersAvailable = true,
-  onEditFingers,
-  status,
-  toggles,
-}: {
-  practice: PracticeView;
-  unit: UnitView;
-  editBounds: boolean;
-  onSelect: (i: number) => void;
-  onLevel: (l: number) => void;
-  onEditBounds: () => void;
-  editFingers: boolean;
-  fingersAvailable?: boolean;
-  onEditFingers: () => void;
-  status: React.ReactNode;
-  toggles: React.ReactNode;
-}) {
-  const level = unit.state.level;
-  return (
-    <div className="guide">
-      <div className="guide-units">
-        <span className="muted">Отрезки</span>
-        <span className="unit-chips" title="Порядок разучивания: фрагменты по одному и сцепки. ← / → — соседний отрезок">
-          {practice.units.map((u, i) => (
-            <button
-              key={`${u.from}-${u.to}`}
-              className={`unit-chip${u === unit ? " on" : ""}${u.state.learned ? " learned" : ""}${i === practice.current ? " current" : ""}${u.started ? "" : " fresh"}`}
-              onClick={() => onSelect(i)}
-              title={`Такты ${u.from}–${u.to} · уровень ${u.state.level} «${LEVELS[u.state.level].title}»${u.state.learned ? " · выучено" : ""}`}
-              data-unit={`${u.from}-${u.to}`}
-            >
-              <b>{unitLabel(u.frags)}</b>
-              <span className="level-dots">
-                {[1, 2, 3, 4].map((l) => (
-                  <i key={l} className={u.state.learned || l <= u.state.level ? "on" : ""} />
-                ))}
-              </span>
-            </button>
-          ))}
-        </span>
-        <button className={`small${editBounds ? " primary" : ""}`} onClick={onEditBounds}>
-          Границы…
-        </button>
-        {fingersAvailable && (
-          <button className={`small${editFingers ? " primary" : ""}`} onClick={onEditFingers} title="Поправить аппликатуру">
-            Пальцы…
-          </button>
-        )}
-      </div>
-      <div className="guide-level">
-        <span className="muted">
-          Такты {unit.from}–{unit.to}
-        </span>
-        <span className="segmented level-seg">
-          {LEVELS.map((l) => (
-            <button key={l.id} className={l.id === level ? "on" : ""} onClick={() => onLevel(l.id)} title={l.description} data-level={l.id}>
-              {l.id} {l.short}
-            </button>
-          ))}
-        </span>
-        <span className="guide-status">{status}</span>
-        {toggles}
-      </div>
-      <div className="guide-hint">
-        <b>{LEVELS[level].title}.</b> {LEVELS[level].description}
-        {unit.state.learned && <span className="learned-mark"> Отрезок выучен ✓</span>}
-      </div>
-    </div>
-  );
-}
-
-function SuggestionBar({
-  suggestion,
-  unit,
-  practice,
-  onAccept,
-  onDismiss,
-}: {
-  suggestion: Suggestion;
-  unit: UnitView;
-  practice: PracticeView | null;
-  onAccept: () => void;
-  onDismiss: () => void;
-}) {
-  let text: string;
-  let accept: string;
-  let stay: string;
-  if (suggestion.kind === "levelUp") {
-    text =
-      unit.state.level === 0
-        ? `Послушали. Попробуешь сыграть сам? Уровень ${suggestion.to} «${LEVELS[suggestion.to].title}».`
-        : `${STREAK_TO_ADVANCE} прохода подряд без ошибок. Перейти на уровень ${suggestion.to} «${LEVELS[suggestion.to].title}»?`;
-    accept = "Перейти";
-    stay = "Ещё потренируюсь";
-  } else if (suggestion.kind === "levelDown") {
-    text = `Пока трудновато. Вернуться на уровень ${suggestion.to} «${LEVELS[suggestion.to].title}»?`;
-    accept = "Вернуться";
-    stay = "Продолжу здесь";
-  } else {
-    const next = practice?.units[practice.current];
-    const done = !next || (next.from === unit.from && next.to === unit.to);
-    text = done
-      ? "Пьеса сыграна по памяти целиком. Отлично!"
-      : `Такты ${unit.from}–${unit.to} выучены наизусть. Дальше: отрезок «${unitLabel(next!.frags)}» (такты ${next!.from}–${next!.to}).`;
-    accept = done ? "Хорошо" : "Дальше";
-    stay = "Повторить ещё";
-  }
-  return (
-    <div className={`notice suggest ${suggestion.kind}`} data-suggestion={suggestion.kind}>
-      <span>{text}</span>
-      <span className="buttons">
-        <button className="primary" onClick={onAccept} title="Enter">
-          {accept}
-        </button>
-        <button onClick={onDismiss} title="Esc">
-          {stay}
-        </button>
-      </span>
-    </div>
-  );
-}
-
-/** Рамки тактов одной строки (системы) — общий верх и низ. */
-function alignRows(boxes: (Rect | null)[]): (Rect | null)[] {
-  const rows: { top: number; bottom: number; idx: number[] }[] = [];
-  boxes.forEach((b, i) => {
-    if (!b) return;
-    const mid = b.top + b.height / 2;
-    const row = rows.find((r) => mid > r.top && mid < r.bottom);
-    if (row) {
-      row.top = Math.min(row.top, b.top);
-      row.bottom = Math.max(row.bottom, b.top + b.height);
-      row.idx.push(i);
-    } else rows.push({ top: b.top, bottom: b.top + b.height, idx: [i] });
-  });
-  const out = [...boxes];
-  for (const r of rows) for (const i of r.idx) out[i] = { ...boxes[i]!, top: r.top, height: r.bottom - r.top };
-  return out;
-}
-
-/**
- * Номер такта под курсором. Клик по пустому месту попадает в сам <svg>, поэтому,
- * если элемент такта не найден по дереву, ищем по координатам: такт, в рамку
- * которого попадает точка, иначе ближайший по горизонтали в той же строке.
- */
-function measureAt(x: number, y: number, target: Element, ids: string[], root: HTMLElement | null): number {
-  const direct = target.closest?.("g.measure");
-  if (direct) return ids.indexOf(direct.id) + 1;
-  if (!root) return 0;
-  let best = 0;
-  let bestDist = Infinity;
-  ids.forEach((id, i) => {
-    const el = root.querySelector(`g[id="${id}"]`);
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    if (y < r.top - 20 || y > r.bottom + 20) return;
-    const dist = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = i + 1;
-    }
-  });
-  return bestDist < 60 ? best : 0;
-}
-
-function clampTempo(t: number): number {
-  return Math.round(Math.min(TEMPO_MAX, Math.max(TEMPO_MIN, t)) * 100) / 100;
-}
-
-function toIn({ id, pitch, startMs, durMs, hand, measure }: ScoreNote): PieceNoteIn {
-  return { id, pitch, startMs, durMs, hand, measure };
-}
-
-function WaitSummary({ summary, onAgain, onBack }: { summary: PieceSummary; onAgain: () => void; onBack: () => void }) {
-  return (
-    <div className="summary-overlay">
-      <div className="summary card">
-        <h2>Пьеса сыграна</h2>
-        <div className="summary-stats">
-          <div>
-            <div className={`big ${summary.errors === 0 ? "good" : ""}`}>{summary.errors}</div>
-            <div className="muted">ошибок</div>
-          </div>
-          <div>
-            <div className="big">{formatTime(summary.durationMs)}</div>
-            <div className="muted">время</div>
-          </div>
-        </div>
-        <Trouble measures={summary.troubleMeasures} />
-        <div className="summary-actions">
-          <button className="primary" onClick={onAgain}>
-            Ещё раз
-          </button>
-          <button className="ghost" onClick={onBack}>
-            К списку пьес
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RhythmSummaryPanel({ summary, onAgain, onClose }: { summary: RhythmSummary; onAgain: () => void; onClose: () => void }) {
-  const tendency =
-    summary.hits === 0
-      ? ""
-      : summary.meanDeltaMs > 25
-        ? `чаще опаздываешь (в среднем на ${summary.meanDeltaMs} мс)`
-        : summary.meanDeltaMs < -25
-          ? `чаще спешишь (в среднем на ${-summary.meanDeltaMs} мс)`
-          : "ровно, без спешки и опозданий";
-  return (
-    <div className="summary-overlay">
-      <div className="summary card">
-        <h2>Сыграно в темпе</h2>
-        <div className="summary-stats">
-          <div>
-            <div className={`big ${summary.accuracy >= 0.9 ? "good" : summary.accuracy < 0.6 ? "bad" : ""}`}>{percent(summary.accuracy)}</div>
-            <div className="muted">
-              нот сыграно ({summary.hits} из {summary.requiredNotes})
-            </div>
-          </div>
-          <div>
-            <div className="big">±{summary.meanAbsDeltaMs} мс</div>
-            <div className="muted">отклонение от ритма</div>
-          </div>
-        </div>
-        <div className="grades">
-          <span className="chip small good">точно: {summary.perfect}</span>
-          <span className="chip small">нормально: {summary.good}</span>
-          <span className="chip small warn-chip">неточно: {summary.poor}</span>
-          <span className="chip small warn">пропущено: {summary.misses}</span>
-          <span className="chip small warn">лишних: {summary.extras}</span>
-        </div>
-        {tendency && <p className="hint">Ритм: {tendency}.</p>}
-        <Trouble measures={summary.troubleMeasures} />
-        <div className="summary-actions">
-          <button className="primary" onClick={onAgain}>
-            Ещё раз
-          </button>
-          <button className="ghost" onClick={onClose}>
-            Закрыть
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Итог упражнения в режиме ожидания (чтение с листа): верные ноты с первой попытки. */
-function ExerciseWaitSummary({
-  result,
-  need,
-  next,
-  onAgain,
-  onTempo,
-  onBack,
-  backLabel,
-}: {
-  result: WaitResult;
-  need: number;
-  next: { label: string; go: () => void } | null;
-  onAgain: () => void;
-  onTempo: () => void;
-  onBack: () => void;
-  backLabel?: string;
-}) {
-  return (
-    <div className="summary-overlay">
-      <div className="summary card exercise-summary" data-wait-result={result.passed ? "passed" : "failed"}>
-        <h2>{result.passed ? "Засчитано ✓" : "Сыграно"}</h2>
-        <div className="summary-stats">
-          <div>
-            <div className={`big ${result.accuracy >= need ? "good" : result.accuracy < 0.7 ? "bad" : ""}`}>{percent(result.accuracy)}</div>
-            <div className="muted">нот без ошибки</div>
-          </div>
-          <div>
-            <div className={`big ${result.errors === 0 ? "good" : ""}`}>{result.errors}</div>
-            <div className="muted">ошибок</div>
-          </div>
-          <div>
-            <div className="big">{formatTime(result.durationMs)}</div>
-            <div className="muted">время</div>
-          </div>
-        </div>
-        {!result.passed && <p className="hint">Для зачёта — от {percent(need)} нот без ошибки.</p>}
-        {result.passed && <p className="hint">Теперь попробуй сыграть её в темпе — так засчитывается и ритм.</p>}
-        <div className="summary-actions">
-          {next && (
-            <button className="primary" onClick={next.go}>
-              {next.label}
-            </button>
-          )}
-          <button onClick={onTempo}>В темпе</button>
-          <button onClick={onAgain}>Ещё раз</button>
-          <button className="ghost" onClick={onBack}>
-            {backLabel ? "К списку" : "К упражнениям"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ExerciseSummary({
-  ev,
-  tempo,
-  pass,
-  backLabel,
-  next,
-  onAgain,
-  onBack,
-  onClose,
-}: {
-  ev: Evaluation;
-  tempo: number;
-  pass?: { accuracy: number; timingSdMs: number };
-  backLabel?: string;
-  next: { label: string; go: () => void } | null;
-  onAgain: () => void;
-  onBack: () => void;
-  onClose: () => void;
-}) {
-  const needAcc = pass?.accuracy ?? PASS_ACCURACY;
-  const needSd = pass?.timingSdMs ?? PASS_TIMING_SD_MS;
-  const reasons: string[] = [];
-  if (ev.accuracy < needAcc) reasons.push(`точность от ${percent(needAcc)}`);
-  if (ev.timingSdMs > needSd) reasons.push(`ровнее ритм (разброс до ±${needSd} мс)`);
-  if (tempo < 0.999) reasons.push("темп от 100%");
-  const dyn = ev.dynamics;
-  const dynTotal = dyn ? dyn.accents.total + dyn.ghosts.total : 0;
-  if (dyn && dynTotal && dyn.sensitive && dyn.share < PASS_DYNAMICS) reasons.push("акценты громче, тихие ноты тише");
-  const maxV = Math.max(1, ...ev.byFinger.map((b) => b.velocity));
-  return (
-    <div className="summary-overlay">
-      <div className="summary card exercise-summary">
-        <h2>{ev.passed ? "Засчитано ✓" : "Упражнение сыграно"}</h2>
-        <div className="summary-stats">
-          <div>
-            <div className={`big ${ev.accuracy >= needAcc ? "good" : ev.accuracy < 0.7 ? "bad" : ""}`}>{percent(ev.accuracy)}</div>
-            <div className="muted">верных нот</div>
-          </div>
-          <div>
-            <div className={`big ${ev.timingSdMs <= needSd ? "good" : ""}`}>±{ev.timingSdMs} мс</div>
-            <div className="muted">ровность ритма</div>
-          </div>
-          {dyn && dynTotal ? (
-            <div data-dynamics={`${dyn.accents.hit + dyn.ghosts.hit}/${dynTotal}`}>
-              <div className={`big ${dyn.sensitive && dyn.share >= PASS_DYNAMICS ? "good" : ""}`}>
-                {dyn.sensitive ? percent(dyn.share) : "—"}
-              </div>
-              <div className="muted">сила удара</div>
-            </div>
-          ) : (
-            <div>
-              <div className="big">{percent(ev.loudness)}</div>
-              <div className="muted">ровность громкости</div>
-            </div>
-          )}
-        </div>
-        {dyn && dynTotal > 0 && (
-          <p className="hint">
-            {dyn.sensitive
-              ? [
-                  dyn.accents.total ? `Акценты громче остальных: ${dyn.accents.hit} из ${dyn.accents.total}.` : "",
-                  dyn.ghosts.total ? `Тихие ноты тише остальных: ${dyn.ghosts.hit} из ${dyn.ghosts.total}.` : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")
-              : "Пэды передают одну и ту же силу удара — акценты и тихие ноты не оцениваются."}
-          </p>
-        )}
-        {!ev.passed && reasons.length > 0 && <p className="hint">Для зачёта нужно: {reasons.join(", ")}.</p>}
-        {ev.passed && !pass && <p className="hint">Следующее упражнение открыто.</p>}
-        {ev.crossingMs !== null && ev.otherMs !== null && ev.crossingMs > ev.otherMs + 20 && (
-          <p className="hint">
-            На подкладывании и перекладывании пальцев отклонение в среднем {ev.crossingMs} мс, на остальных нотах — {ev.otherMs} мс.
-            Потренируй эти места медленнее.
-          </p>
-        )}
-        {ev.byFinger.length > 1 && (
-          <div className="finger-bars" title="Средняя сила нажатия каждым пальцем">
-            {ev.byFinger.map((b) => (
-              <div key={b.finger} className={`finger-bar${ev.weakFinger?.finger === b.finger ? " weak" : ""}`}>
-                <div className="bar">
-                  <div style={{ height: `${(b.velocity / maxV) * 100}%` }} />
-                </div>
-                <span>{b.finger}</span>
-              </div>
-            ))}
-            <span className="muted finger-bars-note">
-              {ev.weakFinger
-                ? `${ev.weakFinger.finger}-й палец звучит тише остальных на ${Math.round((1 - ev.weakFinger.ratio) * 100)}%.`
-                : "Пальцы звучат примерно одинаково."}
-            </span>
-          </div>
-        )}
-        <div className="summary-actions">
-          {next && ev.passed ? (
-            <button className="primary" onClick={next.go}>
-              {next.label}
-            </button>
-          ) : (
-            <button className="primary" onClick={onAgain}>
-              Ещё раз
-            </button>
-          )}
-          {next && ev.passed ? (
-            <button onClick={onAgain}>Ещё раз</button>
-          ) : next ? (
-            <button onClick={next.go}>{next.label}</button>
-          ) : null}
-          <button className="ghost" onClick={onClose}>
-            Закрыть
-          </button>
-          <button className="ghost" onClick={onBack}>
-            {backLabel ? "К списку" : "К упражнениям"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Trouble({ measures }: { measures: { measure: number; errors: number }[] }) {
-  if (!measures.length) return null;
-  return (
-    <div className="trouble">
-      <span className="muted">Трудные такты: </span>
-      {measures.slice(0, 6).map((m) => (
-        <span key={m.measure} className="chip small">
-          такт {m.measure} — {m.errors}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function Toggle({ label, on, onChange, disabled }: { label: string; on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return (
-    <label className={`toggle${disabled ? " disabled" : ""}`}>
-      <span className="switch">
-        <input type="checkbox" checked={on} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
-        <span />
-      </span>
-      {label}
-    </label>
   );
 }

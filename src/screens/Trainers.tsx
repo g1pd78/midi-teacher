@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { LevelCard } from "../components/LevelCard";
 import { exerciseMei, type ExerciseStatView } from "../lib/exercises";
 import {
   READ_LEVELS,
@@ -219,26 +220,22 @@ function ReadingList({ stats, onStart }: { stats: ExerciseStatView[]; onStart: (
             const isOpen = l.id <= open;
             const current = l.id === open && !passed;
             return (
-              <button
+              <LevelCard
                 key={l.id}
-                className={`drum-item${passed ? " passed" : isOpen ? " open" : ""}${current ? " current" : ""}`}
-                disabled={!isOpen}
+                n={l.id}
+                title={l.title}
+                hint={l.description}
+                status={
+                  p.tempo + p.wait
+                    ? `Засчитано мелодий: ${p.tempo + p.wait} (в темпе — ${p.tempo})${passed ? "" : ` · нужно ${READ_LEVEL_PASSES}, одна в темпе`}`
+                    : "Ещё не играл"
+                }
+                passed={passed}
+                open={isOpen}
+                current={current}
                 onClick={() => onStart(l)}
-                data-read-level={l.id}
-              >
-                <span className="drum-item-title">
-                  {passed && "✓ "}
-                  {l.id}. {l.title}
-                </span>
-                <span className="drum-item-hint">{l.description}</span>
-                <span className="drum-item-hint muted">
-                  {!isOpen
-                    ? "Откроется после предыдущей ступени"
-                    : p.tempo + p.wait
-                      ? `Засчитано мелодий: ${p.tempo + p.wait} (в темпе — ${p.tempo})${passed ? "" : ` · нужно ${READ_LEVEL_PASSES}, одна в темпе`}`
-                      : "Ещё не играл"}
-                </span>
-              </button>
+                data={{ "read-level": l.id }}
+              />
             );
           })}
         </div>
@@ -291,22 +288,17 @@ function RhythmList({ stats, onStart }: { stats: ExerciseStatView[]; onStart: (l
                   const passed = rhythmLevelPassed(stats, l);
                   const isOpen = l.id <= open;
                   return (
-                    <button
+                    <LevelCard
                       key={l.id}
-                      className={`drum-item${passed ? " passed" : isOpen ? " open" : ""}`}
-                      disabled={!isOpen}
+                      n={l.id}
+                      title={l.title}
+                      hint={l.description}
+                      status={passes ? `Засчитано: ${passes}${passed ? "" : ` из ${RHYTHM_LEVEL_PASSES}`}` : "Ещё не играл"}
+                      passed={passed}
+                      open={isOpen}
                       onClick={() => onStart(l)}
-                      data-rhythm-level={rhythmKey(l)}
-                    >
-                      <span className="drum-item-title">
-                        {passed && "✓ "}
-                        {l.id}. {l.title}
-                      </span>
-                      <span className="drum-item-hint">{l.description}</span>
-                      <span className="drum-item-hint muted">
-                        {!isOpen ? "Откроется после предыдущей ступени" : passes ? `Засчитано: ${passes}${passed ? "" : ` из ${RHYTHM_LEVEL_PASSES}`}` : "Ещё не играл"}
-                      </span>
-                    </button>
+                      data={{ "rhythm-level": rhythmKey(l) }}
+                    />
                   );
                 })}
               </div>

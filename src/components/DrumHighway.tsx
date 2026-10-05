@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import type { NoteState } from "./Waterfall";
+import { useEffect, useMemo, useRef } from "react";
+import { firstAtOrAfter, type NoteState } from "./Waterfall";
 import { DRUMS, drumOfGm, type DrumDef } from "../lib/drums";
 
 export interface DrumLaneNote {
@@ -63,8 +63,14 @@ export function DrumHighway({
   lanes?: Lane[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const props = useRef({ notes, getPos, windowMs, bars, loop, customLanes });
-  props.current = { notes, getPos, windowMs, bars, loop, customLanes };
+  // Строки и ноты по началу считаются один раз, а не на каждом кадре.
+  const lanes: Lane[] = useMemo(
+    () => customLanes ?? drumLanes(notes).map((d) => ({ id: d.id, name: d.name, color: d.color, cymbal: d.cymbal, pitches: [d.gm] })),
+    [notes, customLanes],
+  );
+  const sorted = useMemo(() => [...notes].sort((a, b) => a.startMs - b.startMs), [notes]);
+  const props = useRef({ notes: sorted, lanes, getPos, windowMs, bars, loop, customLanes });
+  props.current = { notes: sorted, lanes, getPos, windowMs, bars, loop, customLanes };
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -72,8 +78,7 @@ export function DrumHighway({
     let raf = 0;
     const draw = () => {
       raf = requestAnimationFrame(draw);
-      const { notes, getPos, windowMs, bars, loop, customLanes } = props.current;
-      const lanes: Lane[] = customLanes ?? drumLanes(notes).map((d) => ({ id: d.id, name: d.name, color: d.color, cymbal: d.cymbal, pitches: [d.gm] }));
+      const { notes, lanes, getPos, windowMs, bars, loop, customLanes } = props.current;
       const laneOf = (pitch: number) => {
         if (!customLanes) {
           const d = drumOfGm(pitch);
@@ -118,7 +123,8 @@ export function DrumHighway({
       }
 
       const r0 = Math.min(13, rowH * 0.36);
-      for (const n of notes) {
+      for (let i = firstAtOrAfter(notes, pos - windowMs * 0.3); i < notes.length && notes[i].startMs <= pos + windowMs * 1.1; i++) {
+        const n = notes[i];
         const li = laneOf(n.pitch);
         if (li < 0) continue;
         const d = lanes[li];

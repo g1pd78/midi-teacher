@@ -6,7 +6,6 @@
 
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen, type UnlistenFn } from "@tauri-apps/api/event";
-import { createMock } from "./mock";
 import type { PieceMetaIn } from "./lib/practice";
 import type { Finger, FingerNoteIn } from "./lib/fingering";
 import type { ExerciseStatView } from "./lib/exercises";
@@ -658,21 +657,23 @@ export interface Events {
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-// Имитация создаётся при первом обращении (в тестах под Node её нет вовсе).
-let mockInstance: ReturnType<typeof createMock> | null = null;
-function mock() {
-  if (inTauri || typeof window === "undefined") return null;
-  return (mockInstance ??= createMock());
+// Имитация ядра — только для разработки в браузере (vite без Tauri): в сборку приложения не входит.
+// Создаётся при первом обращении (в тестах под Node её нет вовсе).
+type Mock = ReturnType<typeof import("./mock").createMock>;
+let mockInstance: Promise<Mock> | null = null;
+function mock(): Promise<Mock> | null {
+  if (!import.meta.env.DEV || inTauri || typeof window === "undefined") return null;
+  return (mockInstance ??= import("./mock").then((m) => m.createMock()));
 }
 
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const m = mock();
-  return m ? m.invoke<T>(cmd, args) : tauriInvoke<T>(cmd, args);
+  return m ? m.then((x) => x.invoke<T>(cmd, args)) : tauriInvoke<T>(cmd, args);
 }
 
 export function listen<K extends keyof Events>(event: K, cb: (payload: Events[K]) => void): Promise<UnlistenFn> {
   const m = mock();
-  if (m) return Promise.resolve(m.listen(event, cb));
+  if (m) return m.then((x) => x.listen(event, cb));
   return tauriListen<Events[K]>(event, (e) => cb(e.payload));
 }
 
