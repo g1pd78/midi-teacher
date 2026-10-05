@@ -55,6 +55,8 @@ export interface ExerciseContext {
   listen?: boolean;
   /** Надпись кнопки «назад». */
   backLabel?: string;
+  /** Какой рукой играть (курс: пьеса правой рукой); по умолчанию — обеими. */
+  hands?: "right" | "left" | "both";
   /** Подробная оценка грува (бас): темп и долей в такте; `drums` — играют барабаны, а не метроном. */
   groove?: { bpm: number; beats: number; drums: boolean };
 }

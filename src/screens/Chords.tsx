@@ -38,6 +38,7 @@ import { BassAccompControls, BassSongPlay, BassSongView, RootDrill, RootTrainerL
 import type { BassStyle } from "../lib/bassline";
 import type { RootLevel } from "../lib/bassRoot";
 import { accuracyToChanges, changeId, type ChangePair, type GtrChordLevel } from "../lib/guitarChordDrill";
+import { useBackLabel } from "../components/BackLabel";
 
 const STYLES: Style[] = ["block", "oompah", "alberti"];
 
@@ -371,7 +372,7 @@ function ChordStaff({ chord, keys }: { chord: Chord; keys: number[] }) {
 /** Задержка до подсказки, мс. */
 const HINT_MS = 4000;
 
-function ChordDrill({
+export function ChordDrill({
   level,
   seed,
   onAgain,
@@ -384,6 +385,7 @@ function ChordDrill({
   onBack: () => void;
   onRecorded: () => void;
 }) {
+  const back = useBackLabel("← Аккорды");
   const { held, devices, prefs } = useApp();
   const series = useMemo(() => chordSeries(level, seed), [level, seed]);
   const [index, setIndex] = useState(0);
@@ -483,7 +485,7 @@ function ChordDrill({
     >
       <div className="piece-bar">
         <button className="ghost" onClick={onBack} title="Esc">
-          ← Аккорды
+          {back}
         </button>
         <div className="piece-name">
           Аккорды · {level.title}

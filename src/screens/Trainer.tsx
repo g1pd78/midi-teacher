@@ -31,7 +31,17 @@ function percent(x: number): string {
   return `${Math.round(x * 100)}%`;
 }
 
-export function Trainer({ tabs }: { tabs?: React.ReactNode }) {
+export function Trainer({
+  tabs,
+  startLevel,
+  onDone,
+  backLabel,
+}: {
+  tabs?: React.ReactNode;
+  startLevel?: number;
+  onDone?: () => void;
+  backLabel?: string;
+}) {
   const [overview, setOverview] = useState<TrainerOverview | null>(null);
   const [session, setSession] = useState<SessionView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +65,15 @@ export function Trainer({ tabs }: { tabs?: React.ReactNode }) {
     }
   };
 
+  // Курс: сразу нужная ступень, выход — обратно в урок.
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!startLevel || !overview || autoStarted.current) return;
+    autoStarted.current = true;
+    void start(startLevel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startLevel, overview]);
+
   if (error) return <main className="trainer">{tabs}<div className="notice warn">{error}</div></main>;
   if (!overview) return <main className="trainer">{tabs}<div className="muted">Загрузка…</div></main>;
 
@@ -66,10 +85,12 @@ export function Trainer({ tabs }: { tabs?: React.ReactNode }) {
         session={session}
         level={level}
         overview={overview}
+        backLabel={backLabel}
         onExit={() => {
           void api.trainerStop();
           setSession(null);
           reload();
+          onDone?.();
         }}
         onRestart={(lvl) => {
           reload();
@@ -207,11 +228,12 @@ interface SessionProps {
   session: SessionView;
   level: TrainerLevel;
   overview: TrainerOverview;
+  backLabel?: string;
   onExit: () => void;
   onRestart: (level: number) => void;
 }
 
-function TrainerSession({ session, level, overview, onExit, onRestart }: SessionProps) {
+function TrainerSession({ session, level, overview, backLabel, onExit, onRestart }: SessionProps) {
   const { prefs, held, devices } = useApp();
   const naming = prefs.noteNames;
   const t = prefs.trainer;
@@ -320,7 +342,7 @@ function TrainerSession({ session, level, overview, onExit, onRestart }: Session
     >
       <div className="session-bar">
         <button className="ghost" onClick={onExit} title="Esc">
-          ← Ступени
+          {backLabel ?? "← Ступени"}
         </button>
         <div className="session-title">
           <span className="level-num">{level.id}</span> {level.title}
@@ -354,7 +376,15 @@ function TrainerSession({ session, level, overview, onExit, onRestart }: Session
             }}
           />
         )}
-        {summary && <SummaryPanel summary={summary} overview={overview} onExit={onExit} onRestart={onRestart} />}
+        {summary && (
+          <SummaryPanel
+            summary={summary}
+            overview={overview}
+            backLabel={backLabel}
+            onExit={onExit}
+            onRestart={onRestart}
+          />
+        )}
       </section>
 
       <div className={`session-message ${message?.kind ?? ""}`}>
@@ -378,11 +408,13 @@ function TrainerSession({ session, level, overview, onExit, onRestart }: Session
 function SummaryPanel({
   summary,
   overview,
+  backLabel,
   onExit,
   onRestart,
 }: {
   summary: TrainerSummary;
   overview: TrainerOverview;
+  backLabel?: string;
   onExit: () => void;
   onRestart: (level: number) => void;
 }) {
@@ -437,7 +469,7 @@ function SummaryPanel({
           </button>
           {nextOpen && next && <button onClick={() => onRestart(next.id)}>Ступень {next.id} →</button>}
           <button className="ghost" onClick={onExit}>
-            К ступеням
+            {backLabel ?? "К ступеням"}
           </button>
         </div>
       </div>

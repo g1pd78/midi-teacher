@@ -14,6 +14,7 @@ import type { LeadSong } from "../lib/songs";
 import { partChart } from "../lib/tabsong";
 import { useApp, useMidi } from "../store";
 import { PieceView, type PieceSource } from "./PieceView";
+import { useBackLabel } from "../components/BackLabel";
 
 /** Строй баса с вкладки «Гитара» (если там выбран бас), иначе стандартный. */
 export function useBassTuning(): number[] {
@@ -100,6 +101,7 @@ export function BassSongPlay({ onPlay }: { onPlay: (style: BassStyle) => void })
 
 /** Песня по буквам басом: табы линии, буквы аккордов, барабаны и аккорды; итог с оценкой грува. */
 export function BassSongView({ song, style, onBack }: { song: LeadSong; style: BassStyle; onBack: () => void }) {
+  const back = useBackLabel("← Аккорды");
   const tuning = useBassTuning();
   const [accomp] = useBassAccomp();
   const st = BASS_STYLE_BY_ID.get(style)!;
@@ -125,7 +127,7 @@ export function BassSongView({ song, style, onBack }: { song: LeadSong; style: B
         hint: st.hint,
         pass: GTR_PASS,
         listen: true,
-        backLabel: "← Аккорды",
+        backLabel: back,
         groove: { bpm: song.bpm, beats: quarterBeats(song), drums: accomp.drums },
       }}
     />
@@ -169,6 +171,7 @@ export function RootTrainerList({ stats, onLevel }: { stats: ExerciseStatView[];
 
 /** Серия «Найди основной тон»: аккомпанемент без баса, ученик играет основные тоны. */
 export function RootDrill({ level, seed, onAgain, onBack, onRecorded }: { level: RootLevel; seed: number; onAgain: () => void; onBack: () => void; onRecorded: () => void }) {
+  const back = useBackLabel("← Аккорды");
   const { prefs } = useApp();
   const tuning = useBassTuning();
   const [accomp, setAccomp] = useBassAccomp();
@@ -276,7 +279,7 @@ export function RootDrill({ level, seed, onAgain, onBack, onRecorded }: { level:
     >
       <div className="piece-bar">
         <button className="ghost" onClick={onBack} title="Esc">
-          ← Аккорды
+          {back}
         </button>
         <div className="piece-name">Найди основной тон · {level.title}</div>
         <span className="chip">{level.bpm} уд/мин</span>

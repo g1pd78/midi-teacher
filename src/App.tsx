@@ -18,6 +18,7 @@ const screens = {
   reference: () => import("./screens/Reference"),
   settings: () => import("./screens/Settings"),
   trainers: () => import("./screens/Trainers"),
+  course: () => import("./screens/Course"),
 };
 const Exercises = lazy(() => screens.exercises().then((m) => ({ default: m.Exercises })));
 const Guitar = lazy(() => screens.guitar().then((m) => ({ default: m.Guitar })));
@@ -28,8 +29,9 @@ const Progress = lazy(() => screens.progress().then((m) => ({ default: m.Progres
 const Reference = lazy(() => screens.reference().then((m) => ({ default: m.Reference })));
 const Settings = lazy(() => screens.settings().then((m) => ({ default: m.Settings })));
 const Trainers = lazy(() => screens.trainers().then((m) => ({ default: m.Trainers })));
+const Course = lazy(() => screens.course().then((m) => ({ default: m.Course })));
 
-export type Screen = "home" | "pieces" | "exercises" | "trainer" | "guitar" | "drums" | "studio" | "reference" | "progress" | "settings";
+export type Screen = "home" | "course" | "pieces" | "exercises" | "trainer" | "guitar" | "drums" | "studio" | "reference" | "progress" | "settings";
 
 export function App() {
   const { ready, init, prefs } = useApp();
@@ -43,6 +45,8 @@ export function App() {
   // «Тренажёры»: открытый раздел и запуск текущей ступени с главной.
   const [trainerSection, setTrainerSection] = useState<TrainerSection>("notes");
   const [drillReq, setDrillReq] = useState(false);
+  // «Курс»: открыть текущий урок с главной.
+  const [courseReq, setCourseReq] = useState(false);
   // Окно горячих клавиш: «?» или F1 на любом экране.
   const [help, setHelp] = useState(false);
   useEffect(() => {
@@ -80,6 +84,10 @@ export function App() {
         <Home
           onNavigate={setScreen}
           today={{
+            course: () => {
+              setCourseReq(true);
+              setScreen("course");
+            },
             warmup: () => {
               setExInstrument("piano");
               setWarmupReq(true);
@@ -117,6 +125,7 @@ export function App() {
         />
       )}
       <Suspense fallback={<div className="loading">Загрузка…</div>}>
+      {screen === "course" && <Course openLesson={courseReq} onOpened={() => setCourseReq(false)} />}
       {screen === "pieces" && <Pieces initial={openPiece} onInitialOpened={() => setOpenPiece(null)} />}
       {screen === "progress" && (
         <Progress

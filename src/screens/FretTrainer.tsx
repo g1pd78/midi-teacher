@@ -23,6 +23,7 @@ import { Fretboard, type FretMark } from "../components/Fretboard";
 import { PADS_DEVICE } from "../api";
 import { deviceColor, useApp, useMidi } from "../store";
 import { LevelCard } from "../components/LevelCard";
+import { useBackLabel } from "../components/BackLabel";
 
 const MODE_NAME = { find: "найди на струне", staff: "нота на стане", place: "точка на грифе", all: "все места" } as const;
 
@@ -119,7 +120,7 @@ export function FretTrainer({ tabs }: { tabs: React.ReactNode }) {
 
 const HINT_AFTER_MS = 4000;
 
-function FretDrill({
+export function FretDrill({
   instrument,
   level,
   tuning,
@@ -136,6 +137,7 @@ function FretDrill({
   onBack: () => void;
   onRecorded: () => void;
 }) {
+  const back = useBackLabel("← Гриф");
   const { prefs, held, devices } = useApp();
   const naming = prefs.noteNames;
   const series = useMemo(() => fretSeries(level, tuning, seed), [level, tuning, seed]);
@@ -239,7 +241,7 @@ function FretDrill({
     <main className="chord-drill fret-drill" data-fret-index={index} data-fret-target={target} data-fret-done={done ? (passed ? "passed" : "failed") : ""} data-fret-pitch={done ? "" : cur.pitch}>
       <div className="piece-bar">
         <button className="ghost" onClick={onBack} title="Esc">
-          ← Гриф
+          {back}
         </button>
         <div className="piece-name">
           Гриф · {level.title}

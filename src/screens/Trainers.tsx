@@ -30,7 +30,7 @@ import {
   type RhythmLevel,
   type RhythmTrack,
 } from "../lib/rhythm";
-import { PieceView } from "./PieceView";
+import { PieceView, type PieceSource } from "./PieceView";
 import { Trainer } from "./Trainer";
 import { Chords } from "./Chords";
 import { FretTrainer } from "./FretTrainer";
@@ -85,7 +85,7 @@ export function Trainers({
   return <Drills key={section} kind={section} tabs={tabs} autoStart={autoStart} onAutoStarted={onAutoStarted} />;
 }
 
-type Run = { kind: "reading"; level: ReadLevel; seed: number } | { kind: "rhythm"; level: RhythmLevel; seed: number };
+export type Run = { kind: "reading"; level: ReadLevel; seed: number } | { kind: "rhythm"; level: RhythmLevel; seed: number };
 
 function Drills({
   kind,
@@ -134,59 +134,20 @@ function Drills({
   }, [autoStart, stats, kind, onAutoStarted]);
 
   // Источник нот — один объект на попытку, иначе экран игры перезапустится.
-  const source = useMemo(() => {
-    if (!run) return null;
-    if (run.kind === "reading") {
-      const m = readingMelody(run.level, run.seed);
-      return { id: `reading:${run.level.id}:${run.seed}`, title: `Чтение с листа · ${run.level.title}`, load: async () => ({ data: exerciseMei(m.score), zip: false }) };
-    }
-    const sc = rhythmScore(run.level, run.seed);
-    return { id: `rhythm:${rhythmKey(run.level)}:${run.seed}`, title: `Ритм · ${run.level.title}`, load: async () => ({ data: rhythmMei(sc), zip: false }) };
-  }, [run]);
+  const source = useMemo(() => (run ? drillSource(run) : null), [run]);
 
   if (run && source) {
-    const back = () => {
-      setRun(null);
-      reload();
-    };
-    const again = () => setRun({ ...run, seed: run.seed + 1 } as Run);
-    if (run.kind === "reading") {
-      return (
-        <PieceView
-          key={source.id}
-          source={source}
-          onBack={back}
-          exercise={{
-            id: readId(run.level.id),
-            waitRecord: readWaitId(run.level.id),
-            hints: run.level.hints,
-            defaultMode: "wait",
-            listen: true,
-            pass: { accuracy: READ_PASS_ACCURACY, timingSdMs: READ_PASS_TIMING_SD_MS },
-            next: { label: "Новая мелодия", go: again },
-            backLabel: "← Тренажёры",
-            onRecorded: reload,
-          }}
-        />
-      );
-    }
     return (
-      <PieceView
-        key={source.id}
+      <DrillRun
+        run={run}
         source={source}
-        onBack={back}
-        exercise={{
-          id: rhythmKey(run.level),
-          instrument: "rhythm",
-          keyMap: run.level.track === "hands" ? "byHand" : "anyKey",
-          rhythmOnly: true,
-          listen: true,
-          hints: { names: false, keyHints: false, waterfall: true, fingering: false },
-          pass: { accuracy: RHYTHM_PASS_ACCURACY, timingSdMs: RHYTHM_PASS_TIMING_SD_MS },
-          next: { label: "Новый ритм", go: again },
-          backLabel: "← Тренажёры",
-          onRecorded: reload,
+        backLabel="← Тренажёры"
+        onBack={() => {
+          setRun(null);
+          reload();
         }}
+        onAgain={() => setRun({ ...run, seed: run.seed + 1 } as Run)}
+        onRecorded={reload}
       />
     );
   }
@@ -314,4 +275,71 @@ function RhythmList({ stats, onStart }: { stats: ExerciseStatView[]; onStart: (l
       })}
     </>
   );
+}
+
+/** Попытка чтения с листа или ритма: источник нот и экран игры с зачётом (раздел и курс). */
+export function DrillRun({
+  run,
+  source,
+  backLabel,
+  onBack,
+  onAgain,
+  onRecorded,
+}: {
+  run: Run;
+  source: PieceSource;
+  backLabel: string;
+  onBack: () => void;
+  onAgain: () => void;
+  onRecorded: () => void;
+}) {
+  if (run.kind === "reading") {
+    return (
+      <PieceView
+        key={source.id}
+        source={source}
+        onBack={onBack}
+        exercise={{
+          id: readId(run.level.id),
+          waitRecord: readWaitId(run.level.id),
+          hints: run.level.hints,
+          defaultMode: "wait",
+          listen: true,
+          pass: { accuracy: READ_PASS_ACCURACY, timingSdMs: READ_PASS_TIMING_SD_MS },
+          next: { label: "Новая мелодия", go: onAgain },
+          backLabel,
+          onRecorded,
+        }}
+      />
+    );
+  }
+  return (
+    <PieceView
+      key={source.id}
+      source={source}
+      onBack={onBack}
+      exercise={{
+        id: rhythmKey(run.level),
+        instrument: "rhythm",
+        keyMap: run.level.track === "hands" ? "byHand" : "anyKey",
+        rhythmOnly: true,
+        listen: true,
+        hints: { names: false, keyHints: false, waterfall: true, fingering: false },
+        pass: { accuracy: RHYTHM_PASS_ACCURACY, timingSdMs: RHYTHM_PASS_TIMING_SD_MS },
+        next: { label: "Новый ритм", go: onAgain },
+        backLabel,
+        onRecorded,
+      }}
+    />
+  );
+}
+
+/** Источник нот попытки: новая мелодия или ритм по зерну. */
+export function drillSource(run: Run): PieceSource {
+  if (run.kind === "reading") {
+    const m = readingMelody(run.level, run.seed);
+    return { id: `reading:${run.level.id}:${run.seed}`, title: `Чтение с листа · ${run.level.title}`, load: async () => ({ data: exerciseMei(m.score), zip: false }) };
+  }
+  const sc = rhythmScore(run.level, run.seed);
+  return { id: `rhythm:${rhythmKey(run.level)}:${run.seed}`, title: `Ритм · ${run.level.title}`, load: async () => ({ data: rhythmMei(sc), zip: false }) };
 }

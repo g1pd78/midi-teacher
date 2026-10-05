@@ -43,6 +43,9 @@ export function Header({
         <button className={screen === "home" ? "tab active" : "tab"} onClick={() => onNavigate("home")}>
           Главная
         </button>
+        <button className={screen === "course" ? "tab active" : "tab"} onClick={() => onNavigate("course")}>
+          Курс
+        </button>
         <button className={screen === "pieces" ? "tab active" : "tab"} onClick={() => onNavigate("pieces")}>
           Пьесы
         </button>

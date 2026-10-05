@@ -1513,6 +1513,54 @@ try {
   ok(`джем: «Повтори за мной» — ${echoOk} из 8 фраз повторены, серия засчитана`);
   await waitFor("к списку", () => click("К списку"));
 
+  console.log("Сквозной тест: курс");
+  await waitFor("вкладка «Курс»", () => click("Курс"));
+  await waitFor("курс фортепиано", () => clickSel("[data-course-instrument-btn='piano']"));
+  await waitFor("продолжить курс", () => clickSel("[data-course-continue]"));
+  const lessonOpen = () => js("return document.querySelector('[data-course-lesson-open]')?.dataset.courseLessonOpen ?? '';");
+  const openId = await waitFor("урок открыт", lessonOpen);
+  if (openId !== "piano-1") throw new Error(`текущий урок: ${openId}, ожидался piano-1`);
+  const stepDoneAt = (i) => js(`return document.querySelector('[data-course-step="${i}"]')?.dataset.stepDone ?? '';`);
+  // Ступень 1 тренажёра нот пройдена в начале теста — шаг засчитан сам.
+  const notesIdx = await js("return [...document.querySelectorAll('[data-course-step]')].findIndex((e) => e.dataset.stepKind === 'notes');");
+  if ((await stepDoneAt(notesIdx)) !== "1") throw new Error("шаг «Тренажёр нот: ступень 1» не засчитан");
+  // Теория: «Понятно» засчитывает шаг.
+  await waitFor("шаг теории", () => clickSel("[data-course-run='0']"));
+  await waitFor("«Понятно»", () => clickSel("[data-course-theory-ok]"));
+  await waitFor("шаг теории засчитан", async () => (await stepDoneAt(0)) === "1", 5000);
+  ok("курс: урок 1 открыт сам, ступень тренажёра засчитана, теория — «Понятно»");
+  // Пьеса правой рукой в режиме ожидания: бот играет без ошибок → шаг засчитан.
+  const pieceIdx = await js("return [...document.querySelectorAll('[data-course-step]')].findIndex((e) => e.dataset.stepKind === 'piece');");
+  await waitFor("шаг пьесы", () => clickSel(`[data-course-run='${pieceIdx}']`));
+  await waitFor("ноты пьесы", () => js("return !!document.querySelector('.score-page svg g.note');"), 30000);
+  await waitFor("первый шаг пьесы", pitches);
+  for (let i = 0; i < 300 && !(await finished()); i++) {
+    const step = await stepNo();
+    const cur = await pitches();
+    if (!cur) {
+      await sleep(100);
+      continue;
+    }
+    for (const p of cur.split(",")) await press(Number(p));
+    await waitFor(`переход с шага ${step}`, async () => (await finished()) || (await stepNo()) !== step, 5000);
+  }
+  await waitFor("пьеса курса засчитана", async () => (await invoke("exercise_stats")).some((x) => x.exercise === "course-piece-twinkle" && x.passed), 10000);
+  await waitFor("назад в урок", () => click("← Курс"));
+  await waitFor("шаг пьесы засчитан", async () => (await stepDoneAt(pieceIdx)) === "1", 5000);
+  ok("курс: «Ах, скажу я вам, мама» правой рукой сыграна ботом — шаг засчитан");
+  // Главная: шаг «Урок курса» засчитан (сегодня сыграно не меньше трёх шагов) и ведёт в урок.
+  await waitFor("главная", () => click("Главная"));
+  const courseStep = () =>
+    js("const b = [...document.querySelectorAll('.today-step')].find((b) => b.textContent.includes('Урок курса')); return b ? (b.classList.contains('done') ? 'done:' : 'open:') + b.innerText : '';");
+  const cs = await waitFor("шаг «Урок курса»", async () => {
+    const t = await courseStep();
+    return t.startsWith("done:") ? t : "";
+  }, 10000);
+  await js("[...document.querySelectorAll('.today-step')].find((b) => b.textContent.includes('Урок курса')).click();");
+  if ((await waitFor("урок с главной", lessonOpen)) !== "piano-1") throw new Error("шаг «Урок курса» открыл не тот урок");
+  ok(`главная: ${cs.slice(5).replace(/\s+/g, " ")} — засчитан, открывает урок`);
+  await waitFor("к курсу", () => click("← Курс"));
+
   console.log("Сквозной тест: доводка");
   // Панель пьесы: редкое — в меню «⋯»; Esc закрывает только меню.
   await waitFor("вкладка пьес", () => click("Пьесы"));

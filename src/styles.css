@@ -3310,3 +3310,71 @@ button.ex-star.on,
   margin: 0 18px 18px;
   padding: 10px;
 }
+
+/* Курс */
+.course-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 12px;
+}
+.course-progress-bar {
+  flex: 0 1 320px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.course-progress-bar > div {
+  height: 100%;
+  background: var(--good);
+}
+.course-steps {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.course-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.course-step.next {
+  border-color: var(--right-hand);
+}
+.course-step.done {
+  opacity: 0.75;
+}
+.course-step.review {
+  border-style: dashed;
+}
+.course-step-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-2);
+  font-weight: 600;
+  flex: none;
+}
+.course-step.done .course-step-mark {
+  background: var(--good);
+  color: #0e1014;
+}
+.course-step-title {
+  flex: 1;
+}
+.course-done {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}

@@ -16,6 +16,8 @@ const SECTIONS: { title: string; text: string; stage: string; screen?: Screen }[
 ];
 
 export interface TodayActions {
+  /** Урок курса (текущий). */
+  course: () => void;
   warmup: () => void;
   trainer: () => void;
   reading: () => void;
@@ -29,6 +31,8 @@ export interface TodayActions {
 /** Сколько мелодий с листа и ритмов — в занятии на день. */
 const READ_PER_DAY = 2;
 const RHYTHM_PER_DAY = 1;
+/** Шагов урока курса в день, чтобы шаг «Урок курса» считался сделанным. */
+const COURSE_STEPS_PER_DAY = 3;
 
 /** «Занятие на сегодня»: разминка → тренажёр нот → чтение с листа → ритм → пьеса. */
 function Today({ actions }: { actions: TodayActions }) {
@@ -36,6 +40,8 @@ function Today({ actions }: { actions: TodayActions }) {
   const [drills, setDrills] = useState({ read: 0, rhythm: 0, ear: 0 });
   // Шаг «Гитара» — если вход гитары включён или гитарные упражнения уже были.
   const [gtr, setGtr] = useState<{ instrument: "guitar" | "bass"; today: number } | null>(null);
+  // Шаг «Урок курса»: текущий урок выбранного инструмента и шаги, сделанные сегодня.
+  const [course, setCourse] = useState<{ title: string; n: number; today: number; done: boolean } | null>(null);
   useEffect(() => {
     api
       .todayStatus(dayStartSecs())
@@ -50,9 +56,33 @@ function Today({ actions }: { actions: TodayActions }) {
         if (used) setGtr({ instrument: g.config.instrument, today: a.length + b.length + f.length + c.length + ch.length });
       })
       .catch(() => {});
+    // Курс грузится отдельно: программа большая, главной она не нужна до первого показа.
+    Promise.all([import("../lib/course"), api.exerciseStats(), api.trainerOverview().then((o) => o.levelStats).catch(() => [])])
+      .then(([c, stats, trainer]) => {
+        const inst = c.storedCourseInstrument();
+        const p = { stats, trainer };
+        const lesson = c.currentLesson(inst, p);
+        const n = c.courseLessons(inst).indexOf(lesson) + 1;
+        const since = dayStartSecs();
+        // Шаг, который встречается в нескольких уроках, считается один раз.
+        const played = c.courseLessons(inst).flatMap((l) => l.steps).filter((s) => c.stepPlayedSince(s, inst, p, since));
+        const today = new Set(played.map((s) => c.stepRecordIds(s, inst).join())).size;
+        setCourse({ title: lesson.title, n, today, done: today >= COURSE_STEPS_PER_DAY });
+      })
+      .catch(() => {});
   }, []);
   if (!st) return null;
   const steps = [
+    ...(course
+      ? [
+          {
+            done: course.done,
+            title: `Урок курса ${course.n}`,
+            text: course.today ? `«${course.title}» — шагов сегодня: ${course.today}` : `«${course.title}»`,
+            go: actions.course,
+          },
+        ]
+      : []),
     {
       done: st.warmupDone,
       title: "Разминка",

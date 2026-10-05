@@ -30,6 +30,7 @@ import { missingShapes, patternArrows, songStrumBars, strumSong, type StrumPatte
 import { parseChart, type LeadSong } from "../lib/songs";
 import { partChart, songAccompaniment } from "../lib/tabsong";
 import { PieceView, type PieceSource } from "./PieceView";
+import { useBackLabel } from "../components/BackLabel";
 
 export interface GtrSetup {
   tuning: number[];
@@ -192,6 +193,7 @@ const HINT_MS = 4000;
 
 /** Серия тренажёра гитарных аккордов. */
 export function GuitarChordDrill({ level, seed, onAgain, onBack, onRecorded }: { level: GtrChordLevel; seed: number; onAgain: () => void; onBack: () => void; onRecorded: () => void }) {
+  const back = useBackLabel("← Аккорды");
   const setup = useGtrSetup();
   const series = useMemo(() => gtrChordSeries(level, seed), [level, seed]);
   const [index, setIndex] = useState(0);
@@ -270,7 +272,7 @@ export function GuitarChordDrill({ level, seed, onAgain, onBack, onRecorded }: {
     >
       <div className="piece-bar">
         <button className="ghost" onClick={onBack} title="Esc">
-          ← Аккорды
+          {back}
         </button>
         <div className="piece-name">Гитарные аккорды · {level.title}</div>
         <label className="toggle-inline">
@@ -345,6 +347,7 @@ export function transposeSymbol(symbol: string, semis: number): string {
 
 /** «Минута смен»: два аккорда по очереди за минуту. */
 export function ChordChanges({ pair, best, onBack, onRecorded }: { pair: ChangePair; best: number; onBack: () => void; onRecorded: () => void }) {
+  const back = useBackLabel("← Аккорды");
   const setup = useGtrSetup();
   const [phase, setPhase] = useState<"idle" | "count" | "run" | "done">("idle");
   const [left, setLeft] = useState(CHANGES_SECS);
@@ -423,7 +426,7 @@ export function ChordChanges({ pair, best, onBack, onRecorded }: { pair: ChangeP
     <main className="chord-drill chord-changes" data-changes-phase={phase} data-changes-count={count} data-changes-side={side} data-changes-expected={pitches[side].join(",")}>
       <div className="piece-bar">
         <button className="ghost" onClick={onBack} title="Esc">
-          ← Аккорды
+          {back}
         </button>
         <div className="piece-name">
           Минута смен · {pair.a.symbol} ↔ {pair.b.symbol}
@@ -484,7 +487,8 @@ export function SongShapes({ song, size = 46, max = 5 }: { song: LeadSong; size?
 }
 
 /** Песня по буквам боем: табы с аккордами и стрелками, барабаны, схемы сверху. */
-export function GuitarSongView({ song, pattern, onBack }: { song: LeadSong; pattern: StrumPattern; onBack: () => void }) {
+export function GuitarSongView({ song, pattern, onBack, exerciseId }: { song: LeadSong; pattern: StrumPattern; onBack: () => void; exerciseId?: string }) {
+  const back = useBackLabel("← Аккорды");
   const setup = useGtrSetup();
   const source: PieceSource | null = useMemo(() => {
     if (!setup) return null;
@@ -498,7 +502,7 @@ export function GuitarSongView({ song, pattern, onBack }: { song: LeadSong; patt
       load: async () => ({ data: partChart(ts, 0).mei, zip: false }),
       accompaniment: songAccompaniment(ts, 0),
       instrument: "guitar",
-      backLabel: "← Аккорды",
+      backLabel: back,
       banner: (
         <div className="song-banner" data-song-banner>
           <span className="song-banner-arrows" title="Схема боя">
@@ -514,5 +518,12 @@ export function GuitarSongView({ song, pattern, onBack }: { song: LeadSong; patt
     };
   }, [song, pattern, setup]);
   if (!source) return null;
-  return <PieceView key={source.id} source={source} onBack={onBack} />;
+  return (
+    <PieceView
+      key={source.id}
+      source={source}
+      onBack={onBack}
+      exercise={exerciseId ? { id: exerciseId, instrument: "guitar", pass: { accuracy: 0.85, timingSdMs: 90 }, backLabel: back } : undefined}
+    />
+  );
 }

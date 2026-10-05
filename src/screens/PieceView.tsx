@@ -232,7 +232,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const level = unit?.state.level ?? 0;
   const preset = unit ? levelPreset(level) : null;
   const rhythmMode = exercise ? exMode === "rhythm" : (preset ? preset.mode : p.mode) === "rhythm";
-  const freeHands: HandMode = !hasLeft ? "right" : !hasRight ? "left" : exercise ? "both" : p.hands;
+  const freeHands: HandMode = !hasLeft ? "right" : !hasRight ? "left" : exercise ? (exercise.hands ?? "both") : p.hands;
   const hands: PlayHands = listening ? "none" : unit ? unit.hand : freeHands;
   const tempo = exercise ? exTempo : unit ? levelTempo(level, unit.state.tempo) : p.tempo;
   const accompany = unit || exercise ? true : p.accompany;

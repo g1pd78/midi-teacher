@@ -54,6 +54,7 @@ import { pitchName } from "../lib/notes";
 import { partChart } from "../lib/tabsong";
 import { renderSvg } from "../lib/verovio";
 import { useApp, useMidi } from "../store";
+import { useBackLabel } from "../components/BackLabel";
 
 const CLASS_COLOR: Record<NoteClass, string> = { chord: "#4CC38A", scale: "#5AA9FF", out: "#FFB454" };
 const CLASS_NAME: Record<NoteClass, string> = { chord: "звук аккорда", scale: "гамма", out: "вне гаммы" };
@@ -352,6 +353,7 @@ function JamSession({
   onBack: () => void;
   onRecorded: () => void;
 }) {
+  const back = useBackLabel("← Джем");
   const { prefs } = useApp();
   const tuning = useInstrumentTuning(instrument);
   const style = JAM_STYLE_BY_ID.get(setup.style) ?? JAM_STYLES[0];
@@ -477,7 +479,7 @@ function JamSession({
     >
       <div className="piece-bar">
         <button className="ghost" onClick={onBack} title="Esc">
-          ← Джем
+          {back}
         </button>
         <div className="piece-name">{lesson ? `Урок ${lesson.id} · ${lesson.title}` : `Джем · ${setup.custom.trim() ? setup.custom : style.name}`}</div>
         <span className="chip">
@@ -578,6 +580,7 @@ function SoloReview({
   onAgain: () => void;
   onBack: () => void;
 }) {
+  const back = useBackLabel("← Джем");
   const scale = scalePcs(setup.tonic, setup.scale);
   const s = jamStats(notes, plan, scale);
   const tips = jamTips(s);
@@ -636,7 +639,7 @@ function SoloReview({
     <main className="chord-drill jam-review" data-jam-review data-jam-notes={s.total} data-jam-result={result ? (result.passed ? "passed" : "failed") : ""}>
       <div className="piece-bar">
         <button className="ghost" onClick={onBack}>
-          ← Джем
+          {back}
         </button>
         <div className="piece-name">{title} · итог</div>
       </div>
@@ -725,6 +728,7 @@ function EchoDrill({
   onBack: () => void;
   onRecorded: () => void;
 }) {
+  const back = useBackLabel("← Джем");
   const { prefs } = useApp();
   const tonic = [9, 4, 2, 7][seed % 4];
   const phrases = useMemo(() => echoSeries(level, tonic, instrument, seed), [level, tonic, instrument, seed]);
@@ -797,7 +801,7 @@ function EchoDrill({
     >
       <div className="piece-bar">
         <button className="ghost" onClick={onBack} title="Esc">
-          ← Джем
+          {back}
         </button>
         <div className="piece-name">Повтори за мной · {level.title}</div>
         <span className="chip">
@@ -867,4 +871,26 @@ function EchoDrill({
       </section>
     </main>
   );
+}
+
+function storedMix(): JamMix {
+  try {
+    return { ...DEFAULT_MIX, ...JSON.parse(localStorage.getItem("mt-jam-mix") ?? "{}") };
+  } catch {
+    return DEFAULT_MIX;
+  }
+}
+
+/** Урок импровизации — для курса (громкость аккомпанемента — как в разделе «Джем»). */
+export function JamLessonRun({ lesson, instrument, onBack, onRecorded }: { lesson: JamLesson; instrument: JamInstrument; onBack: () => void; onRecorded: () => void }) {
+  const [seed, setSeed] = useState(freshSeed);
+  return (
+    <JamSession key={seed} setup={lesson.setup} instrument={instrument} mix={storedMix()} lesson={lesson} seed={seed} onAgain={() => setSeed((s) => s + 1)} onBack={onBack} onRecorded={onRecorded} />
+  );
+}
+
+/** «Повтори за мной» по ступени — для курса. */
+export function EchoRun({ level, instrument, onBack, onRecorded }: { level: EchoLevel; instrument: JamInstrument; onBack: () => void; onRecorded: () => void }) {
+  const [seed, setSeed] = useState(freshSeed);
+  return <EchoDrill key={seed} level={level} seed={seed} instrument={instrument} mix={storedMix()} onAgain={() => setSeed((s) => s + 1)} onBack={onBack} onRecorded={onRecorded} />;
 }

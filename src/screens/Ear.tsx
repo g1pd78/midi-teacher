@@ -28,6 +28,7 @@ import { verovioOptions } from "../lib/staffOptions";
 import { useMidi } from "../store";
 import { useExpectChords, useStrum } from "./GuitarChords";
 import { dayKey } from "./Exercises";
+import { useBackLabel } from "../components/BackLabel";
 
 type Timbre = "piano" | "guitar";
 const TIMBRE_KEY = "mt-ear-timbre";
@@ -49,6 +50,15 @@ function playQuestion(notes: EarNote[], timbre: Timbre) {
       EAR_TIMBRE_PROGRAM[timbre],
     )
     .catch(() => {});
+}
+
+/** Серия слуха по ступени — для курса: тембр — как выбран в разделе «Слух». */
+export function EarRun({ level, seed, onBack, onAgain, onRecorded }: { level: EarLevel; seed: number; onBack: () => void; onAgain: () => void; onRecorded: () => void }) {
+  const timbre = loadTimbre();
+  const props = { level, seed, timbre, onBack, onAgain, onRecorded };
+  if (level.kind === "melody") return <MelodyDictation {...props} />;
+  if (level.kind === "rhythm") return <RhythmDictation {...props} />;
+  return <EarDrill {...props} />;
 }
 
 /** Раздел «Слух» в «Тренажёрах». */
@@ -203,10 +213,11 @@ function SeriesSummary({ passed, accuracy, onAgain, onBack }: { passed: boolean;
 }
 
 function DrillBar({ title, index, total, onBack, onReplay }: { title: string; index: number; total: number; onBack: () => void; onReplay?: () => void }) {
+  const back = useBackLabel("← Слух");
   return (
     <div className="piece-bar">
       <button className="ghost" onClick={onBack} title="Esc">
-        ← Слух
+        {back}
       </button>
       <div className="piece-name">Слух · {title}</div>
       {onReplay && (
