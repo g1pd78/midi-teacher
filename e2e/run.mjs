@@ -1162,6 +1162,9 @@ try {
   });
   if (tabSteps !== 10) throw new Error(`нот в табе: ${tabSteps}`);
   ok("текстовый таб: вставлен, сохранён в библиотеку (темп и ритм — в первой строке), сыгран на басу — 10 нот, 0 ошибок");
+  await js("document.querySelector('.summary-overlay button')?.click();");
+  await waitFor("назад к списку пьес", () => click("← Пьесы"));
+  await waitFor("список пьес", () => js("return !!document.querySelector('.piece-card');"));
 
   console.log("Сквозной тест: доводка");
   // Панель пьесы: редкое — в меню «⋯»; Esc закрывает только меню.
