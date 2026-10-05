@@ -677,7 +677,8 @@ impl Store {
                 "SELECT COUNT(*) FROM exercise_results WHERE finished_at >= ?1
                    AND exercise NOT LIKE 'read-%' AND exercise NOT LIKE 'rhythm-%'
                    AND exercise NOT LIKE 'chord-%' AND exercise NOT LIKE 'gtr-%'
-                   AND exercise NOT LIKE 'bass-%' AND exercise NOT LIKE 'fret-%'",
+                   AND exercise NOT LIKE 'bass-%' AND exercise NOT LIKE 'fret-%'
+                   AND exercise NOT LIKE 'gchord-%' AND exercise NOT LIKE 'gchange-%'",
             )?,
             trainer_sessions: count(
                 "SELECT COUNT(*) FROM trainer_sessions WHERE finished_at >= ?1",
@@ -1028,6 +1029,8 @@ mod tests {
             "gtr-spider-1234-5-60",
             "bass-groove-roots-90",
             "fret-guitar-2",
+            "gchord-1",
+            "gchange-Am-C",
         ] {
             store.record_exercise(&res(id, 0.95, true), 400).unwrap();
         }

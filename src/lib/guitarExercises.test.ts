@@ -119,9 +119,10 @@ describe("гитарные упражнения", () => {
     }
   });
 
-  it("открытие: сначала только паучок, после первого паучка — пентатоника и грувы", () => {
+  it("открытие: сначала только паучок и бой, после первого паучка — пентатоника и грувы", () => {
     const open0 = gtrUnlocked(new Set(), "guitar");
-    expect([...open0].every((id) => id.startsWith("gtr-spider-"))).toBe(true);
+    expect([...open0].every((id) => id.startsWith("gtr-spider-") || id.startsWith("gtr-strum-"))).toBe(true);
+    expect(open0.has("gtr-strum-quarters-emam-70")).toBe(true);
     expect(open0.has("gtr-spider-1234-5-60")).toBe(true);
     expect(open0.has("gtr-spider-1234-5-80")).toBe(false);
     const open1 = gtrUnlocked(new Set(["gtr-spider-1234-5-60"]), "guitar");

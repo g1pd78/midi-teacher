@@ -9,10 +9,12 @@
 //! - поток анализатора считает уровень, высоту (тюнер), начала нот (для
 //!   калибровки и этапа «звук → ноты») и пишет WAV.
 
+pub mod chord;
 pub mod dsp;
 pub mod notes;
 
 use crate::clock;
+use chord::ChordListener;
 use crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Sender};
 use crossbeam_queue::ArrayQueue;
 use dsp::{Decimator, OnsetDetector, ToneKind};
@@ -241,6 +243,8 @@ pub struct GuitarShared {
     onsets: Mutex<VecDeque<u64>>,
     /// Ноты, которые сейчас ждёт пьеса (подсказка для октавы).
     expected: Mutex<Vec<u8>>,
+    /// Аккорды, которые сейчас ждут (непусто — режим аккорда: удар → проверка по спектру).
+    expected_chords: Mutex<Vec<Vec<u8>>>,
     /// Куда отправлять распознанные ноты.
     note_sink: Mutex<Option<Sender<NoteEvent>>>,
     /// Прослушивание: читает выходной поток.
@@ -264,6 +268,7 @@ impl GuitarShared {
             frames: AtomicU32::new(0),
             onsets: Mutex::new(VecDeque::new()),
             expected: Mutex::new(Vec::new()),
+            expected_chords: Mutex::new(Vec::new()),
             note_sink: Mutex::new(None),
             monitor: Mutex::new(None),
             tx,
@@ -396,6 +401,11 @@ impl GuitarShared {
     /// Какие ноты сейчас ждёт пьеса (пусто — без подсказки).
     pub fn set_expected(&self, pitches: Vec<u8>) {
         *self.expected.lock() = pitches;
+    }
+
+    /// Какие аккорды сейчас ждут (ноты MIDI каждого; пусто — одноголосие).
+    pub fn set_expected_chords(&self, chords: Vec<Vec<u8>>) {
+        *self.expected_chords.lock() = chords.into_iter().filter(|c| !c.is_empty()).collect();
     }
 
     /// Получатель распознанных нот (приложение передаёт их как MIDI-устройство).
@@ -566,6 +576,9 @@ struct Analyzer {
     /// Инструмент и самая низкая струна, под которые настроен распознаватель.
     tracker_for: (Instrument, u8),
     track_events: Vec<TrackEvent>,
+    chord: ChordListener,
+    /// Был ли режим аккорда на прошлом блоке.
+    chord_mode: bool,
 }
 
 impl Analyzer {
@@ -591,6 +604,8 @@ impl Analyzer {
             tracker: NoteTracker::new(48_000.0, Instrument::Guitar, 40),
             tracker_for: (Instrument::Guitar, 40),
             track_events: Vec::new(),
+            chord: ChordListener::new(48_000.0),
+            chord_mode: false,
         }
     }
 
@@ -604,6 +619,7 @@ impl Analyzer {
         self.low_since_pitch = 0;
         self.history.clear();
         self.tracker = NoteTracker::new(rate as f32, self.tracker_for.0, self.tracker_for.1);
+        self.chord = ChordListener::new(rate as f32);
     }
 
     fn run(mut self, rx: Receiver<Msg>) {
@@ -725,6 +741,18 @@ impl Analyzer {
             self.tracker = NoteTracker::new(self.rate.max(1) as f32, instrument, lowest);
         }
         let expected = shared.expected.lock().clone();
+        let chords = shared.expected_chords.lock().clone();
+        let chord_mode = !chords.is_empty();
+        let first_index = end_index.saturating_sub(samples.len() as u64);
+        if chord_mode != self.chord_mode {
+            // Смена режима: отпускаем то, что звучало в прежнем.
+            self.chord_mode = chord_mode;
+            if chord_mode {
+                self.tracker.release(first_index, &mut self.track_events);
+            } else {
+                self.chord.release(first_index, &mut self.track_events);
+            }
+        }
         let latency_us = (latency_ms * 1000.0) as u64;
         let mut notes_out: Vec<NoteEvent> = Vec::new();
         let level_block = (self.rate / 20).max(1) as usize; // 50 мс
@@ -751,11 +779,17 @@ impl Analyzer {
                 self.level_count = 0;
             }
             // Начала нот.
-            if let Some(at) = self.onset.push(x, i) {
+            let onset = self.onset.push(x, i);
+            if let Some(at) = onset {
                 new_onsets.push(time_of(at));
             }
-            // Ноты.
-            self.tracker.push(x, &expected, &mut self.track_events);
+            // Ноты: одноголосие или аккорд по удару.
+            if chord_mode {
+                self.chord
+                    .push(x, i, onset, &chords, &mut self.track_events);
+            } else {
+                self.tracker.push(x, &expected, &mut self.track_events);
+            }
             for ev in self.track_events.drain(..) {
                 let (on, pitch, velocity, at) = match ev {
                     TrackEvent::On {
@@ -926,6 +960,37 @@ mod tests {
             Some(shared.onsets_since(t0)).filter(|o| !o.is_empty())
         });
         assert_eq!(onsets.len(), 1);
+    }
+
+    #[test]
+    fn chord_mode_turns_a_strum_into_chord_notes() {
+        let shared = GuitarShared::start(GuitarConfig::default());
+        let (tx, rx) = unbounded();
+        shared.set_note_sink(tx);
+        // Ждём ля минор или до мажор; играем до мажор.
+        let am = vec![45u8, 52, 57, 60, 64];
+        let c = vec![48u8, 52, 55, 60, 64];
+        shared.set_expected_chords(vec![am, c.clone()]);
+        let mut sig = vec![0.0f32; 4800];
+        sig.extend(chord::strum(&c, 48_000.0, 0.5, 12.0));
+        sig.extend(vec![0.0f32; 9600]);
+        shared.inject(sig, 48_000);
+        let mut ons = Vec::new();
+        while let Ok(ev) = rx.recv_timeout(Duration::from_millis(500)) {
+            if ev.on {
+                ons.push(ev.pitch);
+            }
+        }
+        assert_eq!(ons, c);
+        // Без ожидаемых аккордов — снова одноголосие.
+        shared.set_expected_chords(Vec::new());
+        let mut sig = vec![0.0f32; 4800];
+        sig.extend(dsp::pluck(dsp::midi_to_hz(57.0), 48_000.0, 0.4, 0.4, 2));
+        shared.inject(sig, 48_000);
+        let ev = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("нота не распознана");
+        assert_eq!((ev.on, ev.pitch), (true, 57));
     }
 
     #[test]

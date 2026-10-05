@@ -449,6 +449,8 @@ pub fn run() {
             guitar::guitar_stop_record,
             guitar::guitar_test_signal,
             guitar::guitar_expect,
+            guitar::guitar_expect_chords,
+            guitar::guitar_test_chord,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска приложения");

@@ -3,7 +3,7 @@
 use crate::library::library_dir;
 use crate::AppState;
 use mt_core::clock;
-use mt_core::guitar::{calibrate, dsp, Calibration, GuitarConfig, GuitarStatus, InputInfo};
+use mt_core::guitar::{calibrate, chord, dsp, Calibration, GuitarConfig, GuitarStatus, InputInfo};
 use serde::Serialize;
 use std::thread;
 use std::time::Duration;
@@ -126,4 +126,25 @@ pub fn guitar_test_signal(state: State<AppState>, hz: f32, secs: f32, kind: Stri
 #[tauri::command]
 pub fn guitar_expect(state: State<AppState>, pitches: Vec<u8>) {
     state.audio.guitar().set_expected(pitches);
+}
+
+/// Аккорды, которые сейчас ждут (ноты MIDI): удар по струнам проверяется по спектру.
+/// Пустой список — снова одноголосие.
+#[tauri::command]
+pub fn guitar_expect_chords(state: State<AppState>, chords: Vec<Vec<u8>>) {
+    state.audio.guitar().set_expected_chords(chords);
+}
+
+/// Тестовый удар по струнам (сквозные тесты, режим разработчика): ноты MIDI, разброс струн 12 мс.
+#[tauri::command]
+pub fn guitar_test_chord(state: State<AppState>, pitches: Vec<u8>, secs: f32) {
+    const RATE: u32 = 48_000;
+    let mut samples = vec![0.0f32; (RATE / 20) as usize];
+    samples.extend(chord::strum(
+        &pitches,
+        RATE as f32,
+        secs.clamp(0.2, 4.0),
+        12.0,
+    ));
+    state.audio.guitar().inject(samples, RATE);
 }

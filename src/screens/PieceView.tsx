@@ -89,6 +89,10 @@ export interface PieceSource {
   songFile?: { id: string; format: SongFormat };
   /** Что звучит вместе с учеником (упражнения под барабаны). */
   accompaniment?: AccompNote[];
+  /** Инструмент задан заранее (песня боем — гитара). */
+  instrument?: PieceInstrument;
+  /** Полоса над нотами (схемы аккордов песни). */
+  banner?: React.ReactNode;
 }
 
 const NO_SETUP: PieceSetup = { transpose: 0, roles: null, handOverrides: [], instrument: null, part: 0 };
@@ -268,6 +272,8 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
       : exercise.instrument === "guitar" || exercise.instrument === "bass"
         ? exercise.instrument
         : "piano"
+    : source.instrument
+      ? source.instrument
     : source.songFile
       ? filePart?.kind === "bass"
         ? "bass"
@@ -680,6 +686,23 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     void api.guitarExpect(expectKey ? expectKey.split(",").map(Number).filter(Boolean) : []).catch(() => {});
   }, [strInst, expectKey]);
   useEffect(() => () => void api.guitarExpect([]).catch(() => {}), []);
+  // Аккорды впереди (бой, аккорды в табах): удар по струнам проверяется по спектру, а не по одной ноте.
+  // Кандидаты — текущий и соседние шаги; режим аккорда — если среди них есть аккорд от 3 звуков.
+  const chordKey = useMemo(() => {
+    if (!strInst) return "[]";
+    const sets: number[][] = rhythmMode
+      ? steps.ids.slice(Math.max(0, rhythmStep - 1), Math.max(0, rhythmStep) + 3).map((ids) => ids.map((id) => noteById.get(id)?.pitch ?? 0).filter(Boolean))
+      : current
+        ? [current.required]
+        : [];
+    const uniq = [...new Map(sets.map((s) => [[...s].sort((a, b) => a - b).join(","), [...s].sort((a, b) => a - b)])).values()].filter((s) => s.length);
+    return JSON.stringify(uniq.some((s) => s.length >= 3) ? uniq : []);
+  }, [strInst, rhythmMode, steps, rhythmStep, noteById, current]);
+  useEffect(() => {
+    if (!strInst) return;
+    void api.guitarExpectChords(JSON.parse(chordKey)).catch(() => {});
+  }, [strInst, chordKey]);
+  useEffect(() => () => void api.guitarExpectChords([]).catch(() => {}), []);
 
   const resetMarks = useCallback(() => {
     noteStates.current = new Map();
@@ -1548,7 +1571,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
             </select>
           )
         )}
-        {!exercise && !source.songFile && (
+        {!exercise && !source.songFile && !source.instrument && (
           <span className="segmented" title="На чём играть: фортепиано — ноты и клавиатура, гитара и бас — табы и гриф" data-instrument-select>
             {(drumsOnly ? ["drums"] : ["piano", "guitar", "bass", ...(midiDrums ? ["drums"] : [])]).map((k) => (
               <button
@@ -1847,6 +1870,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
           {exercise.hint}
         </div>
       )}
+      {source.banner}
       {strInst && guitarOn === false && (
         <div className="notice info">
           Вход гитары выключен — приложение не услышит {strInst === "bass" ? "бас" : "гитару"}. Включи «Слушать вход» на

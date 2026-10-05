@@ -544,6 +544,13 @@ export function createMock() {
       };
     },
     guitar_expect: () => undefined,
+    guitar_expect_chords: () => undefined,
+    guitar_test_chord: ({ pitches }) => {
+      const list = pitches as unknown as number[];
+      for (const n of list) send("Гитара (звук)", { type: "noteOn", note: n, velocity: 90 });
+      setTimeout(() => list.forEach((n) => send("Гитара (звук)", { type: "noteOff", note: n })), 300);
+      return undefined;
+    },
     guitar_inputs: () => [
       { name: "Rocksmith Guitar Adapter Mono", channels: 1 },
       { name: "Микрофон (Realtek High Definition Audio)", channels: 2 },

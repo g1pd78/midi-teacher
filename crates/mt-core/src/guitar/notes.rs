@@ -82,6 +82,14 @@ impl NoteTracker {
         }
     }
 
+    /// Отпустить звучащую ноту (смена режима распознавания).
+    pub fn release(&mut self, at: u64, out: &mut Vec<TrackEvent>) {
+        self.pending = None;
+        if let Some(s) = self.sounding.take() {
+            out.push(TrackEvent::Off { pitch: s.pitch, at });
+        }
+    }
+
     /// Задержка распознавания высоты после начала ноты, мс.
     pub fn latency_ms(&self) -> f32 {
         (self.skip as f32 + self.window as f32) / self.rate * 1000.0

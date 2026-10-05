@@ -1228,6 +1228,87 @@ try {
   10000);
   ok("главная: шаг «Гитара» в «Занятии на сегодня» отмечен сделанным");
 
+  console.log("Сквозной тест: гитарные аккорды и бой");
+  const chordOn = async (ps) => {
+    for (const p of ps) await invoke("simulate_midi", { device: "E2E", bytes: [0x90, p, 100] });
+    for (const p of ps) await invoke("simulate_midi", { device: "E2E", bytes: [0x80, p, 0] });
+  };
+  await waitFor("вкладка тренажёров", () => click("Тренажёры"));
+  await waitFor("раздел «Аккорды»", () => clickSel("[data-trainer-section='chords']"));
+  await waitFor("режим «Гитара»", () => clickSel("[data-chords-instrument='guitar']"));
+  await waitFor("ступень 1 гитарных аккордов", () => clickSel("[data-gchord-level='1']"));
+  const gExpected = () => js("return document.querySelector('[data-gchord-index]')?.dataset.gchordExpected ?? '';");
+  const gIndex = () => js("return document.querySelector('[data-gchord-index]')?.dataset.gchordIndex ?? '';");
+  await waitFor("первый аккорд и схема", async () => (await gExpected()) && (await js("return !!document.querySelector('.gchord-card [data-chord-diagram]');")));
+  // Первый аккорд — звуком: удар по струнам проходит распознавание по спектру.
+  const firstChord = (await gExpected()).split(",").map(Number);
+  await invoke("guitar_test_chord", { pitches: firstChord, secs: 0.6 });
+  await waitFor("аккорд по звуку засчитан", async () => (await gIndex()) === "1", 10000);
+  // Второй — сначала с лишней нотой (на полтона выше верхней): подсказка «Лишнее».
+  const second = (await gExpected()).split(",").map(Number);
+  await chordOn([...second.slice(0, -1), second[second.length - 1] + 1]);
+  await waitFor("подсказка о лишнем звуке", () => js("return (document.querySelector('[data-gchord-verdict]')?.innerText ?? '').includes('Лишнее');"), 5000);
+  for (let i = 0; i < 15; i++) {
+    const e = await gExpected();
+    if (!e) break;
+    const idx = await gIndex();
+    await chordOn(e.split(",").map(Number));
+    await waitFor(`аккорд ${idx}`, async () => (await gIndex()) !== idx, 5000);
+  }
+  const gChordsDone = await waitFor("итог серии аккордов", () => js("return document.querySelector('[data-gchord-index]')?.dataset.gchordDone;"), 10000);
+  if (gChordsDone !== "passed") throw new Error(`гитарные аккорды: ${await js("return document.querySelector('.gchord-drill').innerText;")}`);
+  await waitFor("зачёт ступени аккордов", async () => (await invoke("exercise_stats")).some((x) => x.exercise === "gchord-1" && x.passed), 5000);
+  ok("тренажёр гитарных аккордов: аккорд по звуку (спектр) засчитан, лишний звук подсказан, серия засчитана");
+  await waitFor("к списку", () => click("К списку"));
+
+  // Минута смен: разминка переключает аккорды, в минуте считаются смены.
+  await waitFor("пара Am ↔ C", () => clickSel("[data-change-pair='gchange-Am-C']"));
+  const chExpected = () => js("return document.querySelector('[data-changes-phase]')?.dataset.changesExpected ?? '';");
+  const chAttr = (a) => js(`return document.querySelector('[data-changes-phase]')?.dataset.${a} ?? '';`);
+  await waitFor("схема Am", chExpected);
+  await chordOn((await chExpected()).split(",").map(Number));
+  await waitFor("переключение на C", async () => (await chAttr("changesSide")) === "1", 3000);
+  await js("document.querySelector('[data-changes-start]').click();");
+  await waitFor("минута пошла", async () => (await chAttr("changesPhase")) === "run", 6000);
+  for (let k = 0; k < 4; k++) {
+    const side = await chAttr("changesSide");
+    await chordOn((await chExpected()).split(",").map(Number));
+    await waitFor(`смена ${k + 1}`, async () => (await chAttr("changesSide")) !== side, 3000);
+  }
+  if ((await chAttr("changesCount")) !== "4") throw new Error(`смен: ${await chAttr("changesCount")}`);
+  await js("document.querySelector('[data-changes-stop]').click();");
+  ok("минута смен: Am ↔ C, 4 чистые смены посчитаны");
+  await waitFor("к аккордам", () => click("← Аккорды"));
+
+  // Песня боем: схемы аккордов над табами со стрелками.
+  await waitFor("песня боем", () => clickSel("[data-song-strum-play]"));
+  await waitFor("табы песни, схемы и бой", () =>
+    js("return !!document.querySelector('.tab-score g.note') && document.querySelectorAll('[data-song-banner] [data-chord-diagram]').length >= 2 && document.querySelector('.score-page svg').textContent.includes('↓');"),
+  30000);
+  ok("песня по буквам боем: табы с аккордами и стрелками ↓↑, схемы аккордов над нотами");
+  await waitFor("к аккордам", () => click("← Аккорды"));
+  await waitFor("режим «Фортепиано»", () => clickSel("[data-chords-instrument='piano']"));
+
+  // Бой в упражнениях: четверти по Em–Am — в ожидании и в темпе.
+  await waitFor("вкладка «Упражнения»", () => click("Упражнения"));
+  await waitFor("переключатель «Гитара»", () => clickSel("[data-ex-instrument-btn='guitar']"));
+  await waitFor("бой «Четверти вниз»", () => clickSel("[data-exercise='gtr-strum-quarters-emam-70']"));
+  await waitFor("табы боя", () => js("return document.querySelectorAll('.tab-score g.note').length > 40;"), 30000);
+  await waitFor("режим ожидания", () => click("Ожидание"));
+  await waitFor("первый удар — ми минор", async () => (await pitches()).split(",").length === 6, 15000);
+  const strumSteps = await playWait("бой", press);
+  if (strumSteps !== 32) throw new Error(`ударов: ${strumSteps}`);
+  await js("document.querySelector('.summary-overlay button')?.click();");
+  await waitFor("режим «в темпе»", () => click("В темпе"));
+  await js("document.querySelector('.score-scroll')?.removeAttribute('data-transport');");
+  await waitFor("старт", () => click("▶ Старт"));
+  await playInTempo();
+  await waitFor("итог боя", () => js("return !!document.querySelector('.exercise-summary');"), 40000);
+  if ((await scroll("exResult")) !== "passed") throw new Error(`бой не засчитан:\n${await js("return document.querySelector('.exercise-summary').innerText;")}`);
+  ok(`бой «Четверти вниз» Em–Am: ${strumSteps} ударов в ожидании, в темпе — засчитан`);
+  await waitFor("к упражнениям", () => click("К упражнениям"));
+  await waitFor("переключатель «Фортепиано»", () => clickSel("[data-ex-instrument-btn='piano']"));
+
   console.log("Сквозной тест: доводка");
   // Панель пьесы: редкое — в меню «⋯»; Esc закрывает только меню.
   await waitFor("вкладка пьес", () => click("Пьесы"));

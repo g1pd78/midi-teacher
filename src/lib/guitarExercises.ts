@@ -6,13 +6,15 @@ import { TUNINGS } from "./guitar";
 import type { ExerciseStatView } from "./exercises";
 import { seeded } from "./exercises";
 import { TPQ, type TabSong, type TsBeat, type TsNote, type TsPart } from "./tabsong";
+import { STRUM_BY_ID, patternArrows, strumSong } from "./strum";
 
 export type GtrInstrument = "guitar" | "bass";
-export type GtrCategory = "spider" | "pentatonic" | "scales" | "arpeggio" | "groove";
+export type GtrCategory = "spider" | "strum" | "pentatonic" | "scales" | "arpeggio" | "groove";
 
 export const GTR_CATEGORIES: Record<GtrInstrument, { id: GtrCategory; title: string; description: string }[]> = {
   guitar: [
     { id: "spider", title: "Паучок и хроматика", description: "Каждый палец — на своём ладу: 1-2-3-4 и перестановки по всем струнам. Сила, растяжка и независимость пальцев левой руки, синхронность рук." },
+    { id: "strum", title: "Бой", description: "Аккорды и ритм правой руки: схемы ↓↑ под барабаны, от четвертей до шестнадцатых. Засчитывается ритм и верно взятые аккорды." },
     { id: "pentatonic", title: "Пентатоника", description: "Минорная пентатоника в позиции — основа рок- и блюз-соло: вверх-вниз и тройками." },
     { id: "scales", title: "Гаммы в позиции", description: "Мажор и натуральный минор, палец на лад: звуки гаммы на всех струнах, не сдвигая руку." },
     { id: "arpeggio", title: "Арпеджио", description: "Звуки мажорного и минорного трезвучия по струнам в позиции." },
@@ -331,6 +333,29 @@ function buildCatalog(): GtrExercise[] {
             }),
         });
       }
+    // Бой (только гитара): схема × последовательность аккордов × темп.
+    if (instrument === "guitar")
+      for (const [pid, progs] of STRUM_PLAN) {
+        const p = STRUM_BY_ID.get(pid)!;
+        for (const [prog, bpm] of progs) {
+          const chords = prog.split(" ");
+          out.push({
+            id: `gtr-strum-${pid}-${chords.join("").toLowerCase().replace(/#/g, "s")}-${bpm}`,
+            instrument,
+            category: "strum",
+            group: `${p.name}: ${patternArrows(p)}`,
+            variant: `${chords.join("–")} · ${bpm}`,
+            title: `Бой «${p.name}»: ${chords.join(" – ")}, ${bpm} уд/мин`,
+            bpm,
+            hint: `${patternArrows(p)} — ${p.hint}`,
+            build: (tuning) => {
+              // По такту на аккорд, вся последовательность дважды.
+              const bars = [...chords, ...chords].flatMap((c) => (chords.length <= 2 ? [c, c] : [c])).map((symbol) => ({ chords: [{ symbol }] }));
+              return strumSong({ bars, pattern: p, bpm, tuning, title: `Бой: ${p.name}` });
+            },
+          });
+        }
+      }
     // Игра под барабаны.
     for (const g of GROOVES[instrument])
       for (const bpm of g.tempos) {
@@ -353,6 +378,19 @@ function buildCatalog(): GtrExercise[] {
   }
   return out;
 }
+
+/** Бой: схема → [аккорды, темп] по возрастанию трудности. */
+const STRUM_PLAN: [string, [string, number][]][] = [
+  ["quarters", [["Em Am", 70], ["G C D G", 80], ["Am Dm E Am", 90]]],
+  ["eighths", [["Em Am", 70], ["G C D G", 80], ["Am F C G", 90]]],
+  ["folk", [["Am E", 80], ["C G Am Em", 90], ["Dm A7 Dm Gm", 90]]],
+  ["pop", [["G D", 80], ["C G Am F", 90], ["G D Em C", 100]]],
+  ["rock", [["E5 A5", 90], ["A5 D5 E5 D5", 110], ["G5 C5 D5 C5", 120]]],
+  ["reggae", [["Am Dm", 80], ["C F G F", 90]]],
+  ["waltz", [["C G7", 90], ["Am Dm E Am", 100]]],
+  ["six8", [["G Em", 60], ["C Am F G", 70]]],
+  ["sixteenths", [["Em Am", 60], ["D A Bm G", 70]]],
+];
 
 /** Риффы под бит: [струна от низкой, лад] на каждую восьмую/шестнадцатую, null — пауза. */
 const GROOVES: Record<GtrInstrument, { id: string; name: string; beat: string; type: 8 | 16; bar: ([number, number] | null)[]; repeat: number; tempos: number[]; hint: string }[]> = {
@@ -455,6 +493,7 @@ export function gtrGate(instrument: GtrInstrument, category: GtrCategory): strin
   const pre = instrument === "guitar" ? "gtr" : "bass";
   switch (category) {
     case "spider":
+    case "strum":
       return null;
     case "pentatonic":
     case "groove":
@@ -499,7 +538,7 @@ export function gtrWarmup(stats: ExerciseStatView[], day: string, instrument: Gt
     if (frontier.length) return frontier[0];
     return list[Math.floor(rnd() * list.length)];
   };
-  const out = [pick(["spider"]), pick(rnd() < 0.5 ? ["pentatonic", "scales", "arpeggio"] : ["groove"]) ?? pick(["groove", "pentatonic"])];
+  const out = [pick(["spider"]), pick(rnd() < 0.5 ? ["strum", "pentatonic", "scales", "arpeggio"] : ["groove", "strum"]) ?? pick(["groove", "pentatonic"])];
   return out.filter((e, i): e is GtrExercise => !!e && out.indexOf(e) === i);
 }
 

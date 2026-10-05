@@ -31,6 +31,9 @@ import { renderSvg } from "../lib/verovio";
 import { verovioOptions } from "../lib/staffOptions";
 import { deviceColor, useApp } from "../store";
 import { PieceView } from "./PieceView";
+import { ChordChanges, GuitarChordDrill, GuitarChordsList, GuitarSongView, SongShapes } from "./GuitarChords";
+import { patternArrows, patternsFor, type StrumPattern } from "../lib/strum";
+import { accuracyToChanges, changeId, type ChangePair, type GtrChordLevel } from "../lib/guitarChordDrill";
 
 const STYLES: Style[] = ["block", "oompah", "alberti"];
 
@@ -38,12 +41,34 @@ type View =
   | { kind: "list" }
   | { kind: "drill"; level: ChordLevel; seed: number }
   | { kind: "song"; song: LeadSong; style: Style }
-  | { kind: "edit"; song: LeadSong; isNew: boolean };
+  | { kind: "edit"; song: LeadSong; isNew: boolean }
+  | { kind: "gdrill"; level: GtrChordLevel; seed: number }
+  | { kind: "changes"; pair: ChangePair }
+  | { kind: "gsong"; song: LeadSong; pattern: StrumPattern };
+
+type ChordInstrument = "piano" | "guitar";
+const INSTRUMENT_KEY = "mt-chords-instrument";
+function loadInstrument(): ChordInstrument {
+  try {
+    return localStorage.getItem(INSTRUMENT_KEY) === "guitar" ? "guitar" : "piano";
+  } catch {
+    return "piano";
+  }
+}
 
 /** Раздел «Аккорды»: тренажёр аккордов и песни по буквам. */
 export function Chords({ tabs }: { tabs: React.ReactNode }) {
   const { prefs, setPrefs } = useApp();
   const [view, setView] = useState<View>({ kind: "list" });
+  const [instrument, setInstrumentState] = useState<ChordInstrument>(loadInstrument);
+  const setInstrument = (i: ChordInstrument) => {
+    setInstrumentState(i);
+    try {
+      localStorage.setItem(INSTRUMENT_KEY, i);
+    } catch {
+      /* без сохранения */
+    }
+  };
   const [stats, setStats] = useState<ExerciseStatView[]>([]);
   const reload = useCallback(() => {
     api.exerciseStats().then(setStats).catch(() => setStats([]));
@@ -84,6 +109,33 @@ export function Chords({ tabs }: { tabs: React.ReactNode }) {
         onRecorded={reload}
       />
     );
+  if (view.kind === "gdrill")
+    return (
+      <GuitarChordDrill
+        key={`${view.level.id}-${view.seed}`}
+        level={view.level}
+        seed={view.seed}
+        onAgain={() => setView({ ...view, seed: view.seed + 1 })}
+        onBack={() => {
+          setView({ kind: "list" });
+          reload();
+        }}
+        onRecorded={reload}
+      />
+    );
+  if (view.kind === "changes")
+    return (
+      <ChordChanges
+        pair={view.pair}
+        best={accuracyToChanges(stats.find((s) => s.exercise === changeId(view.pair))?.bestAccuracy ?? 0)}
+        onBack={() => {
+          setView({ kind: "list" });
+          reload();
+        }}
+        onRecorded={reload}
+      />
+    );
+  if (view.kind === "gsong") return <GuitarSongView song={view.song} pattern={view.pattern} onBack={() => setView({ kind: "list" })} />;
   if (view.kind === "song" && songSource) return <PieceView key={songSource.id} source={songSource} onBack={() => setView({ kind: "list" })} />;
   if (view.kind === "edit")
     return (
@@ -122,13 +174,17 @@ export function Chords({ tabs }: { tabs: React.ReactNode }) {
             {song.melody.length ? "" : " · без мелодии"} · {chart.chords.map((c) => c.chord.symbol).filter((s, i, a) => a.indexOf(s) === i).slice(0, 6).join(" ")}
           </span>
         </div>
-        <span className="segmented song-styles">
-          {STYLES.map((st) => (
-            <button key={st} onClick={() => setView({ kind: "song", song, style: st })} data-song-style={st} title={`Играть: ${STYLE_NAME[st].toLowerCase()}`}>
-              {STYLE_NAME[st]}
-            </button>
-          ))}
-        </span>
+        {instrument === "guitar" ? (
+          <GuitarSongPlay song={song} onPlay={(pattern) => setView({ kind: "gsong", song, pattern })} />
+        ) : (
+          <span className="segmented song-styles">
+            {STYLES.map((st) => (
+              <button key={st} onClick={() => setView({ kind: "song", song, style: st })} data-song-style={st} title={`Играть: ${STYLE_NAME[st].toLowerCase()}`}>
+                {STYLE_NAME[st]}
+              </button>
+            ))}
+          </span>
+        )}
         {own && (
           <button className="small" onClick={() => setView({ kind: "edit", song, isNew: false })} data-song-edit>
             Изменить…
@@ -143,12 +199,34 @@ export function Chords({ tabs }: { tabs: React.ReactNode }) {
       {tabs}
       <section className="card">
         <h1>Аккорды</h1>
-        <p className="hint">
-          Тренажёр: появляется буква аккорда — возьми его на клавиатуре (любая октава и обращение; на ступени «Обращения» —
-          с указанным басом). Серия — {CHORD_SERIES} аккордов; зачёт — от {Math.round(CHORD_PASS_ACCURACY * 100)}% с первой попытки и в
-          среднем до {CHORD_PASS_TIME_MS / 1000} с на аккорд.
-        </p>
+        <span className="segmented ex-instrument">
+          {(["piano", "guitar"] as const).map((i) => (
+            <button key={i} className={instrument === i ? "on" : ""} onClick={() => setInstrument(i)} data-chords-instrument={i}>
+              {i === "piano" ? "Фортепиано" : "Гитара"}
+            </button>
+          ))}
+        </span>
+        {instrument === "piano" ? (
+          <p className="hint">
+            Тренажёр: появляется буква аккорда — возьми его на клавиатуре (любая октава и обращение; на ступени «Обращения» —
+            с указанным басом). Серия — {CHORD_SERIES} аккордов; зачёт — от {Math.round(CHORD_PASS_ACCURACY * 100)}% с первой попытки и в
+            среднем до {CHORD_PASS_TIME_MS / 1000} с на аккорд.
+          </p>
+        ) : (
+          <p className="hint">
+            Аккорды на гитаре: схемы (квадратики) и форма на грифе, проверка по звуку — все звуки аккорда и ничего лишнего.
+            Формы — под строй с вкладки «Гитара»; с каподастром лады считаются от него.
+          </p>
+        )}
       </section>
+      {instrument === "guitar" && (
+        <GuitarChordsList
+          stats={stats}
+          onDrill={(level) => setView({ kind: "gdrill", level, seed: Math.floor(Date.now() / 1000) % 100000 })}
+          onChanges={(pair) => setView({ kind: "changes", pair })}
+        />
+      )}
+      {instrument === "piano" && (
       <section className="card ex-category" data-category="chords">
         <h2 className="section-h">Тренажёр аккордов</h2>
         <div className="drum-list">
@@ -181,6 +259,7 @@ export function Chords({ tabs }: { tabs: React.ReactNode }) {
           })}
         </div>
       </section>
+      )}
       <section className="card" data-category="songs">
         <div className="ex-category-head">
           <h2 className="section-h">Песни по буквам</h2>
@@ -188,11 +267,19 @@ export function Chords({ tabs }: { tabs: React.ReactNode }) {
             + Своя песня
           </button>
         </div>
-        <p className="hint">
-          Правая рука — мелодия, левая — аккорды по буквам над нотами выбранной фактурой (аккорд целиком, бас + аккорд или
-          Альберти). Левая засчитывается в любой октаве и обращении. Песню с аккордами можно сделать из любой пьесы или MIDI:
-          открой её → «⋯» → «Аккорды по буквам…».
-        </p>
+        {instrument === "guitar" ? (
+          <p className="hint">
+            Гитара: аккорды песни боем под барабаны. Выбери схему боя — табы с аккордами и стрелками ↓↑, схемы аккордов
+            сверху. Засчитываются ритм и верно взятые аккорды. Свои песни — «+ Своя песня» (аккорды текстом) или из любой
+            пьесы: «⋯» → «Аккорды по буквам…».
+          </p>
+        ) : (
+          <p className="hint">
+            Правая рука — мелодия, левая — аккорды по буквам над нотами выбранной фактурой (аккорд целиком, бас + аккорд или
+            Альберти). Левая засчитывается в любой октаве и обращении. Песню с аккордами можно сделать из любой пьесы или MIDI:
+            открой её → «⋯» → «Аккорды по буквам…».
+          </p>
+        )}
         <div className="song-list">{BUILTIN_SONGS.map((s) => songRow(s, false))}</div>
         <h3 className="songs-mine-h">Мои песни</h3>
         {mySongs.length ? (
@@ -539,5 +626,28 @@ function SongEditor({
         </div>
       </section>
     </main>
+  );
+}
+
+/** Выбор боя и «▶ Боем» в строке песни (гитара). */
+function GuitarSongPlay({ song, onPlay }: { song: LeadSong; onPlay: (p: StrumPattern) => void }) {
+  const list = patternsFor(song);
+  const [pid, setPid] = useState(list[Math.min(list.length - 1, list.findIndex((p) => p.id === "pop") >= 0 ? list.findIndex((p) => p.id === "pop") : 0)]?.id ?? "");
+  const pattern = list.find((p) => p.id === pid);
+  if (!list.length) return <span className="muted">нет боя для {song.beats}/{song.unit}</span>;
+  return (
+    <span className="song-strum">
+      <SongShapes song={song} />
+      <select value={pid} onChange={(e) => setPid(e.target.value)} data-song-strum title={pattern ? patternArrows(pattern) : ""}>
+        {list.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+      <button onClick={() => pattern && onPlay(pattern)} data-song-strum-play>
+        ▶ Боем
+      </button>
+    </span>
   );
 }

@@ -43,10 +43,10 @@ function Today({ actions }: { actions: TodayActions }) {
     Promise.all([api.exerciseHistory("read-", dayStartSecs()), api.exerciseHistory("rhythm-", dayStartSecs())])
       .then(([r, h]) => setDrills({ read: r.length, rhythm: h.length }))
       .catch(() => {});
-    Promise.all([api.guitarState(), api.exerciseStats(), api.exerciseHistory("gtr-", dayStartSecs()), api.exerciseHistory("bass-", dayStartSecs()), api.exerciseHistory("fret-", dayStartSecs())])
-      .then(([g, stats, a, b, f]) => {
-        const used = g.config.enabled || stats.some((s) => /^(gtr|bass|fret)-/.test(s.exercise));
-        if (used) setGtr({ instrument: g.config.instrument, today: a.length + b.length + f.length });
+    Promise.all([api.guitarState(), api.exerciseStats(), api.exerciseHistory("gtr-", dayStartSecs()), api.exerciseHistory("bass-", dayStartSecs()), api.exerciseHistory("fret-", dayStartSecs()), api.exerciseHistory("gchord-", dayStartSecs()), api.exerciseHistory("gchange-", dayStartSecs())])
+      .then(([g, stats, a, b, f, c, ch]) => {
+        const used = g.config.enabled || stats.some((s) => /^(gtr|bass|fret|gchord|gchange)-/.test(s.exercise));
+        if (used) setGtr({ instrument: g.config.instrument, today: a.length + b.length + f.length + c.length + ch.length });
       })
       .catch(() => {});
   }, []);

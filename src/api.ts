@@ -756,6 +756,9 @@ export const api = {
   guitarRecord: (name: string, secs: number) => invoke<string>("guitar_record", { name, secs }),
   guitarStopRecord: () => invoke<void>("guitar_stop_record"),
   guitarExpect: (pitches: number[]) => invoke<void>("guitar_expect", { pitches }),
+  /** Аккорды, которые сейчас ждут: удар по струнам проверяется по спектру (пусто — одноголосие). */
+  guitarExpectChords: (chords: number[][]) => invoke<void>("guitar_expect_chords", { chords }),
+  guitarTestChord: (pitches: number[], secs: number) => invoke<void>("guitar_test_chord", { pitches, secs }),
   guitarTestSignal: (hz: number, secs: number, kind: "pluck" | "sine") => invoke<void>("guitar_test_signal", { hz, secs, kind }),
   fingeringGet: (piece: string, notes: FingerNoteIn[]) => invoke<Finger[]>("fingering_get", { piece, notes }),
   fingeringSet: (piece: string, notes: FingerNoteIn[], noteId: string, finger: number | null) =>

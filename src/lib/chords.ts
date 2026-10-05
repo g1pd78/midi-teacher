@@ -3,7 +3,7 @@
 
 import type { Pitch } from "./exercises";
 
-export type Quality = "" | "m" | "7" | "maj7" | "m7" | "dim" | "aug" | "sus2" | "sus4" | "dim7" | "m7b5" | "6" | "m6";
+export type Quality = "" | "m" | "7" | "maj7" | "m7" | "dim" | "aug" | "sus2" | "sus4" | "dim7" | "m7b5" | "6" | "m6" | "5" | "add9" | "9";
 
 /** Интервалы от основного тона (полутона). */
 export const QUALITY_STEPS: Record<Quality, number[]> = {
@@ -20,6 +20,9 @@ export const QUALITY_STEPS: Record<Quality, number[]> = {
   m7b5: [0, 3, 6, 10],
   "6": [0, 4, 7, 9],
   m6: [0, 3, 7, 9],
+  "5": [0, 7],
+  add9: [0, 4, 7, 14],
+  "9": [0, 4, 7, 10, 14],
 };
 
 /** Ступени гаммы (буквы) звуков аккорда — для правильного написания нот. */
@@ -37,6 +40,9 @@ const QUALITY_DEGREES: Record<Quality, number[]> = {
   m7b5: [0, 2, 4, 6],
   "6": [0, 2, 4, 5],
   m6: [0, 2, 4, 5],
+  "5": [0, 4],
+  add9: [0, 2, 4, 1],
+  "9": [0, 2, 4, 6, 1],
 };
 
 export const QUALITY_NAME: Record<Quality, string> = {
@@ -53,6 +59,9 @@ export const QUALITY_NAME: Record<Quality, string> = {
   m7b5: "полууменьшённый септаккорд",
   "6": "мажорный секстаккорд с секстой",
   m6: "минорный с секстой",
+  "5": "квинта (пауэр-аккорд)",
+  add9: "мажорное трезвучие с ноной (add9)",
+  "9": "доминантовый нонаккорд",
 };
 
 const LETTERS = ["c", "d", "e", "f", "g", "a", "b"];
@@ -82,6 +91,9 @@ const QUALITY_ALIASES: [RegExp, Quality][] = [
   [/^(sus2)$/, "sus2"],
   [/^(sus4|sus)$/, "sus4"],
   [/^(7|dom7)$/, "7"],
+  [/^5$/, "5"],
+  [/^add9$/, "add9"],
+  [/^9$/, "9"],
   [/^6$/, "6"],
   [/^(maj|M)?$/, ""],
 ];
