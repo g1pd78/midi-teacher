@@ -683,6 +683,21 @@ export function listen<K extends keyof Events>(event: K, cb: (payload: Events[K]
   return tauriListen<Events[K]>(event, (e) => cb(e.payload));
 }
 
+/** Нота для проигрывания (`play_notes`) и сохранения джема. */
+export interface PlayNoteIn {
+  startMs: number;
+  durMs: number;
+  pitch: number;
+  velocity: number;
+  channel?: number;
+  program?: number | null;
+}
+
+/** Ядро принимает целые миллисекунды и силу: доли (темп 70 → доля 857,14 мс) округляем. */
+function wholeMs(notes: PlayNoteIn[]): PlayNoteIn[] {
+  return notes.map((n) => ({ ...n, startMs: Math.max(0, Math.round(n.startMs)), durMs: Math.max(1, Math.round(n.durMs)), velocity: Math.round(n.velocity) }));
+}
+
 export const api = {
   getState: () => invoke<FullState>("get_state"),
   getAudioMeters: () => invoke<AudioMeters>("get_audio_meters"),
@@ -736,8 +751,9 @@ export const api = {
   midiPreview: (id: string, track: number) => invoke<void>("midi_preview", { id, track }),
   midiPreviewStop: () => invoke<void>("midi_preview_stop"),
   /** Проиграть ноты (задания тренажёра слуха): инструментом GM или звуком приложения (`program` = null). */
-  playNotes: (notes: { startMs: number; durMs: number; pitch: number; velocity: number; channel?: number; program?: number | null }[], program: number | null) =>
-    invoke<void>("play_notes", { notes, program }),
+  playNotes: (notes: PlayNoteIn[], program: number | null) => invoke<void>("play_notes", { notes: wholeMs(notes), program }),
+  /** Сохранить джем (соло и аккомпанемент) MIDI-файлом в библиотеку; возвращает имя файла. */
+  jamSave: (name: string, bpm: number, notes: PlayNoteIn[]) => invoke<string>("jam_save", { name, bpm, notes: wholeMs(notes) }),
   recordStart: (bpm: number, beatsPerBar: number, metronome: boolean, countIn: boolean) =>
     invoke<void>("record_start", { bpm, beatsPerBar, metronome, countIn }),
   recordStatus: () => invoke<RecordStatus>("record_status"),

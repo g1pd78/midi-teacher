@@ -1416,6 +1416,11 @@ try {
       "const p = i === 1 ? pitch + 2 : pitch; await inv([0x90, p, 100]); inv([0x80, p, 0]); i++; } })();",
   );
   const rootDone = await waitFor("итог серии баса", () => rootAttr("rootDone"), 45000);
+  const noPlayError = async (what) => {
+    const err = await js("return document.querySelector('[data-play-error]')?.innerText ?? '';");
+    if (err) throw new Error(`${what}: ${err}`);
+  };
+  await noPlayError("аккомпанемент «Найди основной тон»");
   const rootOkCount = await rootAttr("rootOk");
   if (rootDone !== "passed" || rootOkCount !== "5") throw new Error(`основной тон: ${rootDone}, верно ${rootOkCount}`);
   await waitFor("зачёт записан", async () => (await invoke("exercise_stats")).some((x) => x.exercise === "bassroot-1" && x.passed), 5000);
@@ -1440,6 +1445,73 @@ try {
   ok(`бас: «Ода к радости» walking bass в темпе — засчитано, грув ${grooveMean} мс от барабанов, полоски по долям`);
   await waitFor("к списку песен", () => click("К списку"));
   await waitFor("режим «Фортепиано»", () => clickSel("[data-chords-instrument='piano']"));
+
+  console.log("Сквозной тест: джем");
+  await waitFor("вкладка тренажёров", () => click("Тренажёры"));
+  await waitFor("раздел «Джем»", () => clickSel("[data-trainer-section='jam']"));
+  await waitFor("инструмент «Гитара»", () => clickSel("[data-jam-instrument='guitar']"));
+  // Урок 1: только ноты минорной пентатоники — бот играет фразами восьмыми по часам страницы.
+  await waitFor("урок 1", () => clickSel("[data-jam-lesson='1']"));
+  await waitFor("старт урока", () => clickSel("[data-jam-start]"));
+  const jamAttr = (a) => js(`return document.querySelector('[data-jam-phase]')?.dataset.${a} ?? '';`);
+  await waitFor("часы джема", () => jamAttr("jamT0"), 5000);
+  const botScale = (limit) =>
+    js(
+      "const [limit] = arguments; const el = document.querySelector('[data-jam-phase]'); const t0 = Number(el.dataset.jamT0), bm = Number(el.dataset.jamBeatMs), total = Number(el.dataset.jamTotalMs);" +
+        "const sc = el.dataset.jamScale.split(',').map(Number); const inv = (b) => window.__TAURI_INTERNALS__.invoke('simulate_midi', { device: 'E2E', bytes: b });" +
+        "(async () => { let i = 0; for (let t = 0; t < total - bm && i < limit; t += bm / 2, i++) { if (i % 8 === 7) continue;" +
+        "while (performance.now() < t0 + t) await new Promise((r) => setTimeout(r, 4)); const p = 57 + (((sc[i % sc.length] - 57) % 12) + 12) % 12;" +
+        "await inv([0x90, p, 100]); setTimeout(() => inv([0x80, p, 0]), bm / 3); } })();",
+      [limit],
+    );
+  await botScale(1000);
+  await sleep(500);
+  await noPlayError("аккомпанемент джема");
+  const lessonResult = await waitFor("итог урока", () => js("return document.querySelector('[data-jam-review]')?.dataset.jamResult ?? '';"), 60000);
+  if (lessonResult !== "passed") throw new Error(`урок 1: ${await js("return document.querySelector('[data-jam-review]').innerText;")}`);
+  await waitFor("зачёт урока", async () => (await invoke("exercise_stats")).some((x) => x.exercise === "jam-guitar-1" && x.passed), 5000);
+  ok(`джем: урок «Только ноты гаммы» на гитаре — ${await js("return document.querySelector('[data-jam-detail]').innerText;")} Засчитан`);
+  await waitFor("к списку", () => click("К списку"));
+
+  // Свободный джем на фортепиано: игра → «Стоп и разбор» → ноты соло → сохранение в библиотеку.
+  await waitFor("инструмент «Фортепиано»", () => clickSel("[data-jam-instrument='piano']"));
+  await waitFor("▶ Джемовать", () => clickSel("[data-jam-free]"));
+  await waitFor("старт джема", () => clickSel("[data-jam-start]"));
+  await waitFor("часы джема", () => jamAttr("jamT0"), 5000);
+  await botScale(14);
+  await sleep(3500 + 14 * 400);
+  await waitFor("стоп и разбор", () => clickSel("[data-jam-stop]"));
+  const jamNotes = await waitFor("итог джема", () => js("return document.querySelector('[data-jam-review]')?.dataset.jamNotes ?? '';"), 5000);
+  if (Number(jamNotes) < 10) throw new Error(`нот в джеме: ${jamNotes}`);
+  await waitFor("прослушать", () => clickSel("[data-jam-listen]"));
+  await sleep(500);
+  await noPlayError("прослушивание джема");
+  await waitFor("стоп прослушивания", () => clickSel("[data-jam-listen]"));
+  await waitFor("ноты соло", () => clickSel("[data-jam-show-notes]"));
+  await waitFor("соло нотами", () => js("return document.querySelectorAll('[data-jam-solo] g.note').length >= 10;"), 20000);
+  await waitFor("сохранить", () => clickSel("[data-jam-save]"));
+  const jamFile = await waitFor("джем сохранён", () => js("return document.querySelector('[data-jam-saved]')?.dataset.jamSaved ?? '';"), 5000);
+  if (!(await invoke("library_list")).items.some((x) => x.id === jamFile && x.format === "midi")) throw new Error(`нет файла джема ${jamFile}`);
+  ok(`джем: свободный блюз на фортепиано — ${jamNotes} нот, соло нотами, сохранён в библиотеку («${jamFile}»)`);
+  await waitFor("к списку", () => click("К списку"));
+
+  // «Повтори за мной»: бот повторяет каждую фразу в такте ответа.
+  await waitFor("повтори за мной, ступень 1", () => clickSel("[data-echo-level='1']"));
+  await waitFor("старт серии", () => clickSel("[data-echo-start]"));
+  const echoAttr = (a) => js(`return document.querySelector('[data-echo-phase]')?.dataset.${a} ?? '';`);
+  await waitFor("часы серии", () => echoAttr("echoT0"), 5000);
+  await js(
+    "const el = document.querySelector('[data-echo-phase]'); const t0 = Number(el.dataset.echoT0), bm = Number(el.dataset.echoBeatMs);" +
+      "const plan = el.dataset.echoPlan.split(',').map((x) => x.split(':').map(Number)); const inv = (b) => window.__TAURI_INTERNALS__.invoke('simulate_midi', { device: 'E2E', bytes: b });" +
+      "(async () => { for (const [beat, pitch] of plan) { while (performance.now() < t0 + beat * bm + 20) await new Promise((r) => setTimeout(r, 4)); await inv([0x90, pitch, 100]); setTimeout(() => inv([0x80, pitch, 0]), bm / 3); } })();",
+  );
+  await sleep(500);
+  await noPlayError("«Повтори за мной»");
+  const echoDone = await waitFor("итог серии", () => echoAttr("echoDone"), 90000);
+  const echoOk = await echoAttr("echoOk");
+  if (echoDone !== "passed") throw new Error(`повтори за мной: ${echoDone}, верно ${echoOk}`);
+  ok(`джем: «Повтори за мной» — ${echoOk} из 8 фраз повторены, серия засчитана`);
+  await waitFor("к списку", () => click("К списку"));
 
   console.log("Сквозной тест: доводка");
   // Панель пьесы: редкое — в меню «⋯»; Esc закрывает только меню.

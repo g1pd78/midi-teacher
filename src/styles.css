@@ -3228,3 +3228,85 @@ button.ex-star.on,
 .root-dot.miss {
   background: #3a3f4b;
 }
+
+/* Джем */
+.jam-setup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.jam-setup input[type="range"] {
+  width: 120px;
+  vertical-align: middle;
+}
+.jam-custom {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 6px 0;
+}
+.jam-custom input {
+  flex: 1;
+  min-width: 220px;
+}
+.jam-mix-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.jam-chart {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 14px 0 8px;
+}
+.jam-bar {
+  min-width: 54px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  text-align: center;
+  font-weight: 600;
+}
+.jam-bar.on {
+  border-color: var(--right-hand);
+  background: rgba(90, 169, 255, 0.15);
+}
+.jam-counts {
+  display: flex;
+  gap: 14px;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+.jam-last {
+  font-size: 18px;
+  font-weight: 600;
+}
+.jam-turn {
+  font-size: 18px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+}
+.jam-turn.mine {
+  color: var(--good);
+  border: 1px solid var(--good);
+}
+.jam-piano {
+  height: 150px;
+  position: relative;
+  margin: 0 18px 18px;
+}
+.jam-tips {
+  margin: 8px 0 12px;
+  padding-left: 20px;
+  color: var(--muted);
+}
+.jam-solo {
+  margin: 0 18px 18px;
+  padding: 10px;
+}

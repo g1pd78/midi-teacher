@@ -13,6 +13,16 @@ pub fn write_smf(events: &[(u64, MidiMessage)], bpm: f64, name: &str) -> Vec<u8>
 
 /// То же с каналами: удары по пэдам пишутся на канал ударных (10-й), клавиши — на 1-й.
 pub fn write_smf_channels(events: &[(u64, u8, MidiMessage)], bpm: f64, name: &str) -> Vec<u8> {
+    write_smf_programs(events, bpm, name, &[])
+}
+
+/// То же с инструментами каналов (смена программы в начале): (канал, инструмент GM).
+pub fn write_smf_programs(
+    events: &[(u64, u8, MidiMessage)],
+    bpm: f64,
+    name: &str,
+    programs: &[(u8, u8)],
+) -> Vec<u8> {
     const PPQ: u64 = 480;
     let us_per_tick = 60_000_000.0 / bpm / PPQ as f64;
     let mut body: Vec<u8> = Vec::new();
@@ -42,6 +52,10 @@ pub fn write_smf_channels(events: &[(u64, u8, MidiMessage)], bpm: f64, name: &st
     ]);
     vlq(0, &mut body);
     body.extend([0xff, 0x58, 0x04, 4, 2, 24, 8]);
+    for &(ch, program) in programs {
+        vlq(0, &mut body);
+        body.extend([0xc0 | (ch & 0x0f), program & 0x7f]);
+    }
     let mut last = 0u64;
     let mut sorted: Vec<&(u64, u8, MidiMessage)> = events.iter().collect();
     sorted.sort_by_key(|e| e.0);
@@ -69,4 +83,34 @@ pub fn write_smf_channels(events: &[(u64, u8, MidiMessage)], bpm: f64, name: &st
     out.extend((body.len() as u32).to_be_bytes());
     out.extend(body);
     out
+}
+
+#[cfg(test)]
+mod program_tests {
+    use super::*;
+
+    #[test]
+    fn programs_written_at_start() {
+        let events = vec![
+            (
+                0,
+                1,
+                MidiMessage::NoteOn {
+                    note: 33,
+                    velocity: 90,
+                },
+            ),
+            (500_000, 1, MidiMessage::NoteOff { note: 33 }),
+        ];
+        let bytes = write_smf_programs(&events, 120.0, "джем", &[(1, 33)]);
+        let pos = bytes
+            .windows(2)
+            .position(|w| w == [0xc1, 33])
+            .expect("смена программы");
+        let note = bytes
+            .windows(3)
+            .position(|w| w == [0x91, 33, 90])
+            .expect("нота");
+        assert!(pos < note);
+    }
 }

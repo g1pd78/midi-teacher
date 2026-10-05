@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, PADS_DEVICE } from "../api";
 import { Fretboard, type FretMark } from "../components/Fretboard";
 import { LevelCard } from "../components/LevelCard";
+import { usePlayError } from "../components/PlayError";
 import { BASS_STYLES, BASS_STYLE_BY_ID, DEFAULT_BASS_ACCOMP, bassAccompaniment, bassLineSong, quarterBeats, type BassAccomp, type BassStyle } from "../lib/bassline";
 import { ROOT_LEVELS, ROOT_PASS, ROOT_WINDOW, checkPitch, rootAccompaniment, rootLevelId, rootSession, rootUnlocked, scoreRoot, type RootLevel } from "../lib/bassRoot";
 import { bassPc, parseChord } from "../lib/chords";
@@ -180,6 +181,7 @@ export function RootDrill({ level, seed, onAgain, onBack, onRecorded }: { level:
   const [last, setLast] = useState<number | null>(null);
   const t0 = useRef(0);
   const onsets = useRef<{ t: number; pitch: number }[]>([]);
+  const playError = usePlayError();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onBack();
@@ -198,7 +200,7 @@ export function RootDrill({ level, seed, onAgain, onBack, onRecorded }: { level:
     t0.current = performance.now() + a.firstBeatMs;
     setBeat(-4);
     setPhase("count");
-    void api.playNotes(a.notes, null).catch(() => {});
+    void api.playNotes(a.notes, null).catch(playError.report);
   };
   const stop = () => {
     void api.midiPreviewStop().catch(() => {});
@@ -279,6 +281,7 @@ export function RootDrill({ level, seed, onAgain, onBack, onRecorded }: { level:
         <div className="piece-name">Найди основной тон · {level.title}</div>
         <span className="chip">{level.bpm} уд/мин</span>
       </div>
+      {playError.notice}
       <section className="card chord-card">
         {phase === "done" ? (
           <div className="summary-inline">

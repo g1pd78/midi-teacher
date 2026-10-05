@@ -427,6 +427,7 @@ pub fn run() {
             midi_import::record_take_stop,
             midi_import::record_take_play,
             midi_import::play_notes,
+            midi_import::jam_save,
             midi_import::record_take_save,
             midi_import::record_take_discard,
             backup::backup_export,

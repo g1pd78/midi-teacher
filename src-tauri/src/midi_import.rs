@@ -396,6 +396,59 @@ fn save_recording(app: &AppHandle, rec: &Recording, name: &str) -> Result<String
     Ok(file)
 }
 
+/// Сохранить джем в библиотеку MIDI-файлом: соло и аккомпанемент — по своим каналам и инструментам.
+#[tauri::command]
+pub fn jam_save(
+    app: AppHandle,
+    name: String,
+    bpm: f64,
+    notes: Vec<PlayNote>,
+) -> Result<String, String> {
+    let mut events: Vec<(u64, u8, MidiMessage)> = Vec::new();
+    let mut programs: Vec<(u8, u8)> = Vec::new();
+    for n in &notes {
+        let ch = n.channel.unwrap_or(0).min(15);
+        if let Some(p) = n.program {
+            if ch != DRUM_CHANNEL && !programs.iter().any(|&(c, _)| c == ch) {
+                programs.push((ch, p.min(127)));
+            }
+        }
+        let on = n.start_ms as u64 * 1000;
+        events.push((
+            on,
+            ch,
+            MidiMessage::NoteOn {
+                note: n.pitch.min(127),
+                velocity: n.velocity.clamp(1, 127),
+            },
+        ));
+        events.push((
+            on + n.dur_ms.max(1) as u64 * 1000,
+            ch,
+            MidiMessage::NoteOff {
+                note: n.pitch.min(127),
+            },
+        ));
+    }
+    if events.is_empty() {
+        return Err("нечего сохранять".into());
+    }
+    let clean: String = name
+        .chars()
+        .map(|c| if "/\\:*?\"<>|".contains(c) { '-' } else { c })
+        .collect();
+    let title = if clean.trim().is_empty() {
+        "Джем"
+    } else {
+        clean.trim()
+    };
+    let bytes = midifile::write_smf_programs(&events, bpm.clamp(20.0, 300.0), title, &programs);
+    let dir = library_dir(&app)?;
+    let file = unique_name(&dir, &format!("{title}.mid"));
+    std::fs::write(dir.join(&file), bytes).map_err(|e| format!("джем не сохранён: {e}"))?;
+    Ok(file)
+}
+
 /// Остановить запись и оставить её дублем: прослушать, сохранить или выбросить.
 /// `None` — не было ни одной ноты.
 #[tauri::command]

@@ -20,7 +20,7 @@ mod xml;
 pub use key::transpose_fifths;
 use key::*;
 use quantize::*;
-pub use smf::{write_smf, write_smf_channels};
+pub use smf::{write_smf, write_smf_channels, write_smf_programs};
 use xml::*;
 
 /// Делений на четверть в MusicXML: хватает и для шестнадцатых (3), и для триольных восьмых (4).
