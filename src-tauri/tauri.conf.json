@@ -39,7 +39,7 @@
       "resources/soundfonts/*": "soundfonts/",
       "resources/gm/*": "gm/"
     },
-    "copyright": "© 2026 g1pd78 и участники проекта. Лицензия GPL-3.0-or-later",
+    "copyright": "© 2026 mtanzella и участники проекта. Лицензия GPL-3.0-or-later",
     "license": "GPL-3.0-or-later",
     "licenseFile": "../LICENSE",
     "shortDescription": "Обучение игре на фортепиано",
