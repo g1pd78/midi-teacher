@@ -1775,6 +1775,19 @@ try {
   await invoke("simulate_midi", { device: "E2E", bytes: [0x80, 64, 0] });
   if (!palmHit.endsWith(":ok")) throw new Error(`ладонь: ${palmHit}`);
   ok(`ладони: палец ${palmNext} правой руки, нажатие — вспышка пальца ${palmHit.split(":")[1]} (${palmHit.split(":")[0]})`);
+  // Подсветка клавиш (без платы — по последнему кадру ядра): следующая нота правой руки горит голубым (1).
+  const framePairs = async () => {
+    const f = await invoke("lights_frame");
+    const out = [];
+    for (let i = 6; i + 1 < f.length - 0; i += 2) if (f[i] !== 0xf7) out.push([f[i], f[i + 1]]);
+    return { head: f.slice(0, 5).join(","), pairs: out };
+  };
+  const pieceFrame = await waitFor("кадр подсветки с нотой пьесы", async () => {
+    const f = await framePairs();
+    return f.pairs.some(([n, c]) => n === 64 && c === 1) ? f : false;
+  }, 5000);
+  if (pieceFrame.head !== "240,125,77,84,16") throw new Error(`кадр подсветки: ${pieceFrame.head}`);
+  ok(`подсветка клавиш: кадр SysEx, горит ${pieceFrame.pairs.map(([n, c]) => `${n}:${c}`).join(" ")}`);
   await js("const l = [...document.querySelectorAll('label.toggle')].find((l) => l.textContent.trim() === 'Ладони'); l?.querySelector('input:checked')?.click();");
   await waitFor("обратно «Разучить»", () => click("Разучить"));
   await js("document.querySelector('[data-more]').click();");
@@ -1799,6 +1812,18 @@ try {
   ok(`«К Элизе (полностью)»: ${eliseNotes} нот на стане`);
   await escape();
   await waitFor("список пьес", () => js("return !!document.querySelector('.piece-card');"));
+
+  // Подсветка: моё нажатие вне занятий — ярким нейтральным огоньком (6).
+  await waitFor("главная", () => click("Главная"));
+  await waitFor("главный экран", () => js("return !!document.querySelector('.home');"));
+  await invoke("simulate_midi", { device: "E2E", bytes: [0x90, 72, 100] });
+  const pressFrame = await waitFor("огонёк нажатия", async () => {
+    const f = await invoke("lights_frame");
+    for (let i = 6; i + 1 < f.length; i += 2) if (f[i] === 72 && f[i + 1] === 6) return true;
+    return false;
+  }, 5000);
+  await invoke("simulate_midi", { device: "E2E", bytes: [0x80, 72, 0] });
+  if (pressFrame) ok("подсветка: моё нажатие на главной — огонёк над клавишей");
 
   // «О программе»: номер сборки.
   await waitFor("вкладка настроек", () => click("Настройки"));

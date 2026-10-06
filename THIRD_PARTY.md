@@ -33,6 +33,16 @@ MIDI Teacher распространяется по [GPL-3.0-or-later](LICENSE). 
 Остальные зависимости (транзитивные) — под MIT, Apache-2.0, BSD, ISC, Zlib, Unicode-3.0, Unlicense, MPL-2.0;
 проверить список: `cargo metadata` и `npx license-checker --production`.
 
+## Прошивка подсветки (hardware/key-lights/firmware)
+
+| Компонент | Лицензия | Для чего |
+|---|---|---|
+| [Arduino core for ESP32](https://github.com/espressif/arduino-esp32) © Espressif | LGPL-2.1-or-later | Ядро платы ESP32-S3 |
+| [TinyUSB](https://github.com/hathach/tinyusb) (в составе ядра) | MIT | USB-MIDI |
+| [Adafruit NeoPixel](https://github.com/adafruit/Adafruit_NeoPixel) | LGPL-3.0-or-later | Вывод на ленту WS2812B |
+
+Готовый файл прошивки собирается в CI из этих компонентов и исходников в репозитории.
+
 ## ASIO
 
 Сборка для Windows включает **ASIO SDK © Steinberg Media Technologies GmbH**. SDK скачивается при сборке и в
