@@ -216,7 +216,10 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   // Схема ладоней: вспышка пальца сыгранной ноты (или промах у руки).
   const [palmHit, setPalmHit] = useState<PalmHit | null>(null);
   const palmTimer = useRef<number | undefined>(undefined);
+  // Последняя вспышка — для сквозных тестов (сама вспышка гаснет через 350 мс).
+  const palmLast = useRef("");
   const flashPalm = useCallback((h: PalmHit) => {
+    palmLast.current = `${h.hand}:${h.finger ?? ""}:${h.ok ? "ok" : "miss"}`;
     setPalmHit(h);
     window.clearTimeout(palmTimer.current);
     palmTimer.current = window.setTimeout(() => setPalmHit(null), 350);
@@ -2046,7 +2049,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         ) : tab && strInst ? (
           <Fretboard tuning={tuning} frets={boardFrets} naming={naming} marks={fretMarks} />
         ) : (
-          <div className={`piano-with-palms${palms ? " on" : ""}`}>
+          <div className={`piano-with-palms${palms ? " on" : ""}`} data-palm-last={palmLast.current}>
             {palms && <Palm side="left" fingers={palms.left} hit={palmHit} />}
             <Piano low={low} high={high} naming={naming} highlight={highlight} labels="c" />
             {palms && <Palm side="right" fingers={palms.right} hit={palmHit} />}

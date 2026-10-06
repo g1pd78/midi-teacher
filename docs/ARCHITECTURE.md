@@ -810,6 +810,24 @@ CustomsForge), команда `rocksmith_open` читает файл в фоне
   ноты/MIDI, WAV, strudel.cc), `code/CodeLessonRun.tsx`. Курс: направление `code` и шаг `{ kind: "code" }`, уроки —
   `src/lib/codeLessons.ts` (проверка: те же события, что у ответа; нужные функции; игра — по итогу).
 
+## 7ч. Ладони, доработки «Кода», пьесы из Mutopia
+
+- Схема ладоней: `src/lib/hands.ts` (`handFingers` — пальцы текущего и следующего шага по рукам из аппликатуры,
+  `handOfMiss` — рука промаха), `src/components/Hands.tsx` (SVG ладони, вид сверху). В `PieceView` — по бокам
+  `Piano`, переключатель `PiecePrefs.palms`; вспышка пальца по событиям `hit` ядра (ожидание и ритм).
+- Нотная лента: `src/lib/strudel/roll.ts` (раскладка нот/ударных окна ±1 цикл, цвет партии, `you` — контуром) и
+  `code/CodeRoll.tsx` (canvas, ~30 кадров/с, ноты — `LiveCode.notes`, «сейчас» — `nowCycle`).
+- Виджеты Strudel (`._pianoroll()`, `._scope()`, `slider()`) работают через `StrudelMirror`; фоновый холст
+  `#test-canvas` для `.pianoroll()` — внутри области редактора (иначе Strudel создаёт его на всё окно).
+- Автодополнение: `src/lib/strudel/complete.ts` — свой источник `@codemirror/autocomplete` (контекст: функция, звук в
+  `s("…")`, банк, лад) и `hoverTooltip`; данные — `strudelDocs.json` (из `@strudel/codemirror`,
+  `scripts/gen-strudel-docs.mjs`) и `docsRu.ts`; подключается к `StrudelMirror` через `StateEffect.appendConfig`.
+- Сэмплы перетаскиванием: `onFileDrop` во вкладке «Код» → `code_import_samples` (файлы и папки) → `loadSounds` →
+  вставка `s("имя:0")` (`LiveCode.insertAtCursor`).
+- Пьесы: `scripts/ly2musicxml.py` — подмножество LilyPond (абсолютные ноты и `\relative`, аккорды, триоли, голоса,
+  повторы с вольтами разворачиваются, смена ключа) → MusicXML с делением 24 на четверть (32-е и триоли
+  шестнадцатых). Гитарная запись тактов — длительность `t` (восьмая триоли, `tuplet: [3, 2]`).
+
 ---
 
 ## 8. Интерфейс

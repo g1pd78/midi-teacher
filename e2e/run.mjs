@@ -1664,8 +1664,32 @@ try {
     20000,
   );
   if (codeParts !== "drums,bass,melody") throw new Error(`партии: ${codeParts}`);
+  const rollBoxes = await waitFor("нотная лента рисует", () => js("return Number(document.querySelector('[data-code-roll]')?.dataset.boxes ?? 0);"), 10000);
   await js("document.querySelector('[data-code-stop]')?.click();");
-  ok(`код выполняется, партии: ${codeParts}`);
+  ok(`код выполняется, партии: ${codeParts}; нотная лента: ${rollBoxes} событий`);
+  // Автодополнение: набор в редакторе показывает звуки GM и справку по-русски.
+  const cmEl = (await wd("POST", `/session/${sid}/element`, { using: "css selector", value: "[data-code-cm] .cm-content" }))["element-6066-11e4-a52e-4f735466cecc"];
+  await js("const v = document.querySelector('[data-code-cm] .cm-content'); v.focus(); const r = document.createRange(); r.selectNodeContents(v); r.collapse(false); const s = getSelection(); s.removeAllRanges(); s.addRange(r);");
+  await wd("POST", `/session/${sid}/element/${cmEl}/value`, { text: '\n$: s("gm_acou' });
+  const soundHints = await waitFor("подсказки звуков", () => js("return [...document.querySelectorAll('.cm-tooltip-autocomplete li')].map((l) => l.textContent).join('|');"), 8000);
+  if (!soundHints.includes("gm_acoustic_bass")) throw new Error(`подсказки звуков: ${soundHints}`);
+  await wd("POST", `/session/${sid}/element/${cmEl}/value`, { text: '\uE00C' });
+  await wd("POST", `/session/${sid}/element/${cmEl}/value`, { text: 'stic_bass").roo' });
+  const fnInfo = await waitFor("справка функции", () => js("return document.querySelector('.cm-completionInfo')?.textContent ?? '';"), 8000);
+  if (!/ревербер/i.test(fnInfo)) throw new Error(`справка room: ${fnInfo}`);
+  ok("автодополнение: звуки gm_… в s(\"…\"), справка room() по-русски");
+  // Сэмплы (как при перетаскивании): копия в «Сэмплы\e2edrop», звук доступен по протоколу.
+  const dropDir = join(profile, "drop");
+  mkdirSync(dropDir, { recursive: true });
+  const tone = Buffer.alloc(44 + 8820);
+  tone.write("RIFF", 0, "ascii"); tone.writeUInt32LE(36 + 8820, 4); tone.write("WAVEfmt ", 8, "ascii");
+  tone.writeUInt32LE(16, 16); tone.writeUInt16LE(1, 20); tone.writeUInt16LE(1, 22); tone.writeUInt32LE(44100, 24);
+  tone.writeUInt32LE(88200, 28); tone.writeUInt16LE(2, 32); tone.writeUInt16LE(16, 34); tone.write("data", 36, "ascii"); tone.writeUInt32LE(8820, 40);
+  for (let i = 0; i < 4410; i++) tone.writeInt16LE(Math.round(8000 * Math.sin(i / 10)), 44 + i * 2);
+  writeFileSync(join(dropDir, "kick.wav"), tone);
+  const dropped = await invoke("code_import_samples", { paths: [dropDir], folder: "e2edrop" });
+  const banksAfter = await invoke("code_sample_banks");
+  if (dropped !== "e2edrop" || !banksAfter.user.e2edrop?.length) throw new Error(`сэмплы: ${dropped} ${JSON.stringify(banksAfter.user)}`);
   // Протокол mtsound: свои файлы и (если SoundFont скачан) ноты GM.
   const proto = (path) =>
     jsAsync(
@@ -1677,6 +1701,9 @@ try {
   const noFile = await proto("user/../x.wav");
   if (noFile.status !== 404) throw new Error(`путь с «..» не отвергнут: ${JSON.stringify(noFile)}`);
   ok(`протокол mtsound: бочка ${kick.status === 200 ? `${kick.len} байт` : `нет SoundFont (${kick.status})`}, выход из папки отвергнут`);
+  const userKick = await proto(`user/${banksAfter.user.e2edrop[0]}`);
+  if (userKick.status !== 200 || userKick.len !== tone.length) throw new Error(`свой сэмпл: ${JSON.stringify(userKick)}`);
+  ok(`папка сэмплов → s("e2edrop:0"), файл отдаётся протоколом (${userKick.len} байт)`);
   // Код → трек Студии (без звука: выполнение и разбор событий).
   await js("document.querySelector('[data-code-tonotes]').click();");
   await waitFor("окно «Код → ноты»", () => js("return document.querySelectorAll('[data-code-notes-part] option').length > 1;"));
@@ -1728,6 +1755,19 @@ try {
     js("const b = [...document.querySelectorAll('.piece-card')].find((b) => b.textContent.includes('Ода к радости')); if (!b) return false; b.click(); return true;"),
   );
   await waitFor("ноты пьесы", () => js("return !!document.querySelector('.score-page svg g.note');"), 30000);
+  // Схема ладоней: палец следующей ноты, вспышка при верном нажатии.
+  await waitFor("«Свободно»", () => click("Свободно"));
+  await waitFor("переключатель «Ладони»", () =>
+    js("const l = [...document.querySelectorAll('label.toggle')].find((l) => l.textContent.trim() === 'Ладони'); if (!l) return false; const i = l.querySelector('input'); if (!i.checked) i.click(); return true;"),
+  );
+  const palmNext = await waitFor("палец на ладони", () => js("return document.querySelector('[data-palm=right]')?.dataset.next ?? '';"), 10000);
+  await invoke("simulate_midi", { device: "E2E", bytes: [0x90, 64, 100] });
+  const palmHit = await waitFor("вспышка пальца", () => js("return document.querySelector('[data-palm-last]')?.dataset.palmLast ?? '';"), 3000);
+  await invoke("simulate_midi", { device: "E2E", bytes: [0x80, 64, 0] });
+  if (!palmHit.endsWith(":ok")) throw new Error(`ладонь: ${palmHit}`);
+  ok(`ладони: палец ${palmNext} правой руки, нажатие — вспышка пальца ${palmHit.split(":")[1]} (${palmHit.split(":")[0]})`);
+  await js("const l = [...document.querySelectorAll('label.toggle')].find((l) => l.textContent.trim() === 'Ладони'); l?.querySelector('input:checked')?.click();");
+  await waitFor("обратно «Разучить»", () => click("Разучить"));
   await js("document.querySelector('[data-more]').click();");
   await waitFor("меню «⋯» открыто", () => js("return document.querySelector('.more-pop')?.hidden === false && !!document.querySelector('.more-pop [data-layout-select]');"));
   const escape = () => js("window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));");
@@ -1739,6 +1779,15 @@ try {
   await escape();
   await waitFor("окно закрыто, пьеса открыта", () => js("return !document.querySelector('[data-hotkeys]') && !!document.querySelector('.piece-bar');"));
   ok("панель пьесы: меню «⋯» и окно горячих клавиш, Esc закрывает только их");
+  await escape();
+  await waitFor("список пьес", () => js("return !!document.querySelector('.piece-card');"));
+  // Новые пьесы из Mutopia: «К Элизе» целиком открывается и рисуется.
+  await waitFor("карточка «К Элизе (полностью)»", () =>
+    js("const b = [...document.querySelectorAll('.piece-card')].find((b) => b.textContent.includes('К Элизе (полностью)')); if (!b) return false; b.click(); return true;"),
+  );
+  const eliseNotes = await waitFor("ноты «К Элизе»", () => js("return document.querySelectorAll('.score-page svg g.note').length;"), 40000);
+  if (eliseNotes < 500) throw new Error(`«К Элизе (полностью)»: ${eliseNotes} нот`);
+  ok(`«К Элизе (полностью)»: ${eliseNotes} нот на стане`);
   await escape();
   await waitFor("список пьес", () => js("return !!document.querySelector('.piece-card');"));
 

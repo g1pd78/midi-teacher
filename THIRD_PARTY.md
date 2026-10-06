@@ -57,6 +57,14 @@ SoundFont в репозитории не хранятся: их скачивае
 
 - Встроенные пьесы (`src/pieces/`) — общественное достояние; источники каждой мелодии — в `scripts/gen_pieces.py`
   и в разделе «Звуки и встроенные пьесы» в README.
+- «К Элизе (полностью)» и «Прелюдия до мажор (полностью)» — по изданиям [Mutopia Project](https://www.mutopiaproject.org)
+  №931 (набор Stelios Samelis) и №5 (Shay Rojansky, Han-Wen Nienhuys, Tobias Erbsland), общественное достояние;
+  переведены из LilyPond скриптом `scripts/ly2musicxml.py`.
+- «Испанский романс» (`src/lib/guitarPieces.ts`) — по изданию Mutopia Project №795, набор © 2006 Jeff Covey,
+  лицензия [CC BY-SA 2.5](https://creativecommons.org/licenses/by-sa/2.5/) (совместима с GPLv3); струны и лады
+  расставлены MIDI Teacher, изменённая запись распространяется на тех же условиях.
+- Справка Strudel для автодополнения (`src/lib/strudel/strudelDocs.json`) — из пакета `@strudel/codemirror`
+  (AGPL-3.0-or-later), сокращена скриптом `scripts/gen-strudel-docs.mjs`.
 - Тестовые файлы Guitar Pro (`src/lib/fixtures/gp/`) — из проекта alphaTab, MPL-2.0, без изменений
   (см. `src/lib/fixtures/gp/LICENSE.txt`).
 - Тестовые данные Rocksmith (`src/lib/fixtures/rocksmith-test.json`) — синтетические, сделаны для тестов.
