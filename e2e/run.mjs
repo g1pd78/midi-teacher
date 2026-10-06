@@ -1650,6 +1650,77 @@ try {
   if (!planStep.includes("сделано 1 из 2")) throw new Error(`шаг «По плану»: ${planStep}`);
   ok(`главная: ${planStep}`);
 
+  console.log("Сквозной тест: код (Strudel)");
+  await waitFor("вкладка «Код»", () => click("Код"));
+  await waitFor("редактор Strudel", () => js("return !!document.querySelector('[data-code-cm] .cm-editor');"), 40000);
+  const codeDir = join(docs, "MIDI Teacher", "Код");
+  await waitFor("первый трек в папке «Код»", () => existsSync(codeDir) && readdirSync(codeDir).some((f) => f.endsWith(".js")), 10000);
+  ok(`вкладка открылась, трек в папке «Код»: ${readdirSync(codeDir).filter((f) => f.endsWith(".js")).join(", ")}`);
+  // Код выполняется в настоящем WebView (CSP разрешает eval Strudel): партии появляются в панели.
+  await waitFor("кнопка «Играть»", () => js("const b = document.querySelector('[data-code-play]'); if (!b || b.disabled) return false; b.click(); return true;"));
+  const codeParts = await waitFor(
+    "партии после запуска",
+    () => js("const o = [...document.querySelectorAll('[data-code-mypart] option')].map((x) => x.value).filter(Boolean); return o.length ? o.join(',') : (document.querySelector('[data-code-error]')?.textContent ?? false);"),
+    20000,
+  );
+  if (codeParts !== "drums,bass,melody") throw new Error(`партии: ${codeParts}`);
+  await js("document.querySelector('[data-code-stop]')?.click();");
+  ok(`код выполняется, партии: ${codeParts}`);
+  // Протокол mtsound: свои файлы и (если SoundFont скачан) ноты GM.
+  const proto = (path) =>
+    jsAsync(
+      "const [p, done] = arguments; const u = (navigator.userAgent.includes('Windows') ? 'http://mtsound.localhost/' : 'mtsound://localhost/') + encodeURIComponent(p);" +
+        "fetch(u).then(async (r) => done({ status: r.status, len: (await r.arrayBuffer()).byteLength })).catch((e) => done({ e: String(e) }));",
+      [path],
+    );
+  const kick = await proto("drum/36.wav");
+  const noFile = await proto("user/../x.wav");
+  if (noFile.status !== 404) throw new Error(`путь с «..» не отвергнут: ${JSON.stringify(noFile)}`);
+  ok(`протокол mtsound: бочка ${kick.status === 200 ? `${kick.len} байт` : `нет SoundFont (${kick.status})`}, выход из папки отвергнут`);
+  // Код → трек Студии (без звука: выполнение и разбор событий).
+  await js("document.querySelector('[data-code-tonotes]').click();");
+  await waitFor("окно «Код → ноты»", () => js("return document.querySelectorAll('[data-code-notes-part] option').length > 1;"));
+  await js("const s = document.querySelector('[data-code-notes-part]'); s.value = 'bass'; s.dispatchEvent(new Event('change', { bubbles: true }));");
+  await js("document.querySelector('[data-code-notes-studio]').click();");
+  await waitFor("трек в Студии", async () => (await invoke("studio_list")).some((x) => x.name.includes("bass")), 10000);
+  ok("партия bass → трек Студии");
+  // WAV: офлайн-рендер, файл в «Треки».
+  // Первый трек — бочка, пила и треугольник: синтезаторы звучат и без SoundFont.
+  await js("document.querySelector('[data-code-wav]').click();");
+  await waitFor("окно WAV", () => js("return !!document.querySelector('[data-code-wav-save]');"));
+  await js("document.querySelector('[data-code-wav-save]').click();");
+  const tracksDir = join(docs, "MIDI Teacher", "Треки");
+  const wav = await waitFor(
+    "WAV в «Треки»",
+    async () => {
+      const err = await js("return document.querySelector('[data-code-wav-dialog] .code-error')?.textContent ?? '';");
+      if (err) throw new Error(`WAV: ${err}`);
+      return existsSync(tracksDir) && readdirSync(tracksDir).find((f) => f.startsWith("Первый трек") && f.endsWith(".wav"));
+    },
+    30000,
+  );
+  const wavBytes = readFileSync(join(tracksDir, wav));
+  if (wavBytes.length < 44 + 44100 * 2 * 2 * 4 || wavBytes.toString("ascii", 0, 4) !== "RIFF") throw new Error(`WAV: ${wavBytes.length} байт`);
+  const pcm = new Int16Array(wavBytes.buffer, wavBytes.byteOffset + 44, Math.floor((wavBytes.length - 44) / 2));
+  if (!pcm.some((v) => Math.abs(v) > 1000)) throw new Error("WAV — тишина");
+  ok(`WAV: ${wav}, ${Math.round(wavBytes.length / 1024)} КБ, звук есть`);
+  // Урок курса «Музыка кодом»: ответ засчитан, шаг пройден.
+  await waitFor("вкладка курса", () => click("Курс"));
+  await waitFor("направление «Музыка кодом»", () => js("const b = document.querySelector('[data-course-instrument-btn=code]'); if (!b) return false; b.click(); return true;"));
+  await waitFor("урок открыт", () => js("const b = document.querySelector('[data-course-continue]'); if (!b) return false; b.click(); return true;"));
+  await waitFor("шаг урока", () => js("const b = document.querySelector('[data-course-go]'); if (!b) return false; b.click(); return true;"));
+  await waitFor("редактор урока", () => js("return !!document.querySelector('[data-code-lesson] .cm-editor');"), 30000);
+  await js("document.querySelector('[data-code-lesson-answer]').click();");
+  await sleep(300);
+  await js("document.querySelector('[data-code-lesson-check]').click();");
+  const verdict = await waitFor("проверка урока", () => js("return document.querySelector('[data-code-lesson-result]')?.dataset.codeLessonResult ?? false;"), 15000);
+  if (verdict !== "ok") throw new Error(`урок не засчитан: ${await js("return document.querySelector('[data-code-lesson-result]')?.textContent;")}`);
+  const lessonStat = (await invoke("exercise_stats")).find((x) => x.exercise === "code-1");
+  if (!lessonStat?.passed) throw new Error("результат урока code-1 не записан");
+  ok("урок «Цикл и звук»: ответ засчитан, результат в статистике");
+  await js("document.querySelector('[data-code-lesson-next]')?.click();");
+  await sleep(300);
+
   console.log("Сквозной тест: доводка");
   // Панель пьесы: редкое — в меню «⋯»; Esc закрывает только меню.
   await waitFor("вкладка пьес", () => click("Пьесы"));

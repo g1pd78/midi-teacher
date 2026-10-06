@@ -189,10 +189,18 @@ mod tests {
         }
         let s = SoundFontSynth::load(&path, 32_000).unwrap();
         let kick = s.render_one_shot(9, 0, 36, 110, 100, 32_000).unwrap();
-        assert!(kick.len() > 1_000 && kick.len() < 32_000 * 3, "бочка: {} отсчётов", kick.len());
+        assert!(
+            kick.len() > 1_000 && kick.len() < 32_000 * 3,
+            "бочка: {} отсчётов",
+            kick.len()
+        );
         assert!(kick.iter().any(|v| v.abs() > 0.05));
         let pluck = s.render_one_shot(0, 33, 40, 100, 800, 32_000).unwrap();
-        assert!(pluck.len() > 32_000 * 8 / 10, "бас короче удержания: {}", pluck.len());
+        assert!(
+            pluck.len() > 32_000 * 8 / 10,
+            "бас короче удержания: {}",
+            pluck.len()
+        );
         assert!(pluck.len() < 32_000 * 5);
         assert!(pluck.last().unwrap().abs() < 1e-3);
     }

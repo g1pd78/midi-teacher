@@ -50,6 +50,7 @@ const SILENT_WAV = (() => {
 export const soundUrl = (path: string) => (inTauri ? convertFileSrc(path, "mtsound") : `/__no_samples__/${path}`);
 
 export function loadEngine(): Promise<Engine> {
+  fixChannelCount();
   engine ??= (async () => {
     const [{ core, transpiler }, webaudio, codemirror, draw] = await Promise.all([
       loadStrudelCore(),
@@ -59,6 +60,7 @@ export function loadEngine(): Promise<Engine> {
     ]);
     const mt = installMt(core);
     await core.evalScope(webaudio, codemirror, draw, mt);
+
     await Promise.all([webaudio.registerSynthSounds(), webaudio.registerZZFXSounds?.()]);
     return { core, webaudio, codemirror, draw, transpiler };
   })();
@@ -302,6 +304,39 @@ export async function renderWav(pattern: Pattern, cycles: number, cps: number, e
     webaudio.setSuperdoughAudioController(liveController);
     void core;
   }
+}
+
+/** WebKit отдаёт `destination.maxChannelCount = 0` и `channelCount = 0` (у офлайнового контекста и без звуковой
+ *  карты), а superdough строит по ним микшер. Подменяем геттеры прототипа: ноль → стерео. */
+function fixChannelCount() {
+  const g = globalThis as unknown as { AudioDestinationNode?: { prototype: object }; AudioNode?: { prototype: object }; __mtChannelFix?: boolean };
+  if (g.__mtChannelFix || !g.AudioDestinationNode || !g.AudioNode) return;
+  g.__mtChannelFix = true;
+  const find = (proto: object | null, name: string): PropertyDescriptor | undefined => {
+    for (let p = proto; p; p = Object.getPrototypeOf(p)) {
+      const d = Object.getOwnPropertyDescriptor(p, name);
+      if (d) return d;
+    }
+    return undefined;
+  };
+  const dest = g.AudioDestinationNode.prototype;
+  const max = find(dest, "maxChannelCount");
+  if (max?.get) Object.defineProperty(dest, "maxChannelCount", { configurable: true, get() { return max.get!.call(this) || 2; } });
+  const cc = find(dest, "channelCount");
+  if (cc?.get)
+    Object.defineProperty(dest, "channelCount", {
+      configurable: true,
+      get() {
+        return cc.get!.call(this) || 2;
+      },
+      set(v: number) {
+        try {
+          cc.set?.call(this, v);
+        } catch {
+          /* у офлайнового контекста число каналов не меняется */
+        }
+      },
+    });
 }
 
 function encodeWav(buf: AudioBuffer): ArrayBuffer {

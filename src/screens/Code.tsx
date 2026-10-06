@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type CodeFile } from "../api";
 import { takeCodeRequest } from "../lib/codeBridge";
-import { EXAMPLES } from "../lib/strudel/examples";
+import { EXAMPLES, FIRST_TRACK } from "../lib/strudel/examples";
 import { loadSounds } from "../lib/strudel/engine";
 import { CodeEditor, type CodeEditorHandle, type CodePanel } from "./code/CodeEditor";
 import { CodeTools } from "./code/CodeTools";
@@ -82,7 +82,7 @@ export function Code() {
       const last = stored(LAST_KEY);
       const name = list.find((f) => f.name === last)?.name ?? list[0]?.name;
       if (name) await open(name);
-      else await create("Первый трек", EXAMPLES[0].code);
+      else await create("Первый трек", FIRST_TRACK);
     })();
     const onReq = () => {
       const req = takeCodeRequest();
@@ -143,7 +143,7 @@ export function Code() {
     await api.codeDelete(current.name);
     const list = await refresh();
     if (list[0]) await open(list[0].name);
-    else await create("Первый трек", EXAMPLES[0].code);
+    else await create("Первый трек", FIRST_TRACK);
   };
 
   return (

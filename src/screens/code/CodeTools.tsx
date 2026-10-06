@@ -358,6 +358,7 @@ function WavDialog({
       onNote(`WAV сохранён: ${path}`);
       onClose();
     } catch (e) {
+      console.error("WAV не сохранён", e);
       setError(String((e as Error)?.message ?? e));
     } finally {
       setBusy(false);

@@ -10,6 +10,15 @@ export interface CodeExample {
   code: string;
 }
 
+/** Первый трек нового пользователя: барабаны, бас и мелодия — партии с именами, синтезаторы звучат всегда. */
+export const FIRST_TRACK = `// Мой первый трек. Ctrl+Enter — играть, Ctrl+. — стоп. Меняй и слушай.
+setcps(0.5)
+
+drums: s("bd ~ sd ~, hh*8").gain(0.8)
+bass: note("<a1 f1 c2 g1>").s("sawtooth").lpf(600)
+melody: note("a3 c4 e4 c4").s("triangle").gain(0.6)
+`;
+
 export const EXAMPLES: CodeExample[] = [
   {
     id: "first",
