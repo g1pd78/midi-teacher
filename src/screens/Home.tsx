@@ -268,7 +268,7 @@ export function Home({ onNavigate, today }: { onNavigate: (s: Screen) => void; t
       </section>
 
       <section className="home-piano">
-        <Piano naming={naming} highlight={highlight} onPress={pressScreenKey} />
+        <Piano naming={naming} highlight={highlight} onPress={pressScreenKey} lights={false} />
       </section>
     </main>
   );

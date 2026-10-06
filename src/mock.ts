@@ -14,6 +14,7 @@ import type {
   FullState,
   InputSettings,
   MidiEvent,
+  LightsSettings,
   PadBinding,
   PieceNoteIn,
   Song,
@@ -94,6 +95,8 @@ export function createMock() {
     audioDevices: { asio: [], system: ["Динамики (демо)", "Наушники (демо)"] },
   };
 
+  // ?lights — подключена демо-плата подсветки (SysEx принимает, ничего не светит).
+  const demoLights = new URLSearchParams(location.search).has("lights");
   const snapshot = (): DevicesSnapshot => {
     const connected = Object.entries(inputs).filter(([, s]) => s.enabled);
     return {
@@ -105,15 +108,19 @@ export function createMock() {
         settings,
         matchingOutput: name === "Демо-пианино" ? "Демо-пианино" : null,
       })),
-      outputs: ["Демо-пианино"],
+      outputs: demoLights ? ["Демо-пианино", "MIDI Teacher Lights"] : ["Демо-пианино"],
       appRoute,
       appChannel,
       internalSoundNeeded:
         appRoute.kind === "internal" || connected.some(([, s]) => s.route.kind === "internal"),
       pads,
+      lights,
+      lightsPort: demoLights && lights.enabled && (!lights.port || lights.port === "MIDI Teacher Lights") ? "MIDI Teacher Lights" : null,
     };
   };
   let pads: PadBinding[] = [];
+  let lights: LightsSettings = { enabled: true, port: null, brightness: 30 };
+  let lit: [number, number][] = [];
   const songs: Record<string, Song> = {};
 
   type Body = { type: "noteOn"; note: number; velocity: number } | { type: "noteOff"; note: number };
@@ -674,6 +681,16 @@ export function createMock() {
       pads = next as PadBinding[];
       emit("devices", snapshot());
     },
+    set_lights_settings: ({ lights: next }) => {
+      lights = next as LightsSettings;
+      if (!lights.enabled) lit = [];
+      emit("devices", snapshot());
+    },
+    lights_set: ({ keys }) => {
+      lit = (keys as [number, number][]).filter(([, c]) => c > 0).sort((a, b) => a[0] - b[0]);
+    },
+    lights_state: () => lit,
+    lights_send: () => demoLights && lights.enabled,
     hit_drum: ({ drum, velocity }) => {
       send(PADS_DEVICE, { type: "noteOn", note: drum as number, velocity: velocity as number });
       setTimeout(() => emitMidi(PADS_DEVICE, { type: "noteOff", note: drum as number }), 150);

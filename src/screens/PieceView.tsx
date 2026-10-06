@@ -1200,7 +1200,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     }
     return [lo, hi];
   }, [notes]);
-  const highlight: Record<number, { color: string; strength?: number }> = {};
+  const highlight: Record<number, { color: string; strength?: number; held?: boolean }> = {};
   if (keyHints) {
     for (const id of cursorIds) {
       const n = noteById.get(id);
@@ -1212,7 +1212,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         };
     }
   }
-  for (const [n, h] of Object.entries(held)) highlight[Number(n)] = { color: deviceColor(h.device, devices), strength: 0.85 };
+  for (const [n, h] of Object.entries(held)) highlight[Number(n)] = { color: deviceColor(h.device, devices), strength: 0.85, held: true };
   if (wrongKey !== null) highlight[wrongKey] = { color: "#FF5C5C", strength: 0.9 };
 
   // Схема ладоней: пальцы текущего шага и следующего (по аппликатуре), только фортепиано.

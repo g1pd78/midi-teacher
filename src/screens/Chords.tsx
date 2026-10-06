@@ -476,9 +476,9 @@ export function ChordDrill({
   }, [done]);
 
   const showHint = hint || alwaysHint;
-  const highlight: Record<number, { color: string; strength?: number }> = {};
+  const highlight: Record<number, { color: string; strength?: number; held?: boolean }> = {};
   if (showHint && !done) for (const k of keys) highlight[k] = { color: "#5AA9FF", strength: 0.4 };
-  for (const [k, h] of Object.entries(held)) highlight[Number(k)] = { color: flash === "wrong" ? "#FF5C5C" : flash === "ok" ? "#4CC38A" : deviceColor(h.device, devices), strength: 0.85 };
+  for (const [k, h] of Object.entries(held)) highlight[Number(k)] = { color: flash === "wrong" ? "#FF5C5C" : flash === "ok" ? "#4CC38A" : deviceColor(h.device, devices), strength: 0.85, held: true };
 
   return (
     <main

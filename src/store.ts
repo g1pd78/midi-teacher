@@ -87,7 +87,7 @@ export const useApp = create<AppStore>((set, get) => ({
   },
   audioConfig: { backend: "auto", device: null, bufferFrames: 128, volume: 0.8 },
   customSoundfont: null,
-  devices: { inputs: [], outputs: [], appRoute: { kind: "internal" }, appChannel: 0, internalSoundNeeded: true, pads: [] },
+  devices: { inputs: [], outputs: [], appRoute: { kind: "internal" }, appChannel: 0, internalSoundNeeded: true, pads: [], lights: { enabled: true, port: null, brightness: 30 }, lightsPort: null },
   audio: null,
   audioDevices: { asio: [], system: [] },
   held: {},

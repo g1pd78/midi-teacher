@@ -18,6 +18,15 @@ use std::thread;
 use std::time::Duration;
 
 const CLIENT_NAME: &str = "MIDI Teacher";
+/// Имя USB-MIDI устройства подсветки клавиш (прошивка в `hardware/key-lights`).
+pub const LIGHTS_NAME: &str = "MIDI Teacher Lights";
+/// Канал подсветки (16-й): нота — клавиша, сила — цвет.
+const LIGHTS_CHANNEL: u8 = 15;
+
+/// Порт — плата подсветки, а не инструмент.
+pub fn is_lights_port(name: &str) -> bool {
+    name.contains(LIGHTS_NAME)
+}
 const SCAN_INTERVAL: Duration = Duration::from_millis(1000);
 
 /// Откуда берётся звук.
@@ -97,6 +106,8 @@ pub struct DeviceSettings {
     pub app_channel: u8,
     /// Пэды, назначенные барабанами.
     pub pads: Vec<PadBinding>,
+    /// Подсветка клавиш (светодиодная лента над клавиатурой).
+    pub lights: LightsSettings,
 }
 
 impl Default for DeviceSettings {
@@ -106,8 +117,57 @@ impl Default for DeviceSettings {
             app_route: SoundRoute::Internal,
             app_channel: 0,
             pads: Vec::new(),
+            lights: LightsSettings::default(),
         }
     }
+}
+
+/// Настройки подсветки клавиш.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LightsSettings {
+    pub enabled: bool,
+    /// Выход подсветки; `None` — найти по имени «MIDI Teacher Lights».
+    pub port: Option<String>,
+    /// Яркость, проценты.
+    pub brightness: u8,
+}
+
+impl Default for LightsSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            port: None,
+            brightness: 30,
+        }
+    }
+}
+
+/// Выход подсветки: выбранный, если он есть, иначе первый с именем платы.
+pub fn lights_port(settings: &LightsSettings, outputs: &[String]) -> Option<String> {
+    if !settings.enabled {
+        return None;
+    }
+    match &settings.port {
+        Some(p) => outputs.iter().find(|o| *o == p).cloned(),
+        None => outputs.iter().find(|o| is_lights_port(o)).cloned(),
+    }
+}
+
+/// Сообщения, которые переводят ленту из `old` в `new` (клавиша → цвет): гасим лишние, зажигаем новые.
+pub fn lights_diff(old: &BTreeMap<u8, u8>, new: &BTreeMap<u8, u8>) -> Vec<[u8; 3]> {
+    let mut out = Vec::new();
+    for note in old.keys() {
+        if !new.contains_key(note) {
+            out.push([0x80 | LIGHTS_CHANNEL, *note, 0]);
+        }
+    }
+    for (note, color) in new {
+        if old.get(note) != Some(color) {
+            out.push([0x90 | LIGHTS_CHANNEL, *note, *color]);
+        }
+    }
+    out
 }
 
 /// Событие с MIDI-входа.
@@ -151,6 +211,9 @@ pub struct DevicesSnapshot {
     /// Нужен ли сейчас встроенный синтезатор (иначе аудиоустройство освобождается).
     pub internal_sound_needed: bool,
     pub pads: Vec<PadBinding>,
+    pub lights: LightsSettings,
+    /// Выход, на который сейчас идёт подсветка (подключён).
+    pub lights_port: Option<String>,
 }
 
 /// Куда отправить звук для события с входа.
@@ -236,9 +299,17 @@ pub fn internal_sound_needed(settings: &DeviceSettings, connected: &[String]) ->
         || settings.pads.iter().any(|p| connected.contains(&p.device))
 }
 
+/// Что горит на ленте и куда её слать.
+#[derive(Default)]
+struct LightsState {
+    lit: BTreeMap<u8, u8>,
+    port: Option<String>,
+}
+
 struct Shared {
     settings: RwLock<DeviceSettings>,
     outputs: Mutex<HashMap<String, MidiOutputConnection>>,
+    lights: Mutex<LightsState>,
     audio: AudioEngine,
     events: Sender<DeviceEvent>,
 }
@@ -341,6 +412,7 @@ impl DeviceManager {
             shared: Arc::new(Shared {
                 settings: RwLock::new(settings),
                 outputs: Mutex::new(HashMap::new()),
+                lights: Mutex::new(LightsState::default()),
                 audio,
                 events,
             }),
@@ -397,6 +469,56 @@ impl DeviceManager {
     pub fn set_pads(&self, pads: Vec<PadBinding>) {
         self.shared.settings.write().pads = pads;
         self.rescan();
+    }
+
+    /// Настройки подсветки: выход, вкл/выкл, яркость (сразу уходит на плату).
+    pub fn set_lights_settings(&self, lights: LightsSettings) {
+        let off = !lights.enabled;
+        let brightness = lights.brightness;
+        self.shared.settings.write().lights = lights;
+        if off {
+            self.set_lights(&[]);
+        }
+        self.rescan();
+        self.lights_send(&[0xB0 | LIGHTS_CHANNEL, 7, brightness_cc(brightness)]);
+    }
+
+    /// Что должно гореть: (клавиша, цвет 1–127). На плату уходит только разница с прошлым.
+    pub fn set_lights(&self, keys: &[(u8, u8)]) {
+        let new: BTreeMap<u8, u8> = keys
+            .iter()
+            .copied()
+            .filter(|(n, c)| *n < 128 && (1..128).contains(c))
+            .collect();
+        let (msgs, port) = {
+            let mut l = self.shared.lights.lock();
+            let msgs = lights_diff(&l.lit, &new);
+            l.lit = new;
+            (msgs, l.port.clone())
+        };
+        if let Some(port) = port {
+            if let Some(conn) = self.shared.outputs.lock().get_mut(&port) {
+                for m in msgs {
+                    let _ = conn.send(&m);
+                }
+            }
+        }
+    }
+
+    /// Горящие клавиши (для проверки и предпросмотра).
+    pub fn lights(&self) -> Vec<(u8, u8)> {
+        self.shared.lights.lock().lit.iter().map(|(n, c)| (*n, *c)).collect()
+    }
+
+    /// Сырые байты на плату подсветки (SysEx настройки и проверки).
+    pub fn lights_send(&self, bytes: &[u8]) -> bool {
+        let Some(port) = self.shared.lights.lock().port.clone() else {
+            return false;
+        };
+        match self.shared.outputs.lock().get_mut(&port) {
+            Some(conn) => conn.send(bytes).is_ok(),
+            None => false,
+        }
     }
 
     /// Удар по барабану без пэда (экранные пэды, тесты): звучит и приходит как с «Пэдов»;
@@ -499,7 +621,9 @@ impl DeviceManager {
 
     /// Сверяет список портов с подключениями и настройками.
     pub fn rescan(&self) {
-        let (in_names, out_names) = scan_ports();
+        let (mut in_names, out_names) = scan_ports();
+        // Плата подсветки видна и как вход — это не инструмент.
+        in_names.retain(|n| !is_lights_port(n));
 
         // Новые устройства получают настройки по умолчанию.
         {
@@ -570,6 +694,8 @@ impl DeviceManager {
             app_channel: settings.app_channel,
             internal_sound_needed: needed,
             pads: settings.pads.clone(),
+            lights: settings.lights.clone(),
+            lights_port: self.shared.lights.lock().port.clone(),
         };
         drop(inputs);
 
@@ -609,6 +735,16 @@ impl DeviceManager {
         if let SoundRoute::Output { port } = &settings.app_route {
             wanted.push(port);
         }
+        let lights = lights_port(&settings.lights, available);
+        if let Some(p) = &lights {
+            wanted.push(p);
+        }
+        let lights_changed = {
+            let mut l = self.shared.lights.lock();
+            let changed = l.port != lights;
+            l.port = lights.clone();
+            changed
+        };
 
         let mut outputs = self.shared.outputs.lock();
         outputs.retain(|name, _| wanted.contains(&name.as_str()) && available.contains(name));
@@ -622,6 +758,16 @@ impl DeviceManager {
                     outputs.insert(port.to_string(), conn);
                 }
                 Err(e) => log::warn!("MIDI-выход {port}: {e}"),
+            }
+        }
+        // Плата подсветки появилась (или сменилась): яркость и то, что должно гореть.
+        if lights_changed {
+            if let Some(conn) = lights.as_ref().and_then(|p| outputs.get_mut(p)) {
+                let lit = self.shared.lights.lock().lit.clone();
+                let _ = conn.send(&[0xB0 | LIGHTS_CHANNEL, 7, brightness_cc(settings.lights.brightness)]);
+                for m in lights_diff(&BTreeMap::new(), &lit) {
+                    let _ = conn.send(&m);
+                }
             }
         }
     }
@@ -672,6 +818,11 @@ fn find_port<P: Clone>(
         .iter()
         .position(|n| n == want)
         .map(|i| kept[i].clone())
+}
+
+/// Яркость в процентах → значение контроллера 0–127.
+fn brightness_cc(percent: u8) -> u8 {
+    ((percent.min(100) as u32 * 127 + 50) / 100) as u8
 }
 
 fn connect_output(name: &str) -> Result<MidiOutputConnection, String> {
@@ -884,5 +1035,30 @@ mod tests {
         let partial: DeviceSettings = serde_json::from_str(r#"{"inputs":{"X":{}}}"#).unwrap();
         assert_eq!(partial.inputs["X"], InputSettings::default());
         assert_eq!(partial.app_route, SoundRoute::Internal);
+    }
+
+    #[test]
+    fn lights_port_and_diff() {
+        let outs = vec!["NPK Piano".to_string(), "MIDI Teacher Lights".to_string()];
+        let mut l = LightsSettings::default();
+        assert_eq!(lights_port(&l, &outs).as_deref(), Some("MIDI Teacher Lights"));
+        l.port = Some("NPK Piano".into());
+        assert_eq!(lights_port(&l, &outs).as_deref(), Some("NPK Piano"));
+        l.port = Some("Нет такого".into());
+        assert_eq!(lights_port(&l, &outs), None);
+        l.enabled = false;
+        l.port = None;
+        assert_eq!(lights_port(&l, &outs), None);
+        assert!(is_lights_port("MIDI Teacher Lights #2"));
+
+        let old: BTreeMap<u8, u8> = [(60, 1), (64, 2)].into_iter().collect();
+        let new: BTreeMap<u8, u8> = [(64, 1), (67, 2)].into_iter().collect();
+        assert_eq!(
+            lights_diff(&old, &new),
+            vec![[0x8F, 60, 0], [0x9F, 64, 1], [0x9F, 67, 2]]
+        );
+        assert!(lights_diff(&new, &new).is_empty());
+        assert_eq!(brightness_cc(30), 38);
+        assert_eq!(brightness_cc(100), 127);
     }
 }

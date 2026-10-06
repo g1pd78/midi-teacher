@@ -216,7 +216,7 @@ function TrainerLevels({ overview, onStart, tabs }: { overview: TrainerOverview;
           <h2>Как ты знаешь ноты</h2>
           <p className="hint">Зелёные — уверенно, жёлтые — иногда путаешь, красные — стоит повторить.</p>
           <div className="heat-piano">
-            <Piano low={36} high={84} naming={prefs.noteNames} highlight={heat} labels="c" />
+            <Piano low={36} high={84} naming={prefs.noteNames} highlight={heat} labels="c" lights={false} />
           </div>
         </section>
       )}
@@ -328,8 +328,8 @@ function TrainerSession({ session, level, overview, backLabel, onExit, onRestart
     return [Math.floor(lo - pad), Math.ceil(hi + pad)];
   }, [level]);
 
-  const highlight: Record<number, { color: string; strength?: number }> = {};
-  for (const [n, h] of Object.entries(held)) highlight[Number(n)] = { color: deviceColor(h.device, devices), strength: 0.6 };
+  const highlight: Record<number, { color: string; strength?: number; held?: boolean }> = {};
+  for (const [n, h] of Object.entries(held)) highlight[Number(n)] = { color: deviceColor(h.device, devices), strength: 0.6, held: true };
   if (showHint && current) highlight[current.midi] = { color: "#4CC38A", strength: 0.55 };
   if (hintKey !== null) highlight[hintKey] = { color: "#4CC38A", strength: 0.7 };
   if (wrongKey !== null) highlight[wrongKey] = { color: "#FF5C5C", strength: 0.8 };

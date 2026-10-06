@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { useApp } from "./store";
 import { Header } from "./components/Header";
 import { Hotkeys } from "./components/Hotkeys";
+import { LightsBridge } from "./components/LightsBridge";
 import { Home } from "./screens/Home";
 import type { ExInstrument } from "./screens/Exercises";
 import type { TrainerSection } from "./screens/Trainers";
@@ -92,6 +93,7 @@ export function App() {
     <div className="app">
       <Header screen={screen} onNavigate={setScreen} onHelp={() => setHelp(true)} />
       {help && <Hotkeys onClose={() => setHelp(false)} />}
+      <LightsBridge />
       {screen === "home" && (
         <Home
           onNavigate={setScreen}
