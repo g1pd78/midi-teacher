@@ -32,6 +32,9 @@ export function loadStrudelCore(): Promise<StrudelMods> {
         lastCps = Number(c) / 60;
       },
       hush: () => core.silence,
+      // Ползунки — из пакета редактора; без него — просто начальное значение.
+      slider: (value: number) => core.pure(value),
+      sliderWithID: (_id: string, value: number) => core.pure(value),
       samples: async () => {},
     });
     return { core, transpiler: tr.transpiler };

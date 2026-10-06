@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CodeLessonRun } from "./code/CodeLessonRun";
+import { CODE_LESSON_BY_ID } from "../lib/codeLessons";
 import { api } from "../api";
 import { BackLabelContext } from "../components/BackLabel";
 import { TheoryCardView } from "../components/Theory";
@@ -489,9 +491,9 @@ export function StepRun({ step, instrument, onDone, backLabel = BACK }: { step: 
     case "root":
       return <RootDrill key={seed} level={ROOT_LEVELS.find((l) => l.id === step.level)!} seed={seed} onAgain={() => setSeed((s) => s + 1)} onBack={onDone} onRecorded={() => {}} />;
     case "echo":
-      return <EchoRun level={ECHO_LEVELS.find((l) => l.id === step.level)!} instrument={instrument === "drums" ? "piano" : instrument} onBack={onDone} onRecorded={() => {}} />;
+      return <EchoRun level={ECHO_LEVELS.find((l) => l.id === step.level)!} instrument={instrument === "drums" || instrument === "code" ? "piano" : instrument} onBack={onDone} onRecorded={() => {}} />;
     case "jam":
-      return <JamLessonRun lesson={JAM_LESSONS.find((l) => l.id === step.lesson)!} instrument={instrument === "drums" ? "piano" : instrument} onBack={onDone} onRecorded={() => {}} />;
+      return <JamLessonRun lesson={JAM_LESSONS.find((l) => l.id === step.lesson)!} instrument={instrument === "drums" || instrument === "code" ? "piano" : instrument} onBack={onDone} onRecorded={() => {}} />;
     case "song": {
       const song = BUILTIN_SONGS.find((s) => s.id === step.id)!;
       if (step.strum) return <GuitarSongView song={song} pattern={STRUM_BY_ID.get(step.strum)!} onBack={onDone} exerciseId={songRecordId(step)} />;
@@ -500,6 +502,8 @@ export function StepRun({ step, instrument, onDone, backLabel = BACK }: { step: 
     }
     case "dsong":
       return <DrumSongView def={DRUM_SONG_BY_ID.get(step.id)!} onBack={onDone} backLabel={back} />;
+    case "code":
+      return <CodeLessonRun lesson={CODE_LESSON_BY_ID.get(step.id)!} onBack={onDone} />;
     default:
       return null;
   }

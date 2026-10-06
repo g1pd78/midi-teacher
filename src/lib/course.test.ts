@@ -36,10 +36,12 @@ describe("курс", () => {
       expect(lessons.length, inst).toBeGreaterThanOrEqual(9);
       expect(new Set(lessons.map((l) => l.id)).size).toBe(lessons.length);
       for (const m of COURSE[inst]) {
-        expect(m.check.length, m.id).toBeGreaterThanOrEqual(2);
+        // «Музыка кодом»: урок — одно задание в редакторе; в последнем модуле один урок.
+        if (inst !== "code") expect(m.check.length, m.id).toBeGreaterThanOrEqual(2);
         for (const s of m.check) expect(stepExists(s, inst), `${m.id} проверка ${JSON.stringify(s)}`).toBe(true);
         for (const l of m.lessons) {
-          expect(l.steps.length, l.id).toBeGreaterThanOrEqual(4);
+          if (inst === "code") expect(l.steps, l.id).toEqual([{ kind: "code", id: l.id.replace("code-l", "code-") }]);
+          else expect(l.steps.length, l.id).toBeGreaterThanOrEqual(4);
           expect(l.steps.length, l.id).toBeLessThanOrEqual(8);
           for (const s of l.steps) {
             expect(stepExists(s, inst), `${l.id} ${JSON.stringify(s)}`).toBe(true);

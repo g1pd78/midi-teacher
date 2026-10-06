@@ -18,6 +18,8 @@ export interface CodeNote {
   drum: boolean;
   /** Звук (`s`), если задан. */
   s: string | null;
+  /** Вариант сэмпла (`hh:1` → 1). */
+  n: number;
   part: string | null;
   you: boolean;
   gain: number;
@@ -70,6 +72,7 @@ export function patternNotes(pattern: Pattern, from: number, to: number): CodeNo
       midi: pitch ?? drum,
       drum: pitch === null && drum !== null,
       s: v && typeof v === "object" && typeof v.s === "string" ? v.s : null,
+      n: v && typeof v === "object" && typeof v.n === "number" && pitch === null ? v.n : 0,
       part: v && typeof v === "object" ? (v.mtPart ?? null) : null,
       you: !!(v && typeof v === "object" && v.mtYou),
       gain: v && typeof v === "object" && typeof v.gain === "number" ? v.gain : 1,

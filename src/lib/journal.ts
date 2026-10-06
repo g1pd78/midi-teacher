@@ -151,7 +151,7 @@ export function goalYaml(goal: Goal): string {
   return stringify({ text: goal.text, minutes_per_day: goal.minutesPerDay ?? undefined }, { lineWidth: 0 });
 }
 
-const INST_NAME: Record<CourseInstrument, string> = { piano: "фортепиано", guitar: "гитара", bass: "бас", drums: "барабаны" };
+const INST_NAME: Record<CourseInstrument, string> = { piano: "фортепиано", guitar: "гитара", bass: "бас", drums: "барабаны", code: "музыка кодом (Strudel)" };
 
 /** Описание формата плана для Claude (тот же текст лежит в docs/journal-format.md). */
 export function planFormatText(instrument: CourseInstrument): string {

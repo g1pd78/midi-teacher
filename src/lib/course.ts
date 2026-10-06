@@ -20,15 +20,16 @@ import { RHYTHM_BY_KEY } from "./rhythm";
 import { BUILTIN_SONGS, STYLE_NAME, type Style } from "./songs";
 import { STRUM_BY_ID } from "./strum";
 import { CARD_BY_ID } from "./theory";
+import { CODE_LESSON_BY_ID } from "./codeLessons";
 
-export type CourseInstrument = "piano" | "guitar" | "bass" | "drums";
+export type CourseInstrument = "piano" | "guitar" | "bass" | "drums" | "code";
 
 /** Инструмент курса (выбор запоминается на этом компьютере). */
 export const COURSE_INSTRUMENT_KEY = "mt-course-instrument";
 export function storedCourseInstrument(): CourseInstrument {
   try {
     const v = localStorage.getItem(COURSE_INSTRUMENT_KEY);
-    return v === "guitar" || v === "bass" || v === "drums" ? v : "piano";
+    return v === "guitar" || v === "bass" || v === "drums" || v === "code" ? v : "piano";
   } catch {
     return "piano";
   }
@@ -39,6 +40,7 @@ export const COURSE_INSTRUMENTS: { id: CourseInstrument; name: string }[] = [
   { id: "guitar", name: "Гитара" },
   { id: "bass", name: "Бас" },
   { id: "drums", name: "Барабаны" },
+  { id: "code", name: "Музыка кодом" },
 ];
 
 /** Шаг урока — ссылка на готовое задание приложения. */
@@ -59,7 +61,9 @@ export type CourseStep =
   | { kind: "jam"; lesson: number }
   | { kind: "piece"; id: string; hands?: "right" | "left" | "both" }
   | { kind: "song"; id: string; style?: Style; strum?: string; bass?: BassStyle }
-  | { kind: "dsong"; id: string };
+  | { kind: "dsong"; id: string }
+  /** Урок «Музыка кодом» (Strudel). */
+  | { kind: "code"; id: string };
 
 export interface CourseLesson {
   /** «piano-3». */
@@ -600,7 +604,29 @@ const DRUMS: CourseModule[] = [
   },
 ];
 
-export const COURSE: Record<CourseInstrument, CourseModule[]> = { piano: PIANO, guitar: GUITAR, bass: BASS, drums: DRUMS };
+// «Музыка кодом»: урок = одно задание в редакторе Strudel (теория, задание, проверка).
+const codeLesson = (id: number): CourseLesson => {
+  const l = CODE_LESSON_BY_ID.get(`code-${id}`)!;
+  return { id: `code-l${id}`, title: l.title, goal: l.task, steps: [{ kind: "code", id: l.id }] };
+};
+const codeModule = (id: string, title: string, description: string, from: number, to: number, check: number[]): CourseModule => ({
+  id,
+  title,
+  description,
+  lessons: Array.from({ length: to - from + 1 }, (_, i) => codeLesson(from + i)),
+  check: check.map((n) => ({ kind: "code", id: `code-${n}` })),
+});
+
+const CODE: CourseModule[] = [
+  codeModule("code-m1", "Ритм и мини-нотация", "Цикл, звуки, паузы, деление, ускорение и чередование, евклидовы ритмы.", 1, 5, [3, 5]),
+  codeModule("code-m2", "Ноты и лады", "Ноты по буквам, ступени лада, аккорды и бас.", 6, 9, [7, 9]),
+  codeModule("code-m3", "Звук", "Варианты и свои сэмплы, фильтр и эффекты, синтезаторы и огибающая.", 10, 12, [11, 12]),
+  codeModule("code-m4", "Структура и жанры", "Партии и превращения, хаус, драм-н-бейс, эмбиент и строение трека.", 13, 16, [14, 16]),
+  codeModule("code-m5", "Играть с кодом", "Своя партия, импровизация по гармонии, «Повтори за мной», ручки и свой трек.", 17, 20, [17, 20]),
+  codeModule("code-m6", "Переезд на strudel.cc", "Тот же язык на сайте: что меняется и как перенести свои сэмплы.", 21, 21, [21]),
+];
+
+export const COURSE: Record<CourseInstrument, CourseModule[]> = { piano: PIANO, guitar: GUITAR, bass: BASS, drums: DRUMS, code: CODE };
 
 export function courseLessons(instrument: CourseInstrument): CourseLesson[] {
   return COURSE[instrument].flatMap((m) => m.lessons);
@@ -610,7 +636,7 @@ export function courseLessons(instrument: CourseInstrument): CourseLesson[] {
 
 /** Инструмент фрагмента «гриф/повтори/джем» для шага курса. */
 const stringInst = (i: CourseInstrument) => (i === "bass" ? "bass" : "guitar");
-const jamInst = (i: CourseInstrument) => (i === "drums" ? "piano" : i);
+const jamInst = (i: CourseInstrument) => (i === "drums" || i === "code" ? "piano" : i);
 
 /** Id результата шага в статистике упражнений. */
 export function stepRecordIds(step: CourseStep, instrument: CourseInstrument): string[] {
@@ -624,6 +650,7 @@ export function stepRecordIds(step: CourseStep, instrument: CourseInstrument): s
     case "drum":
     case "ear":
     case "dsong":
+    case "code":
       return [step.id];
     case "read":
       return [readId(step.level), readWaitId(step.level)];
@@ -795,6 +822,8 @@ export function stepTitle(step: CourseStep, instrument: CourseInstrument): strin
       const d = DRUM_SONG_BY_ID.get(step.id);
       return `Песня на барабанах: ${d ? drumSongTitle(d) : step.id}`;
     }
+    case "code":
+      return `Код: ${CODE_LESSON_BY_ID.get(step.id)?.title ?? step.id}`;
   }
 }
 
@@ -840,5 +869,7 @@ export function stepExists(step: CourseStep, instrument: CourseInstrument): bool
     }
     case "dsong":
       return DRUM_SONG_BY_ID.has(step.id);
+    case "code":
+      return CODE_LESSON_BY_ID.has(step.id);
   }
 }

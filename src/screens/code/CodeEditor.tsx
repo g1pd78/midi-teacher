@@ -52,6 +52,7 @@ export function CodeEditor({
   toolbar,
   onReady,
   onSummary,
+  onImprov,
 }: {
   initialCode: string;
   onCodeChange?: (code: string) => void;
@@ -64,6 +65,8 @@ export function CodeEditor({
   onReady?: (h: CodeEditorHandle) => void;
   /** Итог игры поверх кода — при остановке. */
   onSummary?: (s: JudgeSummary) => void;
+  /** Итог импровизации (нот всего и в аккорде/ладу) — при остановке. */
+  onImprov?: (s: { total: number; inKey: number }) => void;
 }) {
   const { prefs } = useApp();
   const root = useRef<HTMLDivElement>(null);
@@ -90,6 +93,8 @@ export function CodeEditor({
   onCodeChangeRef.current = onCodeChange;
   const onSummaryRef = useRef(onSummary);
   onSummaryRef.current = onSummary;
+  const onImprovRef = useRef(onImprov);
+  onImprovRef.current = onImprov;
 
   const resetScore = () => {
     judge.current = new YouJudge(!!panelRef.current.anyOctave);
@@ -170,6 +175,7 @@ export function CodeEditor({
             .catch(() => {});
       }
       const im = improv.current;
+      if (im.total) onImprovRef.current?.({ total: im.total, inKey: im.chord + im.scale });
       if (im.total >= 8)
         void api
           .exerciseRecord({ exercise: "code-improv", tempo: 1, accuracy: (im.chord + im.scale) / im.total, timingSdMs: 0, loudness: 1, passed: im.out / im.total < 0.25 })
@@ -201,7 +207,7 @@ export function CodeEditor({
         heldRef.current.delete(e.note);
         return;
       }
-      const played: CodeNote = { begin: cycle, dur: 0.25, midi: e.note, drum: false, s: "piano", part: null, you: false, gain: e.velocity / 127 };
+      const played: CodeNote = { begin: cycle, dur: 0.25, midi: e.note, drum: false, s: "piano", n: 0, part: null, you: false, gain: e.velocity / 127 };
       playedRef.current.push(played);
       heldRef.current.set(e.note, played);
       const p = panelRef.current;

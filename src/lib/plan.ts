@@ -7,6 +7,7 @@ import { BUILTIN_PIECES } from "../pieces";
 import { BASS_STYLES, type BassStyle } from "./bassline";
 import { ROOT_LEVELS } from "./bassRoot";
 import { CHORD_LEVELS } from "./chordDrill";
+import { CODE_LESSONS } from "./codeLessons";
 import { COURSE, courseLessons, stepExists, stepRecordIds, stepTitle, type CourseInstrument, type CourseLesson, type CourseStep } from "./course";
 import { DRUM_EXERCISES } from "./drums";
 import { DRUM_SONGS } from "./drumSongs";
@@ -58,7 +59,7 @@ export interface PlanParse {
   warnings: string[];
 }
 
-const INSTRUMENTS: CourseInstrument[] = ["piano", "guitar", "bass", "drums"];
+const INSTRUMENTS: CourseInstrument[] = ["piano", "guitar", "bass", "drums", "code"];
 const STYLES: Style[] = ["block", "oompah", "alberti"];
 
 /** Ключ шага в файле → шаг курса (id дополняются привычными приставками). */
@@ -97,6 +98,7 @@ export function stepFromYaml(o: Record<string, unknown>): CourseStep | string {
     };
   }
   if ("drum_song" in o) return { kind: "dsong", id: pre("drum-song-", str(o.drum_song)) };
+  if ("code" in o) return { kind: "code", id: pre("code-", str(o.code)) };
   return `непонятный шаг: ${Object.keys(o).join(", ") || "пусто"}`;
 }
 
@@ -142,6 +144,8 @@ export function stepToYaml(s: CourseStep): Record<string, string | number> {
     }
     case "dsong":
       return { drum_song: s.id.replace(/^drum-song-/, "") };
+    case "code":
+      return { code: s.id.replace(/^code-/, "") };
   }
 }
 
@@ -326,6 +330,8 @@ export function planCatalog(instrument: CourseInstrument): CatalogGroup[] {
         rhythm,
         ear,
       ];
+    case "code":
+      return [g("Уроки «Музыка кодом» (Strudel)", "code", CODE_LESSONS.map((l) => ({ kind: "code", id: l.id })))];
   }
 }
 
