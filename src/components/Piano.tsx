@@ -1,3 +1,4 @@
+import { usePublishLights } from "./LightsBridge";
 import { useMemo, useRef } from "react";
 import { keyboardLayout, keyLabel, type NoteNaming } from "../lib/notes";
 
@@ -5,7 +6,9 @@ export interface PianoProps {
   low?: number;
   high?: number;
   /** Подсветка: нота → цвет; `finger` — цифра пальца на клавише, `auto` — подобран (бледнее). */
-  highlight?: Record<number, { color: string; strength?: number; finger?: number; auto?: boolean }>;
+  highlight?: Record<number, { color: string; strength?: number; finger?: number; auto?: boolean; held?: boolean }>;
+  /** Подсказки этой клавиатуры идут на ленту подсветки над настоящей клавиатурой (по умолчанию да). */
+  lights?: boolean;
   naming: NoteNaming;
   /** Подписи: только на «до» или на всех белых клавишах. */
   labels?: "c" | "all" | "none";
@@ -14,8 +17,9 @@ export interface PianoProps {
   playable?: [number, number] | null;
 }
 
-export function Piano({ low = 21, high = 108, highlight = {}, naming, labels = "c", onPress, playable }: PianoProps) {
+export function Piano({ low = 21, high = 108, highlight = {}, naming, labels = "c", onPress, playable, lights = true }: PianoProps) {
   const keys = useMemo(() => keyboardLayout(low, high), [low, high]);
+  usePublishLights(highlight, lights);
   const down = useRef<number | null>(null);
 
   const press = (note: number) => {

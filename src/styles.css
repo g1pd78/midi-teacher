@@ -3494,3 +3494,57 @@ button.ex-star.on,
   display: flex;
   flex-direction: column;
 }
+
+/* Подсветка клавиш */
+.lights-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.lights-preview {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.lights-strip {
+  position: relative;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+.lights-dot {
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  border-radius: 50%;
+  background: var(--line);
+}
+.lights-dot.black {
+  opacity: 0.5;
+}
+.lights-dot.on {
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  box-shadow: 0 0 6px currentColor;
+  z-index: 1;
+}
+.lights-wizard {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lights-wizard .hint {
+  margin: 0;
+}

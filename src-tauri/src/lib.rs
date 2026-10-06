@@ -130,6 +130,30 @@ fn set_drum_pads(state: State<AppState>, pads: Vec<PadBinding>) {
     state.save();
 }
 
+/// Подсветка клавиш: настройки (выход, вкл/выкл, яркость).
+#[tauri::command]
+fn set_lights_settings(state: State<AppState>, lights: mt_core::devices::LightsSettings) {
+    state.devices.set_lights_settings(lights);
+    state.save();
+}
+
+/// Что должно гореть на ленте: (клавиша, цвет). Уходит только разница.
+#[tauri::command]
+fn lights_set(state: State<AppState>, keys: Vec<(u8, u8)>) {
+    state.devices.set_lights(&keys);
+}
+
+#[tauri::command]
+fn lights_state(state: State<AppState>) -> Vec<(u8, u8)> {
+    state.devices.lights()
+}
+
+/// Сырые байты (SysEx) на плату подсветки; `false` — платы нет.
+#[tauri::command]
+fn lights_send(state: State<AppState>, bytes: Vec<u8>) -> bool {
+    state.devices.lights_send(&bytes)
+}
+
 /// Удар по экранному пэду: барабан звучит и засчитывается, как удар по настоящему.
 #[tauri::command]
 fn hit_drum(state: State<AppState>, drum: u8, velocity: u8) {
@@ -383,6 +407,10 @@ pub fn run() {
             set_input,
             set_app_route,
             set_drum_pads,
+            set_lights_settings,
+            lights_set,
+            lights_state,
+            lights_send,
             hit_drum,
             set_audio_config,
             set_prefs,

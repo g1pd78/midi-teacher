@@ -11,6 +11,7 @@ import {
   type SoundRoute,
 } from "../api";
 import { Notices } from "../components/Notices";
+import { LightsSection } from "./LightsSettings";
 import { fullName, keyLabel } from "../lib/notes";
 import { deviceColor, useApp, useMidi } from "../store";
 
@@ -33,6 +34,7 @@ export function Settings() {
         <div className="settings-col">
           <InputsSection />
           <AppSoundSection />
+          <LightsSection />
           <InterfaceSection />
         </div>
         <div className="settings-col">

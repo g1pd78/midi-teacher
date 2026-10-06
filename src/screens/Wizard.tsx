@@ -218,7 +218,7 @@ export function Wizard() {
       </div>
 
       <div className="wizard-piano">
-        <Piano naming={prefs.noteNames} highlight={highlight} onPress={pressScreenKey} />
+        <Piano naming={prefs.noteNames} highlight={highlight} onPress={pressScreenKey} lights={false} />
       </div>
     </div>
   );

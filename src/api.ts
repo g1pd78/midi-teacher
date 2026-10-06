@@ -45,6 +45,18 @@ export interface DevicesSnapshot {
   internalSoundNeeded: boolean;
   /** Пэды, назначенные барабанами. */
   pads: PadBinding[];
+  lights: LightsSettings;
+  /** Выход, на который сейчас идёт подсветка (подключён). */
+  lightsPort: string | null;
+}
+
+/** Подсветка клавиш: светодиодная лента над клавиатурой (плата «MIDI Teacher Lights»). */
+export interface LightsSettings {
+  enabled: boolean;
+  /** null — найти плату по имени. */
+  port: string | null;
+  /** Яркость, проценты. */
+  brightness: number;
 }
 
 export type AudioBackend = "auto" | "asio" | "system";
@@ -727,6 +739,10 @@ export const api = {
   setInput: (name: string, input: InputSettings) => invoke<void>("set_input", { name, input }),
   setAppRoute: (route: SoundRoute, channel: number) => invoke<void>("set_app_route", { route, channel }),
   setDrumPads: (pads: PadBinding[]) => invoke<void>("set_drum_pads", { pads }),
+  setLightsSettings: (lights: LightsSettings) => invoke<void>("set_lights_settings", { lights }),
+  lightsSet: (keys: [number, number][]) => invoke<void>("lights_set", { keys }),
+  lightsState: () => invoke<[number, number][]>("lights_state"),
+  lightsSend: (bytes: number[]) => invoke<boolean>("lights_send", { bytes }),
   hitDrum: (drum: number, velocity: number) => invoke<void>("hit_drum", { drum, velocity }),
   setAudioConfig: (config: AudioConfig) => invoke<void>("set_audio_config", { config }),
   setPrefs: (prefs: UiPrefs) => invoke<void>("set_prefs", { prefs }),
