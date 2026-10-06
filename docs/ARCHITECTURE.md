@@ -781,6 +781,35 @@ CustomsForge), команда `rocksmith_open` читает файл в фоне
 - Экран `src/screens/Journal.tsx`: цель, план (шаги дня через `StepList`/`StepRun` курса, «сделано» — сыграно
   сегодня), свои уроки, вставка/файл плана с ошибками, повторение, история, запрос для Claude. Главная: шаги «По
   плану» и «Повторить» (модули грузятся отдельно, `import()`).
+## 7ц. Код (Strudel)
+
+- Пакеты `@strudel/core`, `mini`, `tonal`, `transpiler`, `webaudio` (superdough), `codemirror`, `draw` (AGPL-3.0,
+  совместимы с GPL-3.0) — отдельные чанки, грузятся при открытии вкладки (`import()`). Язык тот же, что на strudel.cc.
+- `src/lib/strudel/engine.ts`: `LiveCode` — `StrudelMirror` (редактор + repl + подсветка) с нашим выводом: событие с
+  `mtYou` не звучит, а уходит в оценку; время планировщика → цикл: `C0 + (t − S0 − latency)·cps` (поля Cyclist);
+  нажатие (часы ядра) → `performance.now()` (`ClockSync`) → то, что слышно (`getOutputTimestamp`). Подгрузка сэмплов
+  первых 4 циклов заранее. `renderWav` — тот же граф superdough на `OfflineAudioContext` (живой контекст и
+  контроллер возвращаются), WAV в ядро base64. WebKit: геттеры `destination.maxChannelCount/channelCount` = 0 → 2.
+- CSP: `script-src … 'unsafe-eval' blob:` (Strudel исполняет код через `Function`), `connect-src`/`media-src`
+  с протоколом `mtsound`. Сторонние хосты не нужны: интернет-наборы качает ядро.
+- `src-tauri/src/code.rs`: папки «Код» (`*.js` и настройки панели `*.mt.json`) и «Сэмплы»; протокол `mtsound`:
+  `gm/<прог>/<нота>.wav`, `drum/<нота>.wav`, `piano/<нота>.wav` — рендер ноты из встроенного SoundFont
+  (`SoundFontSynth::render_one_shot`, 32 кГц моно, хвост обрезается) с кэшем в памяти; `user/…`, `rec/…` — файлы
+  (`..` отвергается); `net/<base64url>` — стандартные наборы через `ureq` с кэшем на диске.
+- `src/lib/strudel/sounds.ts`: карты звуков с именами Strudel (`bd sd hh…` → ноты GM-барабанов, `gm_*` → программы
+  GM, сэмпл через каждые 3 полутона, `piano`), свои сэмплы и `rec`, прокси для стандартных наборов.
+- `src/lib/strudel/mt.ts`: партии (обёртка `.p()` после `Ie()` repl) с меткой `mtPart`; панель: «моя партия»,
+  «Повтори за мной» (`echoize`: фраза k — цикл 2k, повтор — 2k+1), транспонирование `kb()`; функции `.you()`,
+  `echo()`, `harmony()`, `kb()`, `midin()` (как на strudel.cc, но из событий ядра). Строки в двойных кавычках
+  транспилятор делает паттернами — `asText` достаёт текст.
+- `src/lib/strudel/evaluate.ts` — выполнение без звука (уроки, «В ноты», тесты); `haps.ts` — события → ноты и трек
+  Студии; `judge.ts` — оценка «моей партии» (±50/±120 мс); `harmony.ts` — лад и аккорд; `live.ts` — `kb`/CC;
+  `gen.ts` — рифф → мини-нотация; `fromApp.ts` — грувы, песни, джем, упражнения → код; `portable.ts` — «Для
+  strudel.cc».
+- Экран `src/screens/Code.tsx` + `code/CodeEditor.tsx` (редактор, панель, клавиатура), `code/CodeTools.tsx` (рифф,
+  ноты/MIDI, WAV, strudel.cc), `code/CodeLessonRun.tsx`. Курс: направление `code` и шаг `{ kind: "code" }`, уроки —
+  `src/lib/codeLessons.ts` (проверка: те же события, что у ответа; нужные функции; игра — по итогу).
+
 ---
 
 ## 8. Интерфейс

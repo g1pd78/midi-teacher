@@ -12,6 +12,9 @@ MIDI Teacher распространяется по [GPL-3.0-or-later](LICENSE). 
 | [React](https://react.dev), React DOM | MIT | Интерфейс |
 | [Zustand](https://github.com/pmndrs/zustand) | MIT | Состояние интерфейса |
 | [yaml](https://github.com/eemeli/yaml) | ISC | Дневник и планы в YAML |
+| [Strudel](https://codeberg.org/uzu/strudel) (`@strudel/core`, `mini`, `tonal`, `transpiler`, `webaudio`, `codemirror`, `draw`, `superdough`) © Strudel contributors | AGPL-3.0-or-later | Вкладка «Код»: язык паттернов, звук, редактор. Объединение с GPL-3.0 разрешено (GPLv3 §13); исходники Strudel — по ссылке |
+| [Tonal](https://github.com/tonaljs/tonal), chord-voicings | MIT | Лады и аккорды в Strudel |
+| [CodeMirror 6](https://codemirror.net) | MIT | Редактор кода |
 | [@tauri-apps/api](https://tauri.app) и плагины dialog, opener | MIT OR Apache-2.0 | Связь с ядром |
 
 ## Ядро и приложение (crates.io)
@@ -24,6 +27,7 @@ MIDI Teacher распространяется по [GPL-3.0-or-later](LICENSE). 
 | [midly](https://github.com/kovaxis/midly) | Unlicense | Чтение MIDI-файлов |
 | [rustysynth](https://github.com/sinshu/rustysynth) | MIT | Синтезатор SoundFont |
 | [rusqlite](https://github.com/rusqlite/rusqlite) (+ SQLite, общественное достояние) | MIT | База прогресса |
+| [ureq](https://github.com/algesten/ureq) | MIT OR Apache-2.0 | Стандартные наборы сэмплов Strudel (по желанию) |
 | serde, crossbeam, parking_lot, flate2, aes, ctr, cfb-mode, base64, anyhow, log | MIT OR Apache-2.0 | Служебные |
 
 Остальные зависимости (транзитивные) — под MIT, Apache-2.0, BSD, ISC, Zlib, Unicode-3.0, Unlicense, MPL-2.0;
@@ -43,6 +47,11 @@ MIDI Teacher распространяется по [GPL-3.0-or-later](LICENSE). 
 | [GeneralUser GS](https://github.com/mrbumpy409/GeneralUser-GS) © S. Christian Collins — инструменты GM и барабаны | GeneralUser GS License v2.0: свободное использование, в том числе в программах, с правом изменять и распространять (`documentation/LICENSE.txt` в репозитории автора) |
 
 SoundFont в репозитории не хранятся: их скачивает `scripts/fetch-soundfont.mjs` при сборке.
+
+Звуки вкладки «Код» (`bd`, `sd`, `hh`…, `gm_*`, `piano`) — ноты из этих же SoundFont, рендер по запросу. Стандартные
+наборы Strudel (tidal-drum-machines, Dirt-Samples, VCSL и др.) в установщик и репозиторий **не входят**: у части нет
+лицензии, разрешающей распространение. Если включить «Стандартные наборы Strudel (интернет)», они скачиваются с тех
+же адресов, что использует strudel.cc, и хранятся в кэше на компьютере пользователя.
 
 ## Ноты и тестовые файлы
 
