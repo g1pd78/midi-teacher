@@ -122,3 +122,37 @@ jobs:
           name: MIDI-Teacher-windows-${{ github.sha }}
           path: target/release/bundle/nsis/*.exe
           if-no-files-found: error
+
+  firmware:
+    name: Прошивка подсветки (ESP32-S3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Тест логики платы (g++)
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -I hardware/key-lights/firmware/MIDITeacherLights \
+            hardware/key-lights/firmware/test/lights_core_test.cpp -o lights_core_test
+          ./lights_core_test
+
+      - uses: arduino/setup-arduino-cli@v2
+
+      - name: Ядро esp32 и библиотека NeoPixel
+        run: |
+          URL=https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index --additional-urls "$URL"
+          arduino-cli core install esp32:esp32@3.1.1 --additional-urls "$URL"
+          arduino-cli lib install "Adafruit NeoPixel"
+
+      - name: Сборка (USB-OTG TinyUSB → USB-MIDI)
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32s3:USBMode=default --export-binaries \
+            --output-dir build hardware/key-lights/firmware/MIDITeacherLights
+          ls -l build
+          cp build/MIDITeacherLights.ino.merged.bin MIDI-Teacher-Lights-esp32s3.bin
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: MIDI-Teacher-Lights-esp32s3-${{ github.sha }}
+          path: MIDI-Teacher-Lights-esp32s3.bin
+          if-no-files-found: error
