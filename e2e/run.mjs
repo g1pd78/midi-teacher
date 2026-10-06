@@ -1561,6 +1561,33 @@ try {
   ok(`главная: ${cs.slice(5).replace(/\s+/g, " ")} — засчитан, открывает урок`);
   await waitFor("к курсу", () => click("← Курс"));
 
+  console.log("Сквозной тест: новая музыка");
+  await waitFor("вкладка пьес", () => click("Пьесы"));
+  await waitFor("карточка «К Элизе»", () =>
+    js("const b = [...document.querySelectorAll('.piece-card')].find((b) => b.textContent.includes('К Элизе')); if (!b) return false; b.click(); return true;"),
+  );
+  await waitFor("ноты «К Элизе»", () => js("return document.querySelectorAll('.score-page svg g.note').length > 40;"), 30000);
+  ok("«К Элизе» открывается: ноты на стане");
+  await waitFor("к пьесам", () => click("← Пьесы"));
+
+  // Песня на барабанах: бот играет на пэдах (назначенные — пэдами, томы и тарелка — экранными пэдами).
+  const DRUM_ID = { 48: "tom", 43: "floorTom", 49: "crash", 51: "ride" };
+  const songHit = async (p) => {
+    if (padOf[p]) return padHit(padOf[p]);
+    await js(
+      `const b = document.querySelector("[data-drum-pads] [data-drum='${DRUM_ID[p]}']"); b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));`,
+    );
+    await sleep(60);
+  };
+  await waitFor("вкладка барабанов", () => click("Барабаны"));
+  await waitFor("песня «Ода к радости · простой бит»", () => clickSel("[data-drum-song='drum-song-ode']"));
+  await waitFor("ударный стан песни", () => js("return !!document.querySelector('.score-page svg g.note') && !!document.querySelector('[data-drum-pads]');"), 30000);
+  await waitFor("режим ожидания", () => click("Ожидание"));
+  await waitFor("первый шаг песни", pitches, 10000);
+  const songSteps = await playWait("песня на барабанах", songHit);
+  ok(`барабаны к песне: «Ода к радости» сыграна на пэдах — ${songSteps} шагов, сбивки по томам и тарелка, 0 ошибок`);
+  await waitFor("к барабанам", () => click("← Барабаны"));
+
   console.log("Сквозной тест: доводка");
   // Панель пьесы: редкое — в меню «⋯»; Esc закрывает только меню.
   await waitFor("вкладка пьес", () => click("Пьесы"));

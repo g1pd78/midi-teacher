@@ -12,6 +12,12 @@ import brahms from "./brahms-lullaby.musicxml?raw";
 import oldFrench from "./old-french-song.musicxml?raw";
 import minuet from "./minuet-g-anh114.musicxml?raw";
 import minuetGm from "./minuet-gm-anh115.musicxml?raw";
+import canon from "./canon.musicxml?raw";
+import morning from "./morning.musicxml?raw";
+import greensleeves from "./greensleeves.musicxml?raw";
+import gymnopedie from "./gymnopedie-1.musicxml?raw";
+import prelude from "./prelude-c-bwv846.musicxml?raw";
+import elise from "./fur-elise.musicxml?raw";
 
 export interface BuiltinPiece {
   id: string;
@@ -81,6 +87,22 @@ export const BUILTIN_PIECES: BuiltinPiece[] = [
     data: kalinka,
   },
   {
+    id: "builtin:canon",
+    title: "Канон (упрощённо)",
+    composer: "И. Пахельбель",
+    level: "Начальный",
+    description: "Бас-остинато из восьми нот по кругу и три вариации сверху: половинные, четверти, терции. Ре мажор.",
+    data: canon,
+  },
+  {
+    id: "builtin:morning",
+    title: "Утро (упрощённо)",
+    composer: "Э. Григ, из «Пер Гюнта»",
+    level: "Начальный",
+    description: "Мелодия флейты в до мажоре, 6/8, ровными восьмыми; левая рука держит до и соль.",
+    data: morning,
+  },
+  {
     id: "builtin:brahms-lullaby",
     title: "Колыбельная",
     composer: "Й. Брамс, op. 49 №4",
@@ -95,6 +117,22 @@ export const BUILTIN_PIECES: BuiltinPiece[] = [
     level: "Лёгкий",
     description: "Из «Детского альбома». Соль минор, 2/4; мелодия полностью, в левой руке упрощённый бас.",
     data: oldFrench,
+  },
+  {
+    id: "builtin:greensleeves",
+    title: "Гринсливз",
+    composer: "Английская народная песня",
+    level: "Лёгкий",
+    description: "Ля минор, 3/4, затакт, четверть с точкой; куплет и припев. Левая рука — квинты по гармонии.",
+    data: greensleeves,
+  },
+  {
+    id: "builtin:gymnopedie",
+    title: "Гимнопедия №1 (начало)",
+    composer: "Э. Сати",
+    level: "Лёгкий",
+    description: "Медленный вальс в ре мажоре: левая рука — бас и аккорд, правая — певучая мелодия. Вступление и первая фраза.",
+    data: gymnopedie,
   },
   {
     id: "builtin:minuet-g",
@@ -112,5 +150,21 @@ export const BUILTIN_PIECES: BuiltinPiece[] = [
     level: "Средний",
     description: "Пара к менуэту соль мажор: соль минор, 3/4, левая рука уходит в низкий регистр. Издание Mutopia №76, без украшений.",
     data: minuetGm,
+  },
+  {
+    id: "builtin:prelude-c",
+    title: "Прелюдия до мажор",
+    composer: "И. С. Бах, BWV 846",
+    level: "Средний",
+    description: "Из «Хорошо темперированного клавира»: один узор шестнадцатыми, меняются только аккорды. Тт. 1–19 и заключительный аккорд.",
+    data: prelude,
+  },
+  {
+    id: "builtin:fur-elise",
+    title: "К Элизе",
+    composer: "Л. ван Бетховен, WoO 59",
+    level: "Средний",
+    description: "Тема дважды, 3/8, шестнадцатые: руки передают друг другу арпеджио. Без середины.",
+    data: elise,
   },
 ];

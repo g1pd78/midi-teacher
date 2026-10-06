@@ -2,7 +2,10 @@ import { beforeAll, describe, expect, it } from "vitest";
 import createVerovioModule from "verovio/wasm";
 import { VerovioToolkit } from "verovio/esm";
 import { buildNotes, parseMei, timemapNoteIds, type MidiValues, type TimemapEntry } from "./score";
+import { DRUM_SONGS, DRUM_SONG_BY_ID, drumSongBars, drumSongTitle, drumSongTs } from "./drumSongs";
+import { partChart, songAccompaniment } from "./tabsong";
 import {
+  DRUM_BY_GM,
   DRUM_BY_ID,
   DRUM_EXERCISES,
   bar,
@@ -131,5 +134,28 @@ describe("ступени", () => {
     const next = drumUnlocked(new Set(["drum-groove-quarters"]));
     expect(next.has("drum-groove-hh-quarters")).toBe(true);
     expect(next.has("drum-groove-rock")).toBe(false);
+  });
+});
+
+describe("барабаны к песням", () => {
+  it("партия на пэдах: грув, сбивки раз в четыре такта, тарелка в конце; мелодия, бас и аккорды звучат", () => {
+    for (const d of DRUM_SONGS) {
+      const ts = drumSongTs(d);
+      const bars = drumSongBars(d);
+      expect(ts.masters.length, d.id).toBe(bars);
+      expect(ts.parts.map((p) => p.kind), d.id).toEqual(["drums", "other", "bass", "piano"]);
+      const mei = partChart(ts, 0).mei;
+      expect(isDrumMei(mei), d.id).toBe(true);
+      const notes = render(mei);
+      const gms = new Set(notes.map((n) => n.pitch));
+      expect(gms.has(36) && gms.has(38) && gms.has(49), d.id).toBe(true);
+      if (bars > 4) expect(gms.has(48), d.id).toBe(true);
+      // Все ноты партии — барабаны установки (их можно назначить на пэды).
+      for (const g of gms) expect(DRUM_BY_GM.has(g), `${d.id}: ${g}`).toBe(true);
+      const acc = songAccompaniment(ts, 0);
+      expect(acc.filter((n) => n.program === 73).length, d.id).toBeGreaterThan(10);
+      expect(acc.some((n) => n.program === 33), d.id).toBe(true);
+    }
+    expect(drumSongTitle(DRUM_SONG_BY_ID.get("drum-song-birthday")!)).toBe("С днём рождения · вальс");
   });
 });

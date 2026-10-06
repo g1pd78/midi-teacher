@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import createVerovioModule from "verovio/wasm";
 import { VerovioToolkit } from "verovio/esm";
-import { STRUM_BY_ID, STRUM_PATTERNS, patternsFor, songStrumBars, strumSong } from "./strum";
+import { STRUM_BY_ID, STRUM_PATTERNS, missingShapes, patternsFor, songStrumBars, strumSong } from "./strum";
 import { BUILTIN_SONGS } from "./songs";
 import { partChart, songAccompaniment, type TabSong } from "./tabsong";
 import { TUNINGS } from "./guitar";
@@ -70,6 +70,7 @@ describe("бой", () => {
       if (!list.length) continue;
       const bars = songStrumBars(song, list[0]);
       expect(bars.length, song.title).toBeGreaterThan(1);
+      expect(missingShapes(bars), song.title).toEqual([]);
       const s = strumSong({ bars, pattern: list[0], bpm: song.bpm, tuning: STD, title: song.title });
       const { log } = play(partChart(s, 0).mei);
       expect(log, song.title).not.toMatch(/\[Error\]/);

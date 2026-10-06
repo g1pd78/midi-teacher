@@ -5,6 +5,7 @@ import { GTR_CATEGORIES, GTR_EXERCISES, GTR_EXERCISE_BY_ID, gtrUnlocked, gtrWarm
 import { FRET_LEVELS, fretSeries, fretUnlocked, judgeFret, fretLevelId } from "./fretboard";
 import { partChart, songAccompaniment, type TabSong } from "./tabsong";
 import { TUNINGS } from "./guitar";
+import { GTR_PIECES, GTR_PIECE_BY_ID, gtrPieceSong } from "./guitarPieces";
 import { buildNotes, parseMei, timemapNoteIds, type MidiValues, type TimemapEntry } from "./score";
 import type { ExerciseStatView } from "./exercises";
 
@@ -185,9 +186,12 @@ describe("гитарные упражнения", () => {
     expect(open2.has("bass-shape-r58-70")).toBe(true);
   });
 
-  it("открытие: сначала только паучок и бой, после первого паучка — пентатоника и грувы", () => {
+  it("открытие: сначала только паучок, бой и первая пьеса, после первого паучка — пентатоника и грувы", () => {
     const open0 = gtrUnlocked(new Set(), "guitar");
-    expect([...open0].every((id) => id.startsWith("gtr-spider-") || id.startsWith("gtr-strum-"))).toBe(true);
+    expect([...open0].every((id) => id.startsWith("gtr-spider-") || id.startsWith("gtr-strum-") || id === "gtr-piece-twinkle")).toBe(true);
+    expect(open0.has("gtr-piece-twinkle")).toBe(true);
+    expect(open0.has("gtr-piece-ode")).toBe(false);
+    expect(gtrUnlocked(new Set(["gtr-piece-twinkle"]), "guitar").has("gtr-piece-ode")).toBe(true);
     expect(open0.has("gtr-strum-quarters-emam-70")).toBe(true);
     expect(open0.has("gtr-spider-1234-5-60")).toBe(true);
     expect(open0.has("gtr-spider-1234-5-80")).toBe(false);
@@ -263,5 +267,31 @@ describe("тренажёр грифа", () => {
     expect(fretUnlocked([], "guitar")).toBe(1);
     expect(fretUnlocked([stat(fretLevelId("guitar", 1)), stat(fretLevelId("guitar", 2))], "guitar")).toBe(3);
     expect(fretUnlocked([stat(fretLevelId("guitar", 1))], "bass")).toBe(1);
+  });
+});
+
+const STD_GTR = TUNINGS.guitar;
+
+describe("пьесы для классической гитары", () => {
+  it("такты складываются, лады в первой позиции, бас ниже мелодии, Verovio рисует табы", () => {
+    for (const p of GTR_PIECES) {
+      const s = gtrPieceSong(p, STD_GTR);
+      expect(s.masters.length, p.id).toBe(p.bars.length);
+      const { notes, log } = play(partChart(s, 0).mei);
+      expect(log, p.id).not.toMatch(/\[Error\]/);
+      expect(notes.length, p.id).toBe(pitchesOf(s).length);
+      const beats = s.parts[0].staves[0].bars.flat(2);
+      for (const b of beats) for (const n of b.notes) expect(n.fret!, p.id).toBeLessThanOrEqual(5);
+      // В одном аккорде — разные струны.
+      for (const bar of s.parts[0].staves[0].bars) {
+        const at = new Map<number, number[]>();
+        for (const v of bar) for (const b of v) for (const n of b.notes) at.set(b.tick, [...(at.get(b.tick) ?? []), n.string!]);
+        for (const strings of at.values()) expect(new Set(strings).size, p.id).toBe(strings.length);
+      }
+    }
+    expect(() => gtrPieceSong({ ...GTR_PIECES[0], bars: ["B1:q"] }, STD_GTR)).toThrow(/длительность/);
+    const ode = gtrPieceSong(GTR_PIECE_BY_ID.get("ode")!, STD_GTR);
+    expect(ode.parts[0].staves[0].bars[0][0].map((b) => b.notes[0].pitch)).toEqual([64, 64, 65, 67]);
+    expect(ode.parts[0].staves[0].bars[0][1].map((b) => b.notes[0].pitch)).toEqual([48, 48]);
   });
 });

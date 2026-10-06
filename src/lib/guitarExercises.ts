@@ -9,9 +9,10 @@ import { TPQ, writtenDuration, type TabSong, type TsBeat, type TsNote, type TsPa
 import { parseChord, rootPc } from "./chords";
 import { STRUM_BY_ID, patternArrows, strumSong } from "./strum";
 import { patternPart } from "./drumPattern";
+import { GTR_PIECES, gtrPieceSong } from "./guitarPieces";
 
 export type GtrInstrument = "guitar" | "bass";
-export type GtrCategory = "spider" | "strum" | "pentatonic" | "scales" | "arpeggio" | "groove" | "technique" | "shapes";
+export type GtrCategory = "spider" | "strum" | "pentatonic" | "scales" | "arpeggio" | "groove" | "technique" | "shapes" | "pieces";
 
 export const GTR_CATEGORIES: Record<GtrInstrument, { id: GtrCategory; title: string; description: string }[]> = {
   guitar: [
@@ -21,6 +22,12 @@ export const GTR_CATEGORIES: Record<GtrInstrument, { id: GtrCategory; title: str
     { id: "scales", title: "Гаммы в позиции", description: "Мажор и натуральный минор, палец на лад: звуки гаммы на всех струнах, не сдвигая руку." },
     { id: "arpeggio", title: "Арпеджио", description: "Звуки мажорного и минорного трезвучия по струнам в позиции." },
     { id: "groove", title: "Игра под барабаны", description: "Простые риффы под бит: рок, буги, фанк, поп. Звучат барабаны — держи ритм вместе с ними." },
+    {
+      id: "pieces",
+      title: "Пьесы",
+      description:
+        "Классическая гитара: мелодия с басом и арпеджио правой рукой (p-i-m-a). Пьесы открываются по очереди; засчитываются высота нот и ритм.",
+    },
   ],
   bass: [
     { id: "spider", title: "Паучок и хроматика", description: "1-2-3-4 и перестановки по четырём струнам: пальцы левой руки и ровное чередование пальцев правой." },
@@ -456,6 +463,19 @@ function buildCatalog(): GtrExercise[] {
         });
       }
   }
+  // Пьесы для классической гитары.
+  for (const p of GTR_PIECES)
+    out.push({
+      id: `gtr-piece-${p.id}`,
+      instrument: "guitar",
+      category: "pieces",
+      group: p.title,
+      variant: p.level,
+      title: p.title,
+      bpm: p.bpm,
+      hint: p.hint,
+      build: (tuning) => gtrPieceSong(p, tuning),
+    });
   return out;
 }
 
@@ -776,6 +796,7 @@ export function gtrGate(instrument: GtrInstrument, category: GtrCategory): strin
   switch (category) {
     case "spider":
     case "strum":
+    case "pieces":
       return null;
     case "pentatonic":
     case "groove":

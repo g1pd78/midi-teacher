@@ -10,6 +10,8 @@ import {
   drumUnlocked,
   type DrumExercise,
 } from "../lib/drums";
+import { DRUM_SONGS, drumSongBars, drumSongTitle, drumSongTs, type DrumSong } from "../lib/drumSongs";
+import { partChart, songAccompaniment } from "../lib/tabsong";
 import { DrumPads } from "../components/DrumPads";
 import { useApp } from "../store";
 import { PieceView } from "./PieceView";
@@ -23,6 +25,7 @@ export function Drums() {
   const [stats, setStats] = useState<ExerciseStatView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [run, setRun] = useState<DrumExercise | null>(null);
+  const [song, setSong] = useState<DrumSong | null>(null);
   const [wizard, setWizard] = useState(false);
 
   const reload = useCallback(() => {
@@ -86,6 +89,17 @@ export function Drums() {
       />
     );
   }
+
+  if (song)
+    return (
+      <DrumSongView
+        def={song}
+        onBack={() => {
+          setSong(null);
+          reload();
+        }}
+      />
+    );
 
   if (wizard) return <PadWizard initial={pads} onDone={() => setWizard(false)} />;
 
@@ -166,8 +180,48 @@ export function Drums() {
           </section>
         );
       })}
+
+      <section className="card ex-category" data-category="drum-songs">
+        <div className="ex-category-head">
+          <h2 className="section-h">Песни</h2>
+          <span className="muted">
+            засчитано {DRUM_SONGS.filter((d) => passed.has(d.id)).length} из {DRUM_SONGS.length}
+          </span>
+        </div>
+        <p className="hint">
+          Партия барабанов к песне: грув, сбивки в конце фраз и тарелка в последнем такте. Приложение играет мелодию, аккорды и
+          бас — держи темп вместе с ними. Все песни открыты сразу.
+        </p>
+        <div className="drum-list">
+          {DRUM_SONGS.map((d) => (
+            <button key={d.id} className={`drum-item${passed.has(d.id) ? " passed" : " open"}`} onClick={() => setSong(d)} data-drum-song={d.id}>
+              <span className="drum-item-title">
+                {passed.has(d.id) && "✓ "}
+                {drumSongTitle(d)}
+              </span>
+              <span className="drum-item-hint">
+                {d.hint} Тактов: {drumSongBars(d)}.
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
     </main>
   );
+}
+
+/** Песня на барабанах: партия на пэдах, мелодия, аккорды и бас — аккомпанемент. */
+export function DrumSongView({ def, onBack, backLabel }: { def: DrumSong; onBack: () => void; backLabel?: string }) {
+  const source = useMemo(() => {
+    const ts = drumSongTs(def);
+    return {
+      id: `drumsong:${def.id}`,
+      title: drumSongTitle(def),
+      load: async () => ({ data: partChart(ts, 0).mei, zip: false }),
+      accompaniment: songAccompaniment(ts, 0),
+    };
+  }, [def]);
+  return <PieceView key={source.id} source={source} onBack={onBack} exercise={{ id: def.id, instrument: "drums", hint: def.hint, backLabel }} />;
 }
 
 /**

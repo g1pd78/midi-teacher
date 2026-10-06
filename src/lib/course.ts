@@ -8,6 +8,7 @@ import { BASS_STYLE_BY_ID, type BassStyle } from "./bassline";
 import { ROOT_LEVELS, rootLevelId } from "./bassRoot";
 import { CHORD_LEVELS, chordLevelId } from "./chordDrill";
 import { DRUM_EXERCISE_BY_ID } from "./drums";
+import { DRUM_SONG_BY_ID, drumSongTitle } from "./drumSongs";
 import { EAR_KINDS, EAR_LEVELS, earLevelId } from "./ear";
 import { EXERCISE_BY_ID, type ExerciseStatView } from "./exercises";
 import { FRET_LEVELS, fretLevelId } from "./fretboard";
@@ -57,7 +58,8 @@ export type CourseStep =
   | { kind: "echo"; level: number }
   | { kind: "jam"; lesson: number }
   | { kind: "piece"; id: string; hands?: "right" | "left" | "both" }
-  | { kind: "song"; id: string; style?: Style; strum?: string; bass?: BassStyle };
+  | { kind: "song"; id: string; style?: Style; strum?: string; bass?: BassStyle }
+  | { kind: "dsong"; id: string };
 
 export interface CourseLesson {
   /** «piano-3». */
@@ -95,6 +97,7 @@ const echo = (level: number): CourseStep => ({ kind: "echo", level });
 const jam = (lesson: number): CourseStep => ({ kind: "jam", lesson });
 const piece = (id: string, hands?: "right" | "left" | "both"): CourseStep => ({ kind: "piece", id: `builtin:${id}`, hands });
 const song = (id: string, o: { style?: Style; strum?: string; bass?: BassStyle } = {}): CourseStep => ({ kind: "song", id: `builtin-${id}`, ...o });
+const dsong = (id: string): CourseStep => ({ kind: "dsong", id: `drum-song-${id}` });
 
 function lessons(prefix: string, start: number, list: [string, string, CourseStep[]][]): CourseLesson[] {
   return list.map(([title, goal, steps], i) => ({ id: `${prefix}-${start + i}`, title, goal, steps }));
@@ -218,6 +221,29 @@ const PIANO: CourseModule[] = [
     ]),
     check: [read(10), chords(7), piece("minuet-g", "both")],
   },
+  {
+    id: "piano-m6",
+    title: "Классика и песни",
+    description: "Пахельбель, Григ, Сати, Бах и Бетховен; новые песни по буквам.",
+    lessons: lessons("piano", 16, [
+      [
+        "Канон и «Утро»",
+        "Бас-остинато по кругу в ре мажоре и размер 6/8: мелодия ровными восьмыми над выдержанным басом.",
+        [th("meter"), ex("five-D-updown-both"), rhy("line-5"), piece("canon", "both"), piece("morning", "both"), song("korobeiniki", { style: "oompah" }), ear("interval-3")],
+      ],
+      [
+        "«Гринсливз» и «Гимнопедия»",
+        "Ля минор с повышенными ступенями и затакт, медленный вальс: бас и аккорд в левой руке.",
+        [th("sharp-flat"), ex("minor-a-parallel"), read(9), piece("greensleeves", "both"), piece("gymnopedie", "both"), song("silent-night", { style: "oompah" }), ear("chord-2")],
+      ],
+      [
+        "Бах и Бетховен",
+        "Один узор шестнадцатыми на разных аккордах и арпеджио, которое руки передают друг другу.",
+        [th("pedal"), ex("arp-a-parallel2"), chords(7), piece("prelude-c", "both"), piece("fur-elise", "both"), song("merry-christmas", { style: "alberti" }), echo(5)],
+      ],
+    ]),
+    check: [piece("canon", "both"), piece("greensleeves", "both"), piece("prelude-c", "both")],
+  },
 ];
 
 const GUITAR: CourseModule[] = [
@@ -336,6 +362,29 @@ const GUITAR: CourseModule[] = [
     ]),
     check: [gtr("gtr-scale-am-70"), jam(5), gtr("gtr-groove-funk-80")],
   },
+  {
+    id: "guitar-m6",
+    title: "Классическая гитара",
+    description: "Пальцы правой руки p-i-m-a: мелодия с басом, арпеджио, «Гринсливз»; новые песни боем.",
+    lessons: lessons("guitar", 16, [
+      [
+        "Мелодия с басом",
+        "Большой палец на басу, мелодия на первых струнах: две партии одной рукой.",
+        [th("pima"), gtr("gtr-piece-twinkle"), gtr("gtr-piece-ode"), fret(2), song("korobeiniki", { strum: "pop" }), ear("interval-2")],
+      ],
+      [
+        "Арпеджио p-i-m-a",
+        "Пальцы правой руки по струнам аккорда — вверх и вниз — на до мажоре и соль-септаккорде.",
+        [gtr("gtr-piece-giuliani-pima"), gtr("gtr-piece-giuliani-pami"), gtr("gtr-arp-c-8"), gchord(3), song("silent-night", { strum: "waltz" }), ear("chord-2")],
+      ],
+      [
+        "«Гринсливз»",
+        "Ля минор в 3/4: мелодия с басом, соль-диез и фа-диез, затакт.",
+        [th("key-signature"), gtr("gtr-scale-am-70"), gtr("gtr-piece-greensleeves"), song("merry-christmas", { strum: "waltz" }), echo(4)],
+      ],
+    ]),
+    check: [gtr("gtr-piece-ode"), gtr("gtr-piece-giuliani-pima"), gtr("gtr-piece-greensleeves")],
+  },
 ];
 
 const BASS: CourseModule[] = [
@@ -431,6 +480,29 @@ const BASS: CourseModule[] = [
     ]),
     check: [gtr("bass-groove-sync-85"), gtr("bass-groove-funk-80"), root(6)],
   },
+  {
+    id: "bass-m5",
+    title: "Новые песни",
+    description: "Басовые линии к «Коробейникам», вальсам и народным песням на два.",
+    lessons: lessons("bass", 13, [
+      [
+        "«Коробейники»",
+        "Ля минор в быстрой песне: бас по основным тонам, потом с квинтой.",
+        [gtr("bass-penta-am-updown"), song("korobeiniki", { bass: "roots" }), song("korobeiniki", { bass: "rootfifth" }), root(3), ear("rhythm-2")],
+      ],
+      [
+        "Вальсы",
+        "Размер 3/4: бас на «раз», октавы и проходящие ноты.",
+        [th("meter"), song("silent-night", { bass: "roots" }), song("merry-christmas", { bass: "octaves" }), song("silent-night", { bass: "passing" }), root(4), ear("chord-2")],
+      ],
+      [
+        "Народные песни на два",
+        "2/4: «Калинка» и «Во поле берёза» — тон-квинта и walking bass.",
+        [song("bereza", { bass: "roots" }), song("kalinka", { bass: "rootfifth" }), song("kalinka", { bass: "walking" }), gtr("bass-groove-octaves-100"), echo(3)],
+      ],
+    ]),
+    check: [song("korobeiniki", { bass: "rootfifth" }), song("merry-christmas", { bass: "octaves" }), song("kalinka", { bass: "walking" })],
+  },
 ];
 
 const DRUMS: CourseModule[] = [
@@ -503,6 +575,29 @@ const DRUMS: CourseModule[] = [
     ]),
     check: [drum("groove-funk"), drum("groove-shuffle"), drum("groove-fill-crash")],
   },
+  {
+    id: "drums-m4",
+    title: "Песни на барабанах",
+    description: "Партия барабанов к песням: приложение играет мелодию, аккорды и бас, ты — бит и сбивки.",
+    lessons: lessons("drums", 10, [
+      [
+        "Первые песни",
+        "Простой бит и поп под мелодию: держи темп вместе с аккомпанементом, сбивка в конце фразы.",
+        [th("drum-fill"), drum("groove-quarters"), dsong("ode"), dsong("jingle"), rhy("line-4")],
+      ],
+      [
+        "Вальс и полька",
+        "На три и на два: вальс «С днём рождения» и полька «Калинка».",
+        [th("meter"), rhy("line-6"), dsong("birthday"), dsong("kalinka"), drum("groove-fill-toms"), ear("rhythm-2")],
+      ],
+      [
+        "Рок-песня",
+        "Рок-бит с бочкой на «и» третьей доли и сбивка шестнадцатыми.",
+        [drum("groove-rock-and"), drum("rud-singles16"), dsong("korobeiniki"), drum("groove-fill-crash"), ear("rhythm-3")],
+      ],
+    ]),
+    check: [dsong("ode"), dsong("birthday"), dsong("korobeiniki")],
+  },
 ];
 
 export const COURSE: Record<CourseInstrument, CourseModule[]> = { piano: PIANO, guitar: GUITAR, bass: BASS, drums: DRUMS };
@@ -528,6 +623,7 @@ export function stepRecordIds(step: CourseStep, instrument: CourseInstrument): s
     case "gtr":
     case "drum":
     case "ear":
+    case "dsong":
       return [step.id];
     case "read":
       return [readId(step.level), readWaitId(step.level)];
@@ -643,7 +739,7 @@ export function reviewStep(instrument: CourseInstrument, lessonId: string, p: Co
   const pool = all
     .slice(0, Math.max(0, idx))
     .flatMap((l) => l.steps)
-    .filter((s) => ["exercise", "gtr", "drum", "read", "rhythm", "chords", "gchord", "fret"].includes(s.kind) && stepDone(s, instrument, p));
+    .filter((s) => ["exercise", "gtr", "drum", "dsong", "read", "rhythm", "chords", "gchord", "fret"].includes(s.kind) && stepDone(s, instrument, p));
   const unique = pool.filter((s, i) => pool.findIndex((x) => JSON.stringify(x) === JSON.stringify(s)) === i);
   if (!unique.length) return null;
   const dayNo = Math.floor(Date.parse(`${day}T00:00:00Z`) / 86_400_000) || 0;
@@ -659,8 +755,10 @@ export function stepTitle(step: CourseStep, instrument: CourseInstrument): strin
       return `Тренажёр нот: ступень ${step.level}`;
     case "exercise":
       return `Упражнение: ${EXERCISE_BY_ID.get(step.id)?.title ?? step.id}`;
-    case "gtr":
-      return `Упражнение: ${GTR_EXERCISE_BY_ID.get(step.id)?.title.replace(/ \((гитара|бас)\)$/, "") ?? step.id}`;
+    case "gtr": {
+      const e = GTR_EXERCISE_BY_ID.get(step.id);
+      return `${e?.category === "pieces" ? "Пьеса для гитары" : "Упражнение"}: ${e?.title.replace(/ \((гитара|бас)\)$/, "") ?? step.id}`;
+    }
     case "drum":
       return `Барабаны: ${DRUM_EXERCISE_BY_ID.get(step.id)?.title ?? step.id}`;
     case "read":
@@ -692,6 +790,10 @@ export function stepTitle(step: CourseStep, instrument: CourseInstrument): strin
       const s = BUILTIN_SONGS.find((x) => x.id === step.id);
       const how = step.strum ? `боем «${STRUM_BY_ID.get(step.strum)?.name ?? step.strum}»` : step.bass ? `бас: ${BASS_STYLE_BY_ID.get(step.bass)?.name.toLowerCase() ?? step.bass}` : STYLE_NAME[step.style ?? "block"].toLowerCase();
       return `Песня: ${s?.title ?? step.id} — ${how}`;
+    }
+    case "dsong": {
+      const d = DRUM_SONG_BY_ID.get(step.id);
+      return `Песня на барабанах: ${d ? drumSongTitle(d) : step.id}`;
     }
   }
 }
@@ -736,5 +838,7 @@ export function stepExists(step: CourseStep, instrument: CourseInstrument): bool
       if (step.bass) return BASS_STYLE_BY_ID.has(step.bass);
       return true;
     }
+    case "dsong":
+      return DRUM_SONG_BY_ID.has(step.id);
   }
 }

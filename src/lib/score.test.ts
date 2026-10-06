@@ -153,6 +153,12 @@ describe("встроенные пьесы", () => {
     ["brahms-lullaby", 17, [64, 64, 67, 64, 64, 67]],
     ["old-french-song", 33, [62, 67, 69, 70, 72, 74]],
     ["minuet-gm-anh115", 32, [82, 81, 79, 81, 74, 74, 79, 67, 69, 70, 72, 74]],
+    ["fur-elise", 17, [76, 75, 76, 75, 76, 71, 74, 72, 69, 60, 64, 69]],
+    ["prelude-c-bwv846", 20, [67, 72, 76, 67, 72, 76]],
+    ["gymnopedie-1", 13, [78, 81, 79, 78, 73]],
+    ["canon", 13, [78, 76, 74, 73, 71, 69]],
+    ["morning", 10, [67, 64, 62, 60, 62, 64]],
+    ["greensleeves", 33, [69, 72, 74, 76, 77, 76]],
   ])("встроенная пьеса %s: такты, мелодия, обе руки", (file, measures, head) => {
     const { notes, structure } = load(`src/pieces/${file}.musicxml`);
     expect(structure.measures).toBe(measures);

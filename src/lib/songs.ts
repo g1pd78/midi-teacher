@@ -559,6 +559,8 @@ interface BuiltinDef {
   bpm: number;
   beats: number;
   pickup?: number;
+  /** Знаки при ключе (по умолчанию — до мажор / ля минор). */
+  fifths?: number;
   melody: string;
   chords: string;
   style: Style;
@@ -634,6 +636,60 @@ const BUILTIN_DEFS: BuiltinDef[] = [
     chords: "C | G7 | G7 | C | C7 | F | C G7 | C",
     style: "oompah",
   },
+  {
+    id: "korobeiniki",
+    title: "Коробейники",
+    bpm: 120,
+    beats: 4,
+    melody:
+      "e5q b4e c5e d5q c5e b4e | a4q a4e c5e e5q d5e c5e | b4q. c5e d5q e5q | c5q a4q a4h | re d5q f5e a5q g5e f5e | e5q. c5e e5q d5e c5e | b4q b4e c5e d5q e5q | c5q a4q a4h | e5q b4e c5e d5q c5e b4e | a4q a4e c5e e5q d5e c5e | b4q. c5e d5q e5q | c5q a4q a4h | re d5q f5e a5q g5e f5e | e5q. c5e e5q d5e c5e | b4q b4e c5e d5q e5q | c5q a4q a4h",
+    chords: "E7 | Am | E7 | Am | Dm | C | E7 | Am | E7 | Am | E7 | Am | Dm | C | E7 | Am",
+    style: "oompah",
+  },
+  {
+    id: "bereza",
+    title: "Во поле берёза стояла",
+    bpm: 88,
+    beats: 2,
+    melody:
+      "e5e e5e e5e e5e | d5q c5e c5e | b4q a4q | e5e e5e g5e e5e | d5e d5e c5e c5e | b4q a4q | b4q. c5e | d5q c5e c5e | b4q a4q | b4q. c5e | d5e e5e c5e c5e | b4q a4q",
+    chords: "Am | Dm Am | E Am | C | G C | E Am | E | Dm Am | E Am | E | Dm Am | E Am",
+    style: "block",
+  },
+  {
+    id: "kalinka",
+    title: "Калинка (припев)",
+    bpm: 96,
+    beats: 2,
+    pickup: 4,
+    fifths: -1,
+    melody:
+      "a4q | g4q e4e f4e | g4q e4e f4e | g4q f4e e4e | d4q a4e a4e | g4e. f4s e4e f4e | g4q e4e f4e | g4q f4e e4e | d4q a4q | g4q e4e f4e | g4q e4e f4e | g4q f4e e4e | d4q a4e a4e | g4e. f4s e4e f4e | g4q e4e f4e | g4q f4e e4e | d4h",
+    chords: "A7 | A7 | A7 | Dm | A7 | A7 | A7 | Dm | A7 | A7 | A7 | Dm | A7 | A7 | A7 | Dm",
+    style: "oompah",
+  },
+  {
+    id: "silent-night",
+    title: "Тихая ночь (Ф. Грубер)",
+    bpm: 80,
+    beats: 3,
+    melody:
+      "g4q. a4e g4q | e4h. | g4q. a4e g4q | e4h. | d5h d5q | b4h. | c5h c5q | g4h. | a4h a4q | c5q. b4e a4q | g4q. a4e g4q | e4h. | a4h a4q | c5q. b4e a4q | g4q. a4e g4q | e4h. | d5h d5q | f5q. d5e b4q | c5h. | e5h. | c5q g4q e4q | g4q. f4e d4q | c4h. | c4h.",
+    chords: "C | C | C | C | G7 | G7 | C | C | F | F | C | C | F | F | C | C | G7 | G7 | C | C | C | G7 | C | C",
+    style: "oompah",
+  },
+  {
+    id: "merry-christmas",
+    title: "Весёлого Рождества (We Wish You a Merry Christmas)",
+    bpm: 100,
+    beats: 3,
+    pickup: 4,
+    fifths: 1,
+    melody:
+      "d4q | g4q g4e a4e g4e f#4e | e4q e4q e4q | a4q a4e b4e a4e g4e | f#4q d4q d4q | b4q b4e c5e b4e a4e | g4q e4q d4e d4e | e4q a4q f#4q | g4h.",
+    chords: "G | C | A7 | D | B7 | Em | C D | G",
+    style: "oompah",
+  },
 ];
 
 export const BUILTIN_SONGS: LeadSong[] = BUILTIN_DEFS.map((d) => {
@@ -644,7 +700,7 @@ export const BUILTIN_SONGS: LeadSong[] = BUILTIN_DEFS.map((d) => {
     bpm: d.bpm,
     beats: d.beats,
     unit: 4,
-    fifths: 0,
+    fifths: d.fifths ?? 0,
     pickup: d.pickup ?? 0,
     melody: m.notes,
     chords: d.chords,

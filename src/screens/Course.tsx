@@ -27,6 +27,7 @@ import {
   type LessonState,
 } from "../lib/course";
 import { DRUM_EXERCISE_BY_ID, drumMei } from "../lib/drums";
+import { DRUM_SONG_BY_ID } from "../lib/drumSongs";
 import { EAR_LEVELS, earLevelId } from "../lib/ear";
 import { EXERCISE_BY_ID, exerciseMei } from "../lib/exercises";
 import { FRET_LEVELS } from "../lib/fretboard";
@@ -42,6 +43,7 @@ import { partChart, songAccompaniment } from "../lib/tabsong";
 import { CARD_BY_ID } from "../lib/theory";
 import { BassSongView, RootDrill } from "./Bass";
 import { ChordDrill } from "./Chords";
+import { DrumSongView } from "./Drums";
 import { EarRun } from "./Ear";
 import { dayKey } from "./Exercises";
 import { FretDrill } from "./FretTrainer";
@@ -474,6 +476,8 @@ function StepRun({ step, instrument, onDone }: { step: CourseStep; instrument: C
       if (step.bass) return <BassSongView song={song} style={step.bass} onBack={onDone} />;
       return null;
     }
+    case "dsong":
+      return <DrumSongView def={DRUM_SONG_BY_ID.get(step.id)!} onBack={onDone} backLabel={back} />;
     default:
       return null;
   }
