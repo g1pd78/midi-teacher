@@ -18,6 +18,8 @@ import greensleeves from "./greensleeves.musicxml?raw";
 import gymnopedie from "./gymnopedie-1.musicxml?raw";
 import prelude from "./prelude-c-bwv846.musicxml?raw";
 import elise from "./fur-elise.musicxml?raw";
+import preludeFull from "./prelude-c-bwv846-full.musicxml?raw";
+import eliseFull from "./fur-elise-full.musicxml?raw";
 
 export interface BuiltinPiece {
   id: string;
@@ -166,5 +168,23 @@ export const BUILTIN_PIECES: BuiltinPiece[] = [
     level: "Средний",
     description: "Тема дважды, 3/8, шестнадцатые: руки передают друг другу арпеджио. Без середины.",
     data: elise,
+  },
+  {
+    id: "builtin:prelude-c-full",
+    title: "Прелюдия до мажор (полностью)",
+    composer: "И. С. Бах, BWV 846",
+    level: "Продвинутый",
+    description:
+      "Оригинал целиком, 35 тактов: в левой руке два голоса — выдержанный бас и вторая нота узора. Издание Mutopia №5 (общественное достояние). Упрощённая версия — «Прелюдия до мажор».",
+    data: preludeFull,
+  },
+  {
+    id: "builtin:fur-elise-full",
+    title: "К Элизе (полностью)",
+    composer: "Л. ван Бетховен, WoO 59",
+    level: "Продвинутый",
+    description:
+      "Оригинал целиком: тема, светлая середина фа мажор с 32-ми, тема, драматичный эпизод с аккордами и хроматическим пассажем, тема. Повторы развёрнуты, форшлаги опущены. Издание Mutopia №931 (Breitkopf & Härtel, 1888; общественное достояние).",
+    data: eliseFull,
   },
 ];

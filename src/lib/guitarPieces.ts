@@ -3,7 +3,7 @@
 //
 // Запись такта — голоса через « / »: верхний (мелодия, штили вверх) и нижний (бас). Токен —
 // «B1:q» (струна по букве открытой струны стандартного строя от низкой E A D G B e, лад,
-// длительность w h q e s, точка — «q.»), аккорд — «A3+B1:h», пауза — «r:q», палец правой руки —
+// длительность w h q e s, точка — «q.», t — восьмая триоли), аккорд — «A3+B1:h», пауза — «r:q», палец правой руки —
 // «A3/p:e» (p i m a). Звуки считаются от открытых струн ученика, как в упражнениях.
 
 import { TPQ, writtenDuration, type TabSong, type TsBeat, type TsPart } from "./tabsong";
@@ -21,8 +21,8 @@ export interface GtrPiece {
 }
 
 const LETTERS = "EADGBe";
-const LEN: Record<string, number> = { w: TPQ * 4, h: TPQ * 2, q: TPQ, e: TPQ / 2, s: TPQ / 4 };
-const TOKEN = /^(r|[EADGBe]\d+(?:\+[EADGBe]\d+)*)(?:\/([pima]))?:([whqes])(\.?)$/;
+const LEN: Record<string, number> = { w: TPQ * 4, h: TPQ * 2, q: TPQ, e: TPQ / 2, s: TPQ / 4, t: TPQ / 3 };
+const TOKEN = /^(r|[EADGBe]\d+(?:\+[EADGBe]\d+)*)(?:\/([pima]))?:([whqest])(\.?)$/;
 
 /** Голос такта → доли; ошибка, если длительности не складываются в такт. */
 function voiceBeats(text: string, tuning: number[], barTicks: number, where: string): TsBeat[] {
@@ -32,14 +32,15 @@ function voiceBeats(text: string, tuning: number[], barTicks: number, where: str
     const m = TOKEN.exec(tok);
     if (!m) throw new Error(`${where}: «${tok}»`);
     const dur = LEN[m[3]] * (m[4] ? 1.5 : 1);
-    const w = writtenDuration(dur)!;
+    const triplet = m[3] === "t";
+    const w = triplet ? { type: 8, dots: 0 } : writtenDuration(dur)!;
     if (m[1] !== "r") {
       const notes = m[1].split("+").map((n, i) => {
         const string = LETTERS.indexOf(n[0]);
         const fret = Number(n.slice(1));
         return { pitch: tuning[string] + fret, string, fret, techniques: i === 0 && m[2] ? [m[2]] : undefined };
       });
-      out.push({ tick, dur, type: w.type, dots: w.dots, notes });
+      out.push({ tick, dur, type: w.type, dots: w.dots, notes, ...(triplet ? { tuplet: [3, 2] as [number, number] } : {}) });
     }
     tick += dur;
   }
@@ -194,6 +195,51 @@ export const GTR_PIECES: GtrPiece[] = [
       "B1:q. B0:e G2:q / A0:h.",
       "G1:q. D4:e G1:q / E0:h.",
       "G2:h. / A0:h.",
+    ],
+  },
+  {
+    // «Испанский романс» (аноним, XIX в.). По изданию Mutopia Project №795 (набор Jeff Covey, 2006),
+    // лицензия CC BY-SA 2.5. Обе части без повторов; струны и лады — MIDI Teacher.
+    id: "romance",
+    title: "Испанский романс",
+    composer: "Аноним (изд. Mutopia №795, CC BY-SA 2.5)",
+    level: "Средний",
+    bpm: 60,
+    beats: 3,
+    hint: "Ми минор, затем ми мажор; 3/4, в каждой доле триоль. Мелодия — первая нота триоли на первой струне (a), за ней вторая и третья струны (m, i), бас большим пальцем (p) на первую долю. Во второй части — позиции на 4-м, 7-м и 9-м ладах. В оригинале каждая часть повторяется.",
+    bars: [
+      "e7/a:t B0/m:t G0/i:t e7/a:t B0/m:t G0/i:t e7/a:t B0/m:t G0/i:t / E0/p:h.",
+      "e7/a:t B0/m:t G0/i:t e5/a:t B0/m:t G0/i:t e3/a:t B0/m:t G0/i:t / E0/p:h.",
+      "e3/a:t B0/m:t G0/i:t e2/a:t B0/m:t G0/i:t e0/a:t B0/m:t G0/i:t / E0/p:h.",
+      "e0/a:t B0/m:t G0/i:t e3/a:t B0/m:t G0/i:t e7/a:t B0/m:t G0/i:t / E0/p:h.",
+      "e12/a:t B0/m:t G0/i:t e12/a:t B0/m:t G0/i:t e12/a:t B0/m:t G0/i:t / E0/p:h.",
+      "e12/a:t B0/m:t G0/i:t e10/a:t B0/m:t G0/i:t e8/a:t B0/m:t G0/i:t / E0/p:h.",
+      "e8/a:t B5/m:t G5/i:t e7/a:t B5/m:t G5/i:t e5/a:t B5/m:t G5/i:t / A0/p:h.",
+      "e5/a:t B5/m:t G5/i:t e7/a:t B5/m:t G5/i:t e8/a:t B5/m:t G5/i:t / A0/p:h.",
+      "e7/a:t B7/m:t G8/i:t e8/a:t B7/m:t G8/i:t e7/a:t B7/m:t G8/i:t / A2/p:h.",
+      "e11/a:t B7/m:t G8/i:t e8/a:t B7/m:t G8/i:t e7/a:t B7/m:t G8/i:t / A2/p:h.",
+      "e7/a:t B0/m:t G0/i:t e5/a:t B0/m:t G0/i:t e3/a:t B0/m:t G0/i:t / E0/p:h.",
+      "e3/a:t B0/m:t G0/i:t e2/a:t B0/m:t G0/i:t e0/a:t B0/m:t G0/i:t / E0/p:h.",
+      "e2/a:t B0/m:t G2/i:t e2/a:t B0/m:t G2/i:t e2/a:t B0/m:t G2/i:t / A2/p:h.",
+      "e2/a:t B0/m:t G2/i:t e3/a:t B0/m:t G2/i:t e2/a:t B0/m:t G2/i:t / D1/p:h.",
+      "e0/a:t B0/m:t G0/i:t e0/a:t B0/m:t G0/i:t e0/a:t B0/m:t G0/i:t / D2/p:q A2/p:q E3/p:q",
+      "e0/a:h r:q / E0/p:h r:q",
+      "e4/a:t B0/m:t G1/i:t e4/a:t B0/m:t G1/i:t e4/a:t B0/m:t G1/i:t / E0/p:h.",
+      "e4/a:t B0/m:t G1/i:t e2/a:t B0/m:t G1/i:t e0/a:t B0/m:t G1/i:t / E0/p:h.",
+      "e0/a:t G2/m:t D4/i:t B4/a:t G2/m:t D4/i:t B4/a:t G2/m:t D4/i:t / A0/p:h.",
+      "B4/a:t G2/m:t D4/i:t B3/a:t G2/m:t D4/i:t B4/a:t G2/m:t D4/i:t / A0/p:h.",
+      "e9/a:t B7/m:t G8/i:t e9/a:t B7/m:t G8/i:t e9/a:t B7/m:t G8/i:t / A2/p:h.",
+      "e9/a:t B7/m:t G8/i:t e11/a:t B7/m:t G8/i:t e9/a:t B7/m:t G8/i:t / A2/p:h.",
+      "e9/a:t B9/m:t G9/i:t e7/a:t B9/m:t G9/i:t e7/a:t B9/m:t G9/i:t / E0/p:h.",
+      "e7/a:t B9/m:t G9/i:t e9/a:t B9/m:t G9/i:t e11/a:t B9/m:t G9/i:t / E0/p:h.",
+      "e12/a:t B9/m:t G9/i:t e12/a:t B9/m:t G9/i:t e12/a:t B9/m:t G9/i:t / E0/p:h.",
+      "e12/a:t B9/m:t G9/i:t e11/a:t B9/m:t G9/i:t e10/a:t B9/m:t G9/i:t / E0/p:h.",
+      "e9/a:t B5/m:t G6/i:t e9/a:t B5/m:t G6/i:t e9/a:t B5/m:t G6/i:t / A0/p:h.",
+      "e9/a:t B5/m:t G6/i:t e7/a:t B5/m:t G6/i:t e5/a:t B5/m:t G6/i:t / A0/p:h.",
+      "e4/a:t B4/m:t G4/i:t e4/a:t B4/m:t G4/i:t e4/a:t B4/m:t G4/i:t / A2/p:h.",
+      "e4/a:t B4/m:t G4/i:t e5/a:t B4/m:t G4/i:t e2/a:t B4/m:t G4/i:t / A2/p:h.",
+      "e0/a:t B0/m:t G1/i:t e0/a:t B0/m:t G1/i:t e0/a:t B0/m:t G1/i:t / D2/p:q A2/p:q E4/p:q",
+      "e0/a:h r:q / E0/p:h r:q",
     ],
   },
 ];

@@ -159,6 +159,8 @@ describe("встроенные пьесы", () => {
     ["canon", 13, [78, 76, 74, 73, 71, 69]],
     ["morning", 10, [67, 64, 62, 60, 62, 64]],
     ["greensleeves", 33, [69, 72, 74, 76, 77, 76]],
+    ["prelude-c-bwv846-full", 35, [67, 72, 76, 67, 72, 76]],
+    ["fur-elise-full", 126, [76, 75, 76, 75, 76, 71, 74, 72, 69, 60, 64, 69]],
   ])("встроенная пьеса %s: такты, мелодия, обе руки", (file, measures, head) => {
     const { notes, structure } = load(`src/pieces/${file}.musicxml`);
     expect(structure.measures).toBe(measures);
@@ -166,8 +168,9 @@ describe("встроенные пьесы", () => {
     const left = notes.filter((n) => n.hand === "left");
     expect(right.slice(0, head.length).map((n) => n.pitch)).toEqual(head);
     expect(left.length).toBeGreaterThan(3);
-    // Все ноты в пределах клавиатуры 61 клавиши (до большой — до пятой октавы).
-    for (const n of notes) expect(n.pitch).toBeGreaterThanOrEqual(36);
+    // Все ноты в пределах клавиатуры 61 клавиши (до большой — до пятой октавы); у полной «К Элизе» —
+    // ля контроктавы, как в оригинале.
+    for (const n of notes) expect(n.pitch).toBeGreaterThanOrEqual(file === "fur-elise-full" ? 33 : 36);
   });
 
   it("подписи нот добавляются в MEI и отображаются", () => {

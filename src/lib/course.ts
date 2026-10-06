@@ -248,6 +248,29 @@ const PIANO: CourseModule[] = [
     ]),
     check: [piece("canon", "both"), piece("greensleeves", "both"), piece("prelude-c", "both")],
   },
+  {
+    id: "piano-m7",
+    title: "Оригиналы",
+    description: "Прелюдия до мажор Баха и «К Элизе» Бетховена целиком — как написано, без упрощений.",
+    lessons: lessons("piano", 19, [
+      [
+        "Прелюдия целиком",
+        "Все 35 тактов: в левой руке два голоса — бас держится, вторая нота узора повторяется.",
+        [th("tie"), ex("arp-a-parallel2"), piece("prelude-c-full", "right"), piece("prelude-c-full", "left"), piece("prelude-c-full", "both")],
+      ],
+      [
+        "«К Элизе»: середина и эпизод",
+        "Фа-мажорная середина с 32-ми, аккорды и хроматический пассаж триолями — каждой рукой отдельно.",
+        [th("triplet"), read(10), piece("fur-elise-full", "right"), piece("fur-elise-full", "left"), echo(5)],
+      ],
+      [
+        "«К Элизе» целиком",
+        "Вся пьеса двумя руками: тема возвращается трижды, между ними — два разных эпизода.",
+        [th("pedal"), chords(7), piece("fur-elise-full", "both"), piece("prelude-c-full", "both"), ear("melody-2")],
+      ],
+    ]),
+    check: [piece("prelude-c-full", "both"), piece("fur-elise-full", "both")],
+  },
 ];
 
 const GUITAR: CourseModule[] = [
@@ -369,7 +392,7 @@ const GUITAR: CourseModule[] = [
   {
     id: "guitar-m6",
     title: "Классическая гитара",
-    description: "Пальцы правой руки p-i-m-a: мелодия с басом, арпеджио, «Гринсливз»; новые песни боем.",
+    description: "Пальцы правой руки p-i-m-a: мелодия с басом, арпеджио, «Гринсливз», «Испанский романс»; новые песни боем.",
     lessons: lessons("guitar", 16, [
       [
         "Мелодия с басом",
@@ -386,8 +409,13 @@ const GUITAR: CourseModule[] = [
         "Ля минор в 3/4: мелодия с басом, соль-диез и фа-диез, затакт.",
         [th("key-signature"), gtr("gtr-scale-am-70"), gtr("gtr-piece-greensleeves"), song("merry-christmas", { strum: "waltz" }), echo(4)],
       ],
+      [
+        "«Испанский романс»",
+        "Триоли a-m-i над басом p: ми минор в первой позиции, ми мажор — на 4-м, 7-м и 9-м ладах.",
+        [th("triplet"), gtr("gtr-arp-c-8"), gtr("gtr-piece-giuliani-pima"), gtr("gtr-piece-romance"), ear("chord-3")],
+      ],
     ]),
-    check: [gtr("gtr-piece-ode"), gtr("gtr-piece-giuliani-pima"), gtr("gtr-piece-greensleeves")],
+    check: [gtr("gtr-piece-ode"), gtr("gtr-piece-giuliani-pima"), gtr("gtr-piece-greensleeves"), gtr("gtr-piece-romance")],
   },
 ];
 

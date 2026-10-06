@@ -281,7 +281,8 @@ describe("пьесы для классической гитары", () => {
       expect(log, p.id).not.toMatch(/\[Error\]/);
       expect(notes.length, p.id).toBe(pitchesOf(s).length);
       const beats = s.parts[0].staves[0].bars.flat(2);
-      for (const b of beats) for (const n of b.notes) expect(n.fret!, p.id).toBeLessThanOrEqual(5);
+      // Первая позиция — кроме «Испанского романса» (позиции до 12-го лада).
+      for (const b of beats) for (const n of b.notes) expect(n.fret!, p.id).toBeLessThanOrEqual(p.id === "romance" ? 12 : 5);
       // В одном аккорде — разные струны.
       for (const bar of s.parts[0].staves[0].bars) {
         const at = new Map<number, number[]>();
@@ -293,5 +294,13 @@ describe("пьесы для классической гитары", () => {
     const ode = gtrPieceSong(GTR_PIECE_BY_ID.get("ode")!, STD_GTR);
     expect(ode.parts[0].staves[0].bars[0][0].map((b) => b.notes[0].pitch)).toEqual([64, 64, 65, 67]);
     expect(ode.parts[0].staves[0].bars[0][1].map((b) => b.notes[0].pitch)).toEqual([48, 48]);
+    // Триоли: 9 восьмых триоли в такте 3/4, мелодия си (B4) над басом ми (E2).
+    const romance = gtrPieceSong(GTR_PIECE_BY_ID.get("romance")!, STD_GTR);
+    const bar1 = romance.parts[0].staves[0].bars[0];
+    expect(bar1[0]).toHaveLength(9);
+    expect(bar1[0].every((b) => b.tuplet?.[0] === 3 && b.type === 8)).toBe(true);
+    expect(bar1[0].map((b) => b.notes[0].pitch).slice(0, 3)).toEqual([71, 59, 55]);
+    expect(bar1[1][0].notes[0].pitch).toBe(40);
+    expect(romance.masters).toHaveLength(32);
   });
 });
