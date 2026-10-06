@@ -280,7 +280,25 @@ pub fn code_import_samples(
     }
     let dir = samples_dir(&app)?.join(&name);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    for p in paths.iter().map(PathBuf::from).filter(|p| is_audio(p)) {
+    // Папку — по её звуковым файлам (без вложенных), по алфавиту.
+    let mut files = Vec::new();
+    for p in paths.iter().map(PathBuf::from) {
+        if p.is_dir() {
+            let mut inner: Vec<PathBuf> = std::fs::read_dir(&p)
+                .map_err(|e| e.to_string())?
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|f| f.is_file() && is_audio(f))
+                .collect();
+            inner.sort();
+            files.extend(inner);
+        } else if is_audio(&p) {
+            files.push(p);
+        }
+    }
+    if files.is_empty() {
+        return Err("нет звуковых файлов (wav, ogg, mp3, flac)".into());
+    }
+    for p in files {
         let file = p
             .file_name()
             .ok_or("неверный путь")?

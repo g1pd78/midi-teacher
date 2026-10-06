@@ -2,12 +2,14 @@
 // не звучит, а отмечается), перевод времени нажатий в циклы, подгрузка сэмплов заранее и офлайн-рендер WAV.
 // Все пакеты Strudel грузятся лениво — только при открытии вкладки.
 
+import { StateEffect } from "@codemirror/state";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { api, inTauri } from "../../api";
 import { ClockSync } from "../transport";
 import { loadStrudelCore, type Pattern } from "./evaluate";
 import { beforeEvalMt, evalInfo, installMt, isYou, setPanel, type EvalInfo, type PanelSettings } from "./mt";
 import { patternNotes, type CodeNote } from "./haps";
+import { strudelAssist } from "./complete";
 import { builtinSampleMap, NET_ALIAS_MAP, NET_SAMPLE_MAPS, proxiedMap, userSampleMap, type SampleBanks } from "./sounds";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -65,6 +67,15 @@ export function loadEngine(): Promise<Engine> {
     return { core, webaudio, codemirror, draw, transpiler };
   })();
   return engine;
+}
+
+/** Имена загруженных звуков (для подсказок в s("…")). */
+export function soundNames(e: Engine | null): string[] {
+  try {
+    return Object.keys(e?.webaudio.soundMap?.get?.() ?? {});
+  } catch {
+    return [];
+  }
 }
 
 /** Встроенные звуки, свои сэмплы и записи; интернет-наборы — по желанию. Можно вызывать повторно. */
@@ -167,6 +178,17 @@ export class LiveCode {
         }),
     });
     this.mirror.updateSettings?.({ ...codemirror.codemirrorSettings.get(), fontSize: 15, isLineWrappingEnabled: true });
+    // Автодополнение и справка по наведению (свои: звуки, русские описания, наши функции).
+    this.mirror.editor?.dispatch({ effects: StateEffect.appendConfig.of(strudelAssist(() => soundNames(this.e))) });
+  }
+
+  /** Вставить текст в позицию курсора (и выделить вставленное). */
+  insertAtCursor(text: string) {
+    const view = this.mirror?.editor;
+    if (!view) return;
+    const { from, to } = view.state.selection.main;
+    view.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from, head: from + text.length } });
+    view.focus();
   }
 
   get code(): string {

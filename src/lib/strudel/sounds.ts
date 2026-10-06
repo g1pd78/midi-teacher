@@ -133,3 +133,16 @@ export function proxiedMap(json: Record<string, unknown>, mapUrl: string, url: (
   }
   return out;
 }
+
+export const AUDIO_FILE = /\.(wav|ogg|mp3|flac)$/i;
+/** Имя звука по умолчанию: папка или первый файл, латиница/цифры/«_». */
+export function defaultSoundName(paths: string[]): string {
+  const first = paths[0] ?? "";
+  const base = first.split(/[\\/]/).filter(Boolean).pop() ?? "";
+  const stem = AUDIO_FILE.test(base) ? base.replace(AUDIO_FILE, "") : base;
+  const clean = stem
+    .replace(/[^A-Za-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+  return /^[a-z_]/.test(clean) ? clean : clean ? `s_${clean}` : "mysample";
+}

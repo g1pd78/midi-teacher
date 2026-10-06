@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, inTauri, listen, PADS_DEVICE } from "../../api";
 import { Piano } from "../../components/Piano";
 import { chordName, type Chord } from "../../lib/chords";
@@ -10,6 +10,16 @@ import { YouJudge, judgeTips, type JudgeSummary } from "../../lib/strudel/judge"
 import { feedLive, liveMonitor, onLive } from "../../lib/strudel/live";
 import { evalInfo, partLabel, type EvalInfo, type PanelSettings } from "../../lib/strudel/mt";
 import { useApp } from "../../store";
+import { CodeRoll } from "./CodeRoll";
+
+const ROLL_KEY = "mt-code-roll";
+const storedRoll = () => {
+  try {
+    return localStorage.getItem(ROLL_KEY) !== "0";
+  } catch {
+    return true;
+  }
+};
 
 export interface CodePanel extends PanelSettings {
   /** Подсветка звуков аккорда и лада для импровизации. */
@@ -81,6 +91,22 @@ export function CodeEditor({
   const [nowChord, setNowChord] = useState<Chord | null>(null);
   const [key, setKey] = useState<Key | null>(null);
   const [monitor, setMonitor] = useState(liveMonitor());
+  const [roll, setRoll] = useState(storedRoll);
+  const bgCanvas = useRef<HTMLCanvasElement>(null);
+  // Размер фонового холста — по области редактора.
+  useEffect(() => {
+    const c = bgCanvas.current;
+    if (!c) return;
+    const fit = () => {
+      const dpr = window.devicePixelRatio || 1;
+      c.width = Math.round(c.clientWidth * dpr);
+      c.height = Math.round(c.clientHeight * dpr);
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, []);
   const liveRef = useRef<LiveCode | null>(null);
   const judge = useRef(new YouJudge(!!panel.anyOctave));
   const improv = useRef<{ chord: number; scale: number; out: number; total: number }>({ chord: 0, scale: 0, out: 0, total: 0 });
@@ -293,6 +319,8 @@ export function CodeEditor({
   }, []);
 
   const set = (p: Partial<CodePanel>) => onPanelChange?.({ ...panel, ...p });
+  const getLive = useCallback(() => liveRef.current, []);
+  const getPlayed = useCallback(() => playedRef.current, []);
   const parts = info.parts;
   const showYou = !!(panel.myPart || panel.echoPart || info.hasYou);
   const tips = useMemo(() => (score ? judgeTips(score) : []), [score]);
@@ -309,9 +337,27 @@ export function CodeEditor({
         {toolbar}
         {loading && <span className="muted">Загрузка Strudel…</span>}
         {state.pending && <span className="muted">запуск…</span>}
+        <label className="check code-roll-toggle" title="Ноты всех партий по циклам, как на strudel.cc">
+          <input
+            type="checkbox"
+            checked={roll}
+            onChange={(e) => {
+              setRoll(e.target.checked);
+              try {
+                localStorage.setItem(ROLL_KEY, e.target.checked ? "1" : "0");
+              } catch {
+                /* без памяти */
+              }
+            }}
+            data-code-roll-toggle
+          />{" "}
+          Нотная лента
+        </label>
       </div>
       <div className="code-body">
         <div className="code-main">
+          {/* Холст для .pianoroll()/.punchcard() на фоне (Strudel ищет его по id) — только в области редактора. */}
+          <canvas id="test-canvas" className="code-bg-canvas" ref={bgCanvas} />
           <div className="code-cm" ref={root} data-code-cm />
           {state.error && (
             <div className="code-error" data-code-error>
@@ -399,6 +445,7 @@ export function CodeEditor({
           </aside>
         )}
       </div>
+      {roll && <CodeRoll live={getLive} parts={parts} played={getPlayed} compact={compact} />}
       <div className="code-piano">
         <Piano low={KB_LOW} high={KB_HIGH} highlight={highlight} naming={prefs.noteNames} />
       </div>

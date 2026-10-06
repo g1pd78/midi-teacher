@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type CodeFile } from "../api";
+import { api, onFileDrop, type CodeFile } from "../api";
 import { takeCodeRequest } from "../lib/codeBridge";
 import { EXAMPLES, FIRST_TRACK } from "../lib/strudel/examples";
 import { loadSounds } from "../lib/strudel/engine";
+import { AUDIO_FILE, defaultSoundName } from "../lib/strudel/sounds";
 import { CodeEditor, type CodeEditorHandle, type CodePanel } from "./code/CodeEditor";
 import { CodeTools } from "./code/CodeTools";
 
@@ -26,6 +27,7 @@ function store(key: string, v: string) {
 
 const settingsName = (file: string) => file.replace(/\.js$/, ".mt.json");
 
+
 /** Вкладка «Код»: треки-код (Strudel) в папке «Код», примеры, игра поверх кода. */
 export function Code() {
   const [files, setFiles] = useState<CodeFile[] | null>(null);
@@ -34,6 +36,7 @@ export function Code() {
   const [net, setNet] = useState(stored(NET_KEY) === "1");
   const [note, setNote] = useState<string | null>(null);
   const [editorKey, setEditorKey] = useState(0);
+  const [dropping, setDropping] = useState(false);
   const handle = useRef<CodeEditorHandle | null>(null);
   const saveTimer = useRef<number | null>(null);
   const lastSaved = useRef("");
@@ -97,6 +100,32 @@ export function Code() {
     void loadSounds({ net, reload: true });
   }, [net]);
 
+  // Перетаскивание сэмплов: копия в «Сэмплы\<имя>», обновить звуки, вставить s("имя:0") в курсор.
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let alive = true;
+    void onFileDrop(async (e) => {
+      if (e.type !== "drop") return setDropping(e.type === "over");
+      setDropping(false);
+      const paths = e.paths.filter((p) => AUDIO_FILE.test(p) || !/\.[A-Za-z0-9]{1,5}$/.test(p));
+      if (!paths.length) return setNote("Перетащи звуковые файлы (wav, ogg, mp3, flac) или папку с ними.");
+      const name = window.prompt("Имя звука для s(\"…\")", defaultSoundName(paths))?.trim();
+      if (!name) return;
+      try {
+        const sound = await api.codeImportSamples(paths, name);
+        await loadSounds({ net, reload: true });
+        handle.current?.live.insertAtCursor(`s("${sound}:0")`);
+        setNote(`Сэмплы добавлены: s("${sound}:0"), s("${sound}:1")… — папка «Сэмплы\\${sound}».`);
+      } catch (err) {
+        setNote(`Не удалось добавить сэмплы: ${err}`);
+      }
+    }).then((f) => (alive ? (off = f) : f()));
+    return () => {
+      alive = false;
+      off?.();
+    };
+  }, [net]);
+
   // Правка снаружи (свой редактор, Claude): при возвращении в окно — перечитать, если файл новее.
   useEffect(() => {
     const onFocus = () => {
@@ -148,6 +177,7 @@ export function Code() {
 
   return (
     <div className="code-screen" data-code-screen>
+      {dropping && <div className="code-drop">Отпусти, чтобы добавить сэмплы</div>}
       <aside className="code-files">
         <div className="code-files-head">
           <b>Мои треки</b>
