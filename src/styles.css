@@ -832,6 +832,69 @@ button.section-tile:hover {
   height: clamp(110px, 22vh, 190px);
   flex: none;
 }
+/* Схема ладоней по бокам клавиатуры. */
+.piano-with-palms {
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.piano-with-palms > .piano {
+  flex: 1;
+  min-width: 0;
+}
+.palm {
+  flex: none;
+  height: 100%;
+  width: auto;
+  aspect-ratio: 100 / 124;
+  max-width: 120px;
+  padding: 4px 0;
+}
+.palm-base {
+  fill: var(--panel);
+  stroke: var(--line);
+  stroke-width: 2;
+}
+.palm.miss .palm-base {
+  stroke: var(--bad);
+  stroke-width: 4;
+}
+.palm-finger {
+  fill: var(--panel);
+  stroke: var(--line);
+  stroke-width: 2;
+  transition: fill 0.12s;
+}
+.palm.right .palm-finger.next {
+  fill: var(--right-hand);
+}
+.palm.left .palm-finger.next {
+  fill: var(--left-hand);
+}
+.palm.right .palm-finger.soon {
+  fill: color-mix(in srgb, var(--right-hand) 30%, var(--panel));
+}
+.palm.left .palm-finger.soon {
+  fill: color-mix(in srgb, var(--left-hand) 30%, var(--panel));
+}
+.palm-finger.hit {
+  fill: var(--good) !important;
+}
+.palm-num {
+  font-size: 11px;
+  font-weight: 600;
+  fill: var(--text);
+  pointer-events: none;
+}
+.palm-finger.next + .palm-num {
+  fill: #10131a;
+}
+@media (max-width: 900px) {
+  .palm {
+    display: none;
+  }
+}
 .summary-overlay {
   position: absolute;
   inset: 0;

@@ -72,6 +72,8 @@ import { ClockSync, stepAt, transportPos, type Transport } from "../lib/transpor
 import { loadScore, renderScore, warmUpVerovio } from "../lib/verovio";
 import { SCREEN_DEVICE, deviceColor, useApp } from "../store";
 import { Toggle } from "../components/Toggle";
+import { Palm } from "../components/Hands";
+import { handFingers, handOfMiss, type PalmHit } from "../lib/hands";
 import { GuidePanel, SuggestionBar } from "./piece/GuidePanel";
 import { ExerciseSummary, ExerciseWaitSummary, RhythmSummaryPanel, WaitSummary } from "./piece/Summaries";
 import {
@@ -211,6 +213,17 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const clock = useRef(new ClockSync());
   // Общее
   const [wrongKey, setWrongKey] = useState<number | null>(null);
+  // Схема ладоней: вспышка пальца сыгранной ноты (или промах у руки).
+  const [palmHit, setPalmHit] = useState<PalmHit | null>(null);
+  const palmTimer = useRef<number | undefined>(undefined);
+  const flashPalm = useCallback((h: PalmHit) => {
+    setPalmHit(h);
+    window.clearTimeout(palmTimer.current);
+    palmTimer.current = window.setTimeout(() => setPalmHit(null), 350);
+  }, []);
+  /** Сыгранные ноты → вспышка пальца; обновляется на каждой отрисовке (события ядра слушаются один раз). */
+  const palmHitRef = useRef<(ids: string[]) => void>(() => {});
+  const palmMissRef = useRef<(pitch: number) => void>(() => {});
   const [loop, setLoop] = useState<Loop | null>(null);
   const loopClicks = useRef(0);
   const [toast, setToast] = useState<string | null>(null);
@@ -323,7 +336,6 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
       alive = false;
     };
     // setup.roles и setup.handOverrides входят в rolesKey и overridesKey
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source, transpose, rolesKey, overridesKey, wantDrums, fileSong, partMei]);
   useEffect(
     () => () => {
@@ -398,7 +410,6 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         ? meiToTab(mei, partStaff, strInst, meiInfo!.meter, fixedTab && !relayout ? {} : { tuning: tabOpen, capo: tabCapo, relayout })
         : null,
     // tabOpen, tabCapo и relayout входят в tabKey
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [mei, strInst, partStaff, fixedTab, tabKey],
   );
   const [retune, setRetune] = useState(false);
@@ -438,7 +449,6 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
       alive = false;
     };
     // width входит в layoutKey, fingers — в fingersKey
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayMei, showNames, naming, layoutKey, fingersKey, nameStaves]);
 
   // Гитара/бас: остальные партии пьесы звучат аккомпанементом (ноты того же MEI).
@@ -490,7 +500,6 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   // Аппликатура пьесы от ядра: ручные правки → файл → автоматический подбор.
   const fingerInput = useMemo(
     () => (scoreRef.current ? fingerNotes(scoreRef.current.notes, scoreRef.current.structure) : []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [notesKey],
   );
   useEffect(() => {
@@ -515,7 +524,6 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         : displayMei && scoreRef.current && !drums && !rhythmEx
           ? detectFeatures(displayMei, scoreRef.current.structure, scoreRef.current.notes)
           : [],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [displayMei, notesKey, tabTuningChanged],
   );
   const waterfallFingers = useMemo(
@@ -803,6 +811,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
       } else if (e.kind === "hit") {
         setHits((h) => new Set([...h, ...e.noteIds]));
         for (const id of e.noteIds) noteStates.current.set(id, "hit");
+        palmHitRef.current(e.noteIds);
       } else if (e.kind === "wrong") {
         flashWrong(e.pitch);
       } else if (e.kind === "finished") {
@@ -828,6 +837,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         hitLog.current.push({ id: e.id, deltaMs: e.deltaMs, velocity: e.velocity });
         noteStates.current.set(e.id, e.grade === "poor" ? "poor" : "hit");
         setMarksVersion((v) => v + 1);
+        palmHitRef.current([e.id]);
       } else if (e.kind === "miss") {
         noteStates.current.set(e.id, "miss");
         setMarksVersion((v) => v + 1);
@@ -859,6 +869,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   }, [resetMarks, isExercise]);
 
   function flashWrong(pitch: number) {
+    palmMissRef.current(pitch);
     setWrongKey(pitch);
     setTimeout(() => setWrongKey((k) => (k === pitch ? null : k)), 600);
   }
@@ -1200,6 +1211,33 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   }
   for (const [n, h] of Object.entries(held)) highlight[Number(n)] = { color: deviceColor(h.device, devices), strength: 0.85 };
   if (wrongKey !== null) highlight[wrongKey] = { color: "#FF5C5C", strength: 0.9 };
+
+  // Схема ладоней: пальцы текущего шага и следующего (по аппликатуре), только фортепиано.
+  const showPalms = !!p.palms && showFingers && !strInst && !drums && !rhythmEx && !editFingers;
+  const palms = useMemo(() => {
+    if (!showPalms) return null;
+    const at = cursorIds.length ? steps.onsets.indexOf(noteById.get(cursorIds[0])?.startMs ?? -1) : -1;
+    const nextIds = at >= 0 ? (steps.ids[at + 1] ?? []) : rhythmMode ? [] : (steps.ids[0] ?? []);
+    const hand = (id: string) => {
+      const n = noteById.get(id);
+      return n && shows(n.hand) ? n.hand : undefined;
+    };
+    return handFingers(cursorIds, nextIds, hand, (id) => fingerOf.get(id)?.finger, (id) => hits.has(id) || noteStates.current.has(id));
+  }, [showPalms, cursorIds.join(","), steps, noteById, shows, fingerOf, hits, rhythmMode, marksVersion]);
+  palmHitRef.current = (ids) => {
+    if (!showPalms) return;
+    const id = ids.find((x) => fingerOf.get(x)) ?? ids[0];
+    const n = id ? noteById.get(id) : undefined;
+    if (n) flashPalm({ hand: n.hand, finger: fingerOf.get(id)?.finger ?? null, ok: true });
+  };
+  palmMissRef.current = (pitch) => {
+    if (!showPalms) return;
+    const expected = cursorIds.flatMap((id) => {
+      const n = noteById.get(id);
+      return n && shows(n.hand) ? [{ pitch: n.pitch, hand: n.hand }] : [];
+    });
+    flashPalm({ hand: handOfMiss(pitch, expected), finger: null, ok: false });
+  };
 
   // Барабаны: какие пэды бить сейчас, какой пэд клавиатуры назначен барабану.
   const padHints = new Set<number>();
@@ -1635,6 +1673,9 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
                 onChange={(v) => (exHints ? setExHints({ ...exHints, fingering: v }) : setPiece({ fingering: v }))}
               />
             )}
+            {!drums && !rhythmEx && (
+              <Toggle label="Ладони" on={!!p.palms} disabled={!showFingers} onChange={(v) => setPiece({ palms: v })} />
+            )}
             {!rhythmEx && (
               <Toggle
                 label={drums ? "Подсветка пэдов" : "Подсветка клавиш"}
@@ -1745,6 +1786,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
             <Toggle label="Падающие ноты" on={p.waterfall} onChange={(v) => setPiece({ waterfall: v })} />
             {!strInst && <Toggle label="Названия нот" on={p.names} onChange={(v) => setPiece({ names: v })} />}
             {!strInst && <Toggle label="Аппликатура" on={p.fingering} onChange={(v) => setPiece({ fingering: v })} />}
+            {!strInst && <Toggle label="Ладони" on={!!p.palms} disabled={!showFingers} onChange={(v) => setPiece({ palms: v })} />}
             <button
               hidden={!!strInst}
               className={`small${editFingers ? " primary" : ""}`}
@@ -2004,7 +2046,11 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         ) : tab && strInst ? (
           <Fretboard tuning={tuning} frets={boardFrets} naming={naming} marks={fretMarks} />
         ) : (
-          <Piano low={low} high={high} naming={naming} highlight={highlight} labels="c" />
+          <div className={`piano-with-palms${palms ? " on" : ""}`}>
+            {palms && <Palm side="left" fingers={palms.left} hit={palmHit} />}
+            <Piano low={low} high={high} naming={naming} highlight={highlight} labels="c" />
+            {palms && <Palm side="right" fingers={palms.right} hit={palmHit} />}
+          </div>
         )}
       </section>
       <TheoryPlaque features={theoryFeatures} />

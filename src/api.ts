@@ -113,6 +113,8 @@ export interface PiecePrefs {
   waterfall: boolean;
   /** Гитара/бас: обычные ноты над табулатурой. */
   staffWithTab?: boolean;
+  /** Схема ладоней по бокам клавиатуры (палец следующей ноты). */
+  palms?: boolean;
 }
 
 export type TrackRole = "right" | "left" | "both" | "accompany" | "drums" | "off";
