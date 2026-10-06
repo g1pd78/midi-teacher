@@ -93,3 +93,21 @@ export const sysex = {
   /** Выйти из режима указки — снова горят клавиши. */
   pointerOff: () => [...HEAD, 0x04, 0xf7],
 };
+
+/**
+ * Мои нажатия поверх подсказок: над нажатой клавишей — нейтральный огонёк. В занятиях (есть подсказки с
+ * экранной клавиатуры) — тускло, чтобы не спорить с подсказками; вне занятий — ярко. Клавиша с подсказкой
+ * остаётся в цвете подсказки.
+ */
+export function withPresses(keys: [number, number][], held: number[], show: boolean, inLesson: boolean): [number, number][] {
+  if (!show || !held.length) return keys;
+  const lit = new Map(keys);
+  for (const n of held) if (!lit.has(n)) lit.set(n, LIGHT.neutral + (inLesson ? LIGHT_DIM : 0));
+  return [...lit.entries()].sort((a, b) => a[0] - b[0]);
+}
+
+/** Кадр подсветки (как в ядре): F0 7D 4D 54 10 <яркость 0–127> (<клавиша> <цвет>)… F7. */
+export function lightsFrame(brightness: number, keys: [number, number][]): number[] {
+  const b = Math.round((Math.min(100, Math.max(0, brightness)) * 127) / 100);
+  return [0xf0, 0x7d, 0x4d, 0x54, 0x10, b, ...[...keys].sort((x, y) => x[0] - y[0]).flatMap(([n, c]) => [n & 0x7f, c & 0x7f]), 0xf7];
+}

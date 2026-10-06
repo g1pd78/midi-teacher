@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LIGHT, LIGHT_DIM, keyCenter, ledOf, lightsFromHighlight, lightsKey, sysex } from "./lights";
+import { LIGHT, LIGHT_DIM, keyCenter, ledOf, lightsFrame, lightsFromHighlight, lightsKey, sysex, withPresses } from "./lights";
 
 describe("lightsFromHighlight", () => {
   it("переводит цвета экрана в цвета платы, пропускает нажатые и тусклит слабые подсказки", () => {
@@ -77,5 +77,27 @@ describe("SysEx платы", () => {
   it("все байты данных — семибитные", () => {
     for (const msg of [sysex.calibrate({ lowNote: 0, lowLed: 1023, highNote: 127, highLed: 16383 }), sysex.pointer(9999, 7)])
       for (const b of msg.slice(1, -1)) expect(b).toBeLessThan(0x80);
+  });
+});
+
+describe("кадр и мои нажатия", () => {
+  it("кадр: яркость и все горящие клавиши по порядку — те же байты, что шлёт ядро", () => {
+    expect(lightsFrame(25, [[67, 2], [60, 1]])).toEqual([0xf0, 0x7d, 0x4d, 0x54, 0x10, 32, 60, 1, 67, 2, 0xf7]);
+    expect(lightsFrame(25, [])).toEqual([0xf0, 0x7d, 0x4d, 0x54, 0x10, 32, 0xf7]);
+    for (const b of lightsFrame(100, [[108, LIGHT.violet + LIGHT_DIM]]).slice(1, -1)) expect(b).toBeLessThan(0x80);
+  });
+
+  it("мои нажатия: в занятии тускло, вне занятий ярко, подсказка важнее, можно выключить", () => {
+    const hints: [number, number][] = [[60, LIGHT.right]];
+    expect(withPresses(hints, [60, 64], true, true)).toEqual([
+      [60, LIGHT.right],
+      [64, LIGHT.neutral + LIGHT_DIM],
+    ]);
+    expect(withPresses([], [64], true, false)).toEqual([[64, LIGHT.neutral]]);
+    expect(withPresses(hints, [64], false, true)).toEqual(hints);
+  });
+
+  it("заранее в темпе — тусклым (слабая подсказка)", () => {
+    expect(lightsFromHighlight({ 62: { color: "#5AA9FF", strength: 0.2 } })).toEqual([[62, LIGHT.right + LIGHT_DIM]]);
   });
 });

@@ -55,8 +55,10 @@ export interface LightsSettings {
   enabled: boolean;
   /** null — найти плату по имени. */
   port: string | null;
-  /** Яркость, проценты. */
+  /** Яркость, проценты (на плате — не больше 60%). */
   brightness: number;
+  /** Огонёк над нажатой клавишей. */
+  showPresses: boolean;
 }
 
 export type AudioBackend = "auto" | "asio" | "system";
@@ -750,6 +752,7 @@ export const api = {
   lightsSet: (keys: [number, number][]) => invoke<void>("lights_set", { keys }),
   lightsState: () => invoke<[number, number][]>("lights_state"),
   lightsSend: (bytes: number[]) => invoke<boolean>("lights_send", { bytes }),
+  lightsFrame: () => invoke<number[]>("lights_frame"),
   hitDrum: (drum: number, velocity: number) => invoke<void>("hit_drum", { drum, velocity }),
   setAudioConfig: (config: AudioConfig) => invoke<void>("set_audio_config", { config }),
   setPrefs: (prefs: UiPrefs) => invoke<void>("set_prefs", { prefs }),

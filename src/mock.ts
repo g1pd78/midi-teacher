@@ -119,7 +119,7 @@ export function createMock() {
     };
   };
   let pads: PadBinding[] = [];
-  let lights: LightsSettings = { enabled: true, port: null, brightness: 30 };
+  let lights: LightsSettings = { enabled: true, port: null, brightness: 25, showPresses: true };
   let lit: [number, number][] = [];
   const songs: Record<string, Song> = {};
 
@@ -690,6 +690,7 @@ export function createMock() {
       lit = (keys as [number, number][]).filter(([, c]) => c > 0).sort((a, b) => a[0] - b[0]);
     },
     lights_state: () => lit,
+    lights_frame: () => [0xf0, 0x7d, 0x4d, 0x54, 0x10, Math.round((lights.brightness * 127) / 100), ...[...lit].sort((a, b) => a[0] - b[0]).flat(), 0xf7],
     lights_send: () => demoLights && lights.enabled,
     hit_drum: ({ drum, velocity }) => {
       send(PADS_DEVICE, { type: "noteOn", note: drum as number, velocity: velocity as number });

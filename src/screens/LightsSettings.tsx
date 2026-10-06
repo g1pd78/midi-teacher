@@ -8,7 +8,7 @@ import { useApp } from "../store";
 /** Настройки → «Подсветка клавиш»: плата, яркость, проверка, калибровка и предпросмотр огоньков. */
 export function LightsSection() {
   const { devices, prefs } = useApp();
-  const lights: LightsSettings = devices.lights ?? { enabled: true, port: null, brightness: 30 };
+  const lights: LightsSettings = devices.lights ?? { enabled: true, port: null, brightness: 25, showPresses: true };
   const [wizard, setWizard] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const save = (next: Partial<LightsSettings>) => void api.setLightsSettings({ ...lights, ...next });
@@ -19,8 +19,8 @@ export function LightsSection() {
       <h2>Подсветка клавиш</h2>
       <p className="hint">
         Светодиодная лента над клавишами показывает, куда нажимать: следующие клавиши в пьесе (правая рука — голубым, левая —
-        янтарным), подсказки тренажёров, звуки аккорда. Нужна плата «MIDI Teacher Lights» — как собрать и прошить, описано в
-        папке hardware/key-lights проекта.
+        янтарным), подсказки тренажёров, звуки аккорда. Нужна плата «MIDI Teacher Lights» (ESP32-S3 по USB) — что купить, как собрать и
+        прошить, описано в папке hardware/key-lights проекта.
       </p>
       <div className="field">
         <span>Плата</span>
@@ -47,8 +47,12 @@ export function LightsSection() {
       </div>
       <div className="field">
         <span>Яркость {lights.brightness}%</span>
-        <input type="range" min={5} max={100} step={5} value={lights.brightness} onChange={(e) => save({ brightness: Number(e.target.value) })} data-lights-brightness />
+        <input type="range" min={5} max={60} step={5} value={Math.min(60, lights.brightness)} onChange={(e) => save({ brightness: Number(e.target.value) })} data-lights-brightness />
       </div>
+      <label className="check">
+        <input type="checkbox" checked={lights.showPresses} onChange={(e) => save({ showPresses: e.target.checked })} data-lights-presses /> Показывать мои
+        нажатия (в занятиях — тускло, вне занятий — ярко)
+      </label>
       <div className="field">
         <span>Проверка</span>
         <span className="buttons">
@@ -128,7 +132,8 @@ function Calibration({ naming, onDone }: { naming: "solfege" | "latin"; onDone: 
       const s = stepRef.current;
       if (s.kind === "low") {
         low.current = { note: e.note, led: s.led };
-        setStep({ kind: "high", led: s.led + 170 });
+        // 88 клавиш ≈ 1,23 м: на ленте 160 светодиодов/м это около 195 светодиодов.
+        setStep({ kind: "high", led: s.led + 195 });
       } else if (s.kind === "high" && low.current) {
         const cal = { lowNote: low.current.note, lowLed: low.current.led, highNote: e.note, highLed: s.led };
         if (cal.highNote <= cal.lowNote) return;

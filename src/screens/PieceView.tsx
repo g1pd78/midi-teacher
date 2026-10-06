@@ -226,6 +226,9 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   }, []);
   /** Сыгранные ноты → вспышка пальца; обновляется на каждой отрисовке (события ядра слушаются один раз). */
   const palmHitRef = useRef<(ids: string[]) => void>(() => {});
+  // Верная нота: короткая зелёная вспышка клавиши (на экране и на ленте подсветки).
+  const [okKey, setOkKey] = useState<number | null>(null);
+  const okTimer = useRef<number | undefined>(undefined);
   const palmMissRef = useRef<(pitch: number) => void>(() => {});
   const [loop, setLoop] = useState<Loop | null>(null);
   const loopClicks = useRef(0);
@@ -1212,7 +1215,15 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         };
     }
   }
+  // В темпе — клавиши следующего шага заранее, бледно (на ленте — тускло).
+  if (keyHints && rhythmMode && playing && rhythmStep >= 0) {
+    for (const id of steps.ids[rhythmStep + 1] ?? []) {
+      const n = noteById.get(id);
+      if (n && shows(n.hand) && !highlight[n.pitch]) highlight[n.pitch] = { color: HAND_COLOR[n.hand], strength: 0.2 };
+    }
+  }
   for (const [n, h] of Object.entries(held)) highlight[Number(n)] = { color: deviceColor(h.device, devices), strength: 0.85, held: true };
+  if (okKey !== null) highlight[okKey] = { color: "#4CC38A", strength: 0.9 };
   if (wrongKey !== null) highlight[wrongKey] = { color: "#FF5C5C", strength: 0.9 };
 
   // Схема ладоней: пальцы текущего шага и следующего (по аппликатуре), только фортепиано.
@@ -1228,6 +1239,12 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     return handFingers(cursorIds, nextIds, hand, (id) => fingerOf.get(id)?.finger, (id) => hits.has(id) || noteStates.current.has(id));
   }, [showPalms, cursorIds.join(","), steps, noteById, shows, fingerOf, hits, rhythmMode, marksVersion]);
   palmHitRef.current = (ids) => {
+    const hitNote = ids.length ? noteById.get(ids[0]) : undefined;
+    if (hitNote) {
+      setOkKey(hitNote.pitch);
+      window.clearTimeout(okTimer.current);
+      okTimer.current = window.setTimeout(() => setOkKey(null), 250);
+    }
     if (!showPalms) return;
     const id = ids.find((x) => fingerOf.get(x)) ?? ids[0];
     const n = id ? noteById.get(id) : undefined;

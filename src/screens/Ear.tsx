@@ -29,6 +29,7 @@ import { useMidi } from "../store";
 import { useExpectChords, useStrum } from "./GuitarChords";
 import { dayKey } from "./Exercises";
 import { useBackLabel } from "../components/BackLabel";
+import { usePublishLights } from "../components/LightsBridge";
 
 type Timbre = "piano" | "guitar";
 const TIMBRE_KEY = "mt-ear-timbre";
@@ -308,6 +309,8 @@ function EarDrill({ level, seed, timbre, onBack, onAgain, onRecorded }: DrillPro
     answer(judgeChordPlay(q, ps));
   });
 
+  // Подсветка клавиш: после верного ответа — звуки задания зелёным.
+  usePublishLights(solved && !done ? Object.fromEntries(q.expected.map((p) => [p, { color: "#4CC38A" }])) : {}, true);
   const { accuracy, passed } = useSeriesResult(level, done, results, onRecorded);
   return (
     <main className="chord-drill ear-drill" data-ear-index={index} data-ear-done={done ? (passed ? "passed" : "failed") : ""} data-ear-correct={done ? "" : q.answer} data-ear-expected={done ? "" : q.expected.join(",")}>

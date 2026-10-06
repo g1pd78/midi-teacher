@@ -20,8 +20,9 @@ use std::time::Duration;
 const CLIENT_NAME: &str = "MIDI Teacher";
 /// Имя USB-MIDI устройства подсветки клавиш (прошивка в `hardware/key-lights`).
 pub const LIGHTS_NAME: &str = "MIDI Teacher Lights";
-/// Канал подсветки (16-й): нота — клавиша, сила — цвет.
-const LIGHTS_CHANNEL: u8 = 15;
+/// Кадр подсветки — SysEx `F0 7D 4D 54 10 <яркость 0–127> (<клавиша> <цвет>)… F7`: полный список горящих
+/// клавиш. Одни и те же байты годятся для USB-MIDI и (потом) для радио: потерянный кадр исправит следующий.
+const LIGHTS_FRAME: [u8; 5] = [0xF0, 0x7D, 0x4D, 0x54, 0x10];
 
 /// Порт — плата подсветки, а не инструмент.
 pub fn is_lights_port(name: &str) -> bool {
@@ -129,8 +130,10 @@ pub struct LightsSettings {
     pub enabled: bool,
     /// Выход подсветки; `None` — найти по имени «MIDI Teacher Lights».
     pub port: Option<String>,
-    /// Яркость, проценты.
+    /// Яркость, проценты (на плате — не больше 60%).
     pub brightness: u8,
+    /// Показывать мои нажатия (огонёк над нажатой клавишей).
+    pub show_presses: bool,
 }
 
 impl Default for LightsSettings {
@@ -138,7 +141,8 @@ impl Default for LightsSettings {
         Self {
             enabled: true,
             port: None,
-            brightness: 30,
+            brightness: 25,
+            show_presses: true,
         }
     }
 }
@@ -154,19 +158,15 @@ pub fn lights_port(settings: &LightsSettings, outputs: &[String]) -> Option<Stri
     }
 }
 
-/// Сообщения, которые переводят ленту из `old` в `new` (клавиша → цвет): гасим лишние, зажигаем новые.
-pub fn lights_diff(old: &BTreeMap<u8, u8>, new: &BTreeMap<u8, u8>) -> Vec<[u8; 3]> {
-    let mut out = Vec::new();
-    for note in old.keys() {
-        if !new.contains_key(note) {
-            out.push([0x80 | LIGHTS_CHANNEL, *note, 0]);
-        }
+/// Кадр подсветки: яркость (проценты) и все горящие клавиши (клавиша → цвет 1–127).
+pub fn lights_frame(brightness: u8, lit: &BTreeMap<u8, u8>) -> Vec<u8> {
+    let mut out = LIGHTS_FRAME.to_vec();
+    out.push(brightness_cc(brightness));
+    for (note, color) in lit {
+        out.push(note & 0x7F);
+        out.push(color & 0x7F);
     }
-    for (note, color) in new {
-        if old.get(note) != Some(color) {
-            out.push([0x90 | LIGHTS_CHANNEL, *note, *color]);
-        }
-    }
+    out.push(0xF7);
     out
 }
 
@@ -304,6 +304,7 @@ pub fn internal_sound_needed(settings: &DeviceSettings, connected: &[String]) ->
 struct LightsState {
     lit: BTreeMap<u8, u8>,
     port: Option<String>,
+    last_frame: Vec<u8>,
 }
 
 struct Shared {
@@ -431,7 +432,11 @@ impl DeviceManager {
             .spawn(move || loop {
                 thread::sleep(SCAN_INTERVAL);
                 match weak.upgrade() {
-                    Some(m) => m.rescan(),
+                    Some(m) => {
+                        m.rescan();
+                        // Повтор кадра подсветки: плата гаснет сама, если кадров нет 3 секунды.
+                        m.send_lights_frame();
+                    }
                     None => break,
                 }
             })
@@ -474,40 +479,62 @@ impl DeviceManager {
     /// Настройки подсветки: выход, вкл/выкл, яркость (сразу уходит на плату).
     pub fn set_lights_settings(&self, lights: LightsSettings) {
         let off = !lights.enabled;
-        let brightness = lights.brightness;
         self.shared.settings.write().lights = lights;
         if off {
             self.set_lights(&[]);
         }
         self.rescan();
-        self.lights_send(&[0xB0 | LIGHTS_CHANNEL, 7, brightness_cc(brightness)]);
+        self.send_lights_frame();
     }
 
-    /// Что должно гореть: (клавиша, цвет 1–127). На плату уходит только разница с прошлым.
+    /// Что должно гореть: (клавиша, цвет 1–127). Изменение сразу уходит на плату кадром.
     pub fn set_lights(&self, keys: &[(u8, u8)]) {
         let new: BTreeMap<u8, u8> = keys
             .iter()
             .copied()
             .filter(|(n, c)| *n < 128 && (1..128).contains(c))
             .collect();
-        let (msgs, port) = {
+        let changed = {
             let mut l = self.shared.lights.lock();
-            let msgs = lights_diff(&l.lit, &new);
+            let changed = l.lit != new;
             l.lit = new;
-            (msgs, l.port.clone())
+            changed
+        };
+        if changed {
+            self.send_lights_frame();
+        }
+    }
+
+    /// Кадр с тем, что должно гореть, — на плату (при изменении и раз в секунду: плата гаснет без кадров).
+    fn send_lights_frame(&self) {
+        let brightness = self.shared.settings.read().lights.brightness;
+        let (frame, port) = {
+            let mut l = self.shared.lights.lock();
+            let frame = lights_frame(brightness, &l.lit);
+            l.last_frame = frame.clone();
+            (frame, l.port.clone())
         };
         if let Some(port) = port {
             if let Some(conn) = self.shared.outputs.lock().get_mut(&port) {
-                for m in msgs {
-                    let _ = conn.send(&m);
-                }
+                let _ = conn.send(&frame);
             }
         }
     }
 
+    /// Последний кадр подсветки (для сквозных тестов и предпросмотра без платы).
+    pub fn lights_last_frame(&self) -> Vec<u8> {
+        self.shared.lights.lock().last_frame.clone()
+    }
+
     /// Горящие клавиши (для проверки и предпросмотра).
     pub fn lights(&self) -> Vec<(u8, u8)> {
-        self.shared.lights.lock().lit.iter().map(|(n, c)| (*n, *c)).collect()
+        self.shared
+            .lights
+            .lock()
+            .lit
+            .iter()
+            .map(|(n, c)| (*n, *c))
+            .collect()
     }
 
     /// Сырые байты на плату подсветки (SysEx настройки и проверки).
@@ -760,14 +787,11 @@ impl DeviceManager {
                 Err(e) => log::warn!("MIDI-выход {port}: {e}"),
             }
         }
-        // Плата подсветки появилась (или сменилась): яркость и то, что должно гореть.
+        // Плата подсветки появилась (или сменилась): сразу кадр с тем, что должно гореть.
         if lights_changed {
             if let Some(conn) = lights.as_ref().and_then(|p| outputs.get_mut(p)) {
                 let lit = self.shared.lights.lock().lit.clone();
-                let _ = conn.send(&[0xB0 | LIGHTS_CHANNEL, 7, brightness_cc(settings.lights.brightness)]);
-                for m in lights_diff(&BTreeMap::new(), &lit) {
-                    let _ = conn.send(&m);
-                }
+                let _ = conn.send(&lights_frame(settings.lights.brightness, &lit));
             }
         }
     }
@@ -1041,7 +1065,10 @@ mod tests {
     fn lights_port_and_diff() {
         let outs = vec!["NPK Piano".to_string(), "MIDI Teacher Lights".to_string()];
         let mut l = LightsSettings::default();
-        assert_eq!(lights_port(&l, &outs).as_deref(), Some("MIDI Teacher Lights"));
+        assert_eq!(
+            lights_port(&l, &outs).as_deref(),
+            Some("MIDI Teacher Lights")
+        );
         l.port = Some("NPK Piano".into());
         assert_eq!(lights_port(&l, &outs).as_deref(), Some("NPK Piano"));
         l.port = Some("Нет такого".into());
@@ -1051,13 +1078,16 @@ mod tests {
         assert_eq!(lights_port(&l, &outs), None);
         assert!(is_lights_port("MIDI Teacher Lights #2"));
 
-        let old: BTreeMap<u8, u8> = [(60, 1), (64, 2)].into_iter().collect();
-        let new: BTreeMap<u8, u8> = [(64, 1), (67, 2)].into_iter().collect();
+        let lit: BTreeMap<u8, u8> = [(67, 2), (60, 1)].into_iter().collect();
         assert_eq!(
-            lights_diff(&old, &new),
-            vec![[0x8F, 60, 0], [0x9F, 64, 1], [0x9F, 67, 2]]
+            lights_frame(25, &lit),
+            vec![0xF0, 0x7D, 0x4D, 0x54, 0x10, 32, 60, 1, 67, 2, 0xF7]
         );
-        assert!(lights_diff(&new, &new).is_empty());
+        // Пустой кадр — всё погасить.
+        assert_eq!(
+            lights_frame(25, &BTreeMap::new()),
+            vec![0xF0, 0x7D, 0x4D, 0x54, 0x10, 32, 0xF7]
+        );
         assert_eq!(brightness_cc(30), 38);
         assert_eq!(brightness_cc(100), 127);
     }

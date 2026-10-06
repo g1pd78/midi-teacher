@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, listen } from "../api";
-import { lightsFromHighlight, lightsKey, type KeyHighlight } from "../lib/lights";
+import { lightsFromHighlight, lightsKey, withPresses, type KeyHighlight } from "../lib/lights";
 import { useApp } from "../store";
 
 // Что подсвечивают экранные клавиатуры → лента над клавишами. Публикует последняя показанная клавиатура
@@ -10,6 +10,8 @@ type Keys = [number, number][];
 let current: Keys = [];
 let owner = 0;
 let nextOwner = 1;
+/** Сколько клавиатур с подсказками сейчас показано (занятие идёт). */
+let publishers = 0;
 const subscribers = new Set<(k: Keys) => void>();
 
 function publish(keys: Keys) {
@@ -27,7 +29,9 @@ export function usePublishLights(highlight: Record<number, KeyHighlight>, enable
     if (!enabled) return;
     id.current = nextOwner++;
     owner = id.current;
+    publishers++;
     return () => {
+      publishers--;
       if (owner === id.current) publish([]);
     };
   }, [enabled]);
@@ -37,9 +41,11 @@ export function usePublishLights(highlight: Record<number, KeyHighlight>, enable
   }, [key, enabled]);
 }
 
-/** Текущие огоньки (для предпросмотра на экране). */
+/** Текущие огоньки (для предпросмотра на экране): подсказки и, если включено, мои нажатия. */
 export function useLights(): Keys {
   const [k, setK] = useState<Keys>(current);
+  const held = useApp((s) => s.held);
+  const show = useApp((s) => s.devices.lights?.showPresses ?? true);
   useEffect(() => {
     subscribers.add(setK);
     setK(current);
@@ -47,7 +53,7 @@ export function useLights(): Keys {
       subscribers.delete(setK);
     };
   }, []);
-  return k;
+  return withPresses(k, Object.keys(held).map(Number), show, publishers > 0);
 }
 
 const IDLE_MS = 10 * 60 * 1000;
@@ -57,6 +63,9 @@ const MIN_INTERVAL_MS = 33;
 export function LightsBridge() {
   const enabled = useApp((s) => s.devices.lights?.enabled ?? false);
   const keys = useLights();
+  const latest = useRef(keys);
+  latest.current = keys;
+  const keysKey = lightsKey(keys);
   const lastSent = useRef(0);
   const timer = useRef<number | null>(null);
   const idle = useRef(false);
@@ -66,13 +75,13 @@ export function LightsBridge() {
     const send = () => {
       timer.current = null;
       lastSent.current = Date.now();
-      void api.lightsSet(enabled && !idle.current ? current : []).catch(() => {});
+      void api.lightsSet(enabled && !idle.current ? latest.current : []).catch(() => {});
     };
     const wait = MIN_INTERVAL_MS - (Date.now() - lastSent.current);
     if (timer.current !== null) return;
     if (wait <= 0) send();
     else timer.current = window.setTimeout(send, wait);
-  }, [keys, enabled]);
+  }, [keysKey, enabled]);
 
   useEffect(() => {
     let off: (() => void) | null = null;
@@ -81,7 +90,7 @@ export function LightsBridge() {
       lastActivity.current = Date.now();
       if (idle.current) {
         idle.current = false;
-        void api.lightsSet(current).catch(() => {});
+        void api.lightsSet(latest.current).catch(() => {});
       }
     }).then((f) => (alive ? (off = f) : f()));
     const t = window.setInterval(() => {

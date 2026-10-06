@@ -149,6 +149,12 @@ fn lights_state(state: State<AppState>) -> Vec<(u8, u8)> {
     state.devices.lights()
 }
 
+/// Последний кадр подсветки (байты SysEx) — для сквозных тестов без платы.
+#[tauri::command]
+fn lights_frame(state: State<AppState>) -> Vec<u8> {
+    state.devices.lights_last_frame()
+}
+
 /// Сырые байты (SysEx) на плату подсветки; `false` — платы нет.
 #[tauri::command]
 fn lights_send(state: State<AppState>, bytes: Vec<u8>) -> bool {
@@ -413,6 +419,7 @@ pub fn run() {
             set_lights_settings,
             lights_set,
             lights_state,
+            lights_frame,
             lights_send,
             hit_drum,
             set_audio_config,
