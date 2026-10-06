@@ -1668,7 +1668,9 @@ try {
   await js("document.querySelector('[data-code-stop]')?.click();");
   ok(`код выполняется, партии: ${codeParts}; нотная лента: ${rollBoxes} событий`);
   // Автодополнение: набор в редакторе показывает звуки GM и справку по-русски.
-  const cmEl = (await wd("POST", `/session/${sid}/element`, { using: "css selector", value: "[data-code-cm] .cm-content" }))["element-6066-11e4-a52e-4f735466cecc"];
+  const cmEl = Object.values(await wd("POST", `/session/${sid}/element`, { using: "css selector", value: "[data-code-cm] .cm-content" }))[0];
+  const cmText = () => js("return document.querySelector('[data-code-cm] .cm-content').textContent;");
+  const codeBefore = await cmText();
   await js("const v = document.querySelector('[data-code-cm] .cm-content'); v.focus(); const r = document.createRange(); r.selectNodeContents(v); r.collapse(false); const s = getSelection(); s.removeAllRanges(); s.addRange(r);");
   await wd("POST", `/session/${sid}/element/${cmEl}/value`, { text: '\n$: s("gm_acou' });
   const soundHints = await waitFor("подсказки звуков", () => js("return [...document.querySelectorAll('.cm-tooltip-autocomplete li')].map((l) => l.textContent).join('|');"), 8000);
@@ -1677,6 +1679,13 @@ try {
   await wd("POST", `/session/${sid}/element/${cmEl}/value`, { text: 'stic_bass").roo' });
   const fnInfo = await waitFor("справка функции", () => js("return document.querySelector('.cm-completionInfo')?.textContent ?? '';"), 8000);
   if (!/ревербер/i.test(fnInfo)) throw new Error(`справка room: ${fnInfo}`);
+  // Откат набранного (Ctrl+Z), чтобы трек остался прежним для следующих шагов.
+  await wd("POST", `/session/${sid}/element/${cmEl}/value`, { text: "\uE00C" });
+  await waitFor("код восстановлен", async () => {
+    if ((await cmText()) === codeBefore) return true;
+    await wd("POST", `/session/${sid}/element/${cmEl}/value`, { text: "\uE009z\uE009" });
+    return false;
+  }, 15000);
   ok("автодополнение: звуки gm_… в s(\"…\"), справка room() по-русски");
   // Сэмплы (как при перетаскивании): копия в «Сэмплы\e2edrop», звук доступен по протоколу.
   const dropDir = join(profile, "drop");
