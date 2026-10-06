@@ -54,6 +54,8 @@ import { pitchName } from "../lib/notes";
 import { partChart } from "../lib/tabsong";
 import { renderSvg } from "../lib/verovio";
 import { useApp, useMidi } from "../store";
+import { requestCode } from "../lib/codeBridge";
+import { jamStyleToCode } from "../lib/strudel/fromApp";
 import { useBackLabel } from "../components/BackLabel";
 
 const CLASS_COLOR: Record<NoteClass, string> = { chord: "#4CC38A", scale: "#5AA9FF", out: "#FFB454" };
@@ -212,7 +214,12 @@ export function Jam({ tabs }: { tabs: React.ReactNode }) {
             <input type="range" min={50} max={160} step={5} value={setup.bpm} onChange={(e) => setSetup({ ...setup, bpm: Number(e.target.value) })} /> {setup.bpm}
           </label>
         </div>
-        <p className="hint">{style.description}</p>
+        <p className="hint">
+          {style.description}{" "}
+          <button className="link" onClick={() => requestCode({ name: `Джем — ${style.name}`, text: jamStyleToCode(style, setup.tonic) })} data-jam-code>
+            Открыть кодом во вкладке «Код»
+          </button>
+        </p>
         <label className="jam-custom">
           Свои аккорды (вместо стиля):{" "}
           <input value={setup.custom} placeholder="например: Am | F | C | G" onChange={(e) => setSetup({ ...setup, custom: e.target.value })} data-jam-custom />

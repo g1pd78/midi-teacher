@@ -12,6 +12,7 @@ import {
   type ExerciseStatView,
 } from "../lib/exercises";
 import { PieceView } from "./PieceView";
+import { exerciseToCode } from "../lib/strudel/fromApp";
 import { GuitarExercises } from "./GuitarExercises";
 
 export type ExInstrument = "piano" | "guitar" | "bass";
@@ -178,6 +179,7 @@ function PianoExercises({ switcher, startWarmup, onWarmupStarted }: { switcher: 
         }}
         exercise={{
           id: ex.id,
+          toCode: () => ({ name: ex.title, text: exerciseToCode(ex.build(), ex.title) }),
           playlist: run.warmup ? { index: run.index, total: run.list.length } : undefined,
           next,
           onRecorded: reload,

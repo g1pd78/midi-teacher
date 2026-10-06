@@ -20,7 +20,7 @@ const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
  * длительностями `@n` и аккордами `[c4,e4]`; деление укрупняется, если позволяет ритм; одинаковые циклы
  * сворачиваются; разные — через `<…>` (по циклу на каждый).
  */
-export function riffToMini(notes: RiffNote[], cycles: number, grid: Grid = 16): string {
+export function riffToMini(notes: RiffNote[], cycles: number, grid: Grid | number = 16): string {
   const steps: number = grid;
   const bars: string[] = [];
   for (let c = 0; c < cycles; c++) {
@@ -47,7 +47,9 @@ export function riffToMini(notes: RiffNote[], cycles: number, grid: Grid = 16): 
       if (s > pos) evs.push({ at: pos, len: s - pos, text: "~" });
       const next = starts[i + 1] ?? steps;
       const o = onsets.get(s)!;
-      const len = Math.min(o.len, next - s);
+      // Пауза короче доли не пишется: нота тянется до следующей (так рифф читается проще).
+      const gap = next - s;
+      const len = gap - Math.min(o.len, gap) < steps / 4 ? gap : Math.min(o.len, gap);
       const names = [...o.midis].sort((a, b) => a - b).map(midiName);
       evs.push({ at: s, len, text: names.length > 1 ? `[${names.join(",")}]` : names[0] });
       if (len < next - s) evs.push({ at: s + len, len: next - s - len, text: "~" });

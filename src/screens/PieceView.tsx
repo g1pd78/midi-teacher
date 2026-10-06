@@ -45,6 +45,7 @@ import { Waterfall, type NoteState } from "../components/Waterfall";
 import { keyLabel } from "../lib/notes";
 import { fingerNotes, injectFingering, parseFinger, type Finger } from "../lib/fingering";
 import { PASS_ACCURACY, evaluate, type Evaluation, type HitRecord } from "../lib/exercises";
+import { requestCode } from "../lib/codeBridge";
 import type { Hints } from "../lib/reading";
 import { songFromScore } from "../lib/songs";
 import { RHYTHM_LEFT, RHYTHM_RIGHT } from "../lib/rhythm";
@@ -1773,6 +1774,14 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
       {exercise?.hint && (
         <div className="notice info" data-ex-hint>
           {exercise.hint}
+        </div>
+      )}
+      {exercise?.toCode && (
+        <div className="notice info" data-to-code-row>
+          То же самое можно открыть кодом Strudel: менять, слушать, играть поверх.{" "}
+          <button className="link" data-to-code onClick={() => requestCode(exercise.toCode!())}>
+            Открыть во вкладке «Код»
+          </button>
         </div>
       )}
       {source.banner}

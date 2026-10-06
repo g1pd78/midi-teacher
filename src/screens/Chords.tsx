@@ -32,6 +32,8 @@ import { verovioOptions } from "../lib/staffOptions";
 import { deviceColor, useApp } from "../store";
 import { LevelCard } from "../components/LevelCard";
 import { PieceView } from "./PieceView";
+import { requestCode } from "../lib/codeBridge";
+import { leadSongToCode } from "../lib/strudel/fromApp";
 import { ChordChanges, GuitarChordDrill, GuitarChordsList, GuitarSongView, SongShapes } from "./GuitarChords";
 import { patternArrows, patternsFor, type StrumPattern } from "../lib/strum";
 import { BassAccompControls, BassSongPlay, BassSongView, RootDrill, RootTrainerList, useBassAccomp } from "./Bass";
@@ -222,6 +224,9 @@ export function Chords({ tabs }: { tabs: React.ReactNode }) {
             ))}
           </span>
         )}
+        <button className="ghost small" title="Открыть песню кодом Strudel во вкладке «Код»" onClick={() => requestCode({ name: song.title, text: leadSongToCode(song) })} data-song-code={song.id}>
+          В код
+        </button>
         {own && (
           <button className="small" onClick={() => setView({ kind: "edit", song, isNew: false })} data-song-edit>
             Изменить…

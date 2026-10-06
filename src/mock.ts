@@ -683,6 +683,8 @@ export function createMock() {
       const [st, note, vel] = bytes as unknown as number[];
       if ((st & 0xf0) === 0x90 && vel > 0) send(String(device), { type: "noteOn", note, velocity: vel });
       else if ((st & 0xf0) === 0x80 || (st & 0xf0) === 0x90) send(String(device), { type: "noteOff", note });
+      else if ((st & 0xf0) === 0xb0)
+        emit("midi", { device: String(device), channel: st & 0x0f, timeUs: Math.round(performance.now() * 1000), type: "controlChange", controller: note, value: vel } as MidiEvent);
       return undefined;
     },
   };

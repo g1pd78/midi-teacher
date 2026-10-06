@@ -15,6 +15,7 @@ import { partChart, songAccompaniment } from "../lib/tabsong";
 import { DrumPads } from "../components/DrumPads";
 import { useApp } from "../store";
 import { PieceView } from "./PieceView";
+import { drumScoreToCode } from "../lib/strudel/fromApp";
 
 /**
  * Барабаны на пэдах MIDI-клавиатуры: мастер назначения пэдов, грувы и рудименты.
@@ -83,6 +84,7 @@ export function Drums() {
         exercise={{
           id: run.id,
           instrument: "drums",
+          toCode: () => ({ name: run.title, text: drumScoreToCode(run.build(), run.title) }),
           next: following ? { label: "Следующее упражнение", go: () => setRun(following) } : null,
           onRecorded: reload,
         }}

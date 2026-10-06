@@ -45,6 +45,21 @@ export const setPanel = (p: PanelSettings) => {
 
 const asObject = (v: unknown) => (v !== null && typeof v === "object" ? v : { value: v });
 
+/** Строка в двойных кавычках транспилятор Strudel превращает в паттерн — достаём из него текст. */
+export function asText(v: unknown): string | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v === "string") return v;
+  const p = v as { queryArc?: (a: number, b: number) => { value: unknown }[] };
+  if (typeof p.queryArc === "function") {
+    const first = p.queryArc(0, 1)[0]?.value;
+    if (first === undefined) return undefined;
+    // «A:minor:pentatonic» в мини-нотации — список ["A", "minor", "pentatonic"].
+    if (Array.isArray(first)) return first.join(":");
+    return String(typeof first === "object" ? ((first as { value?: unknown }).value ?? "") : first);
+  }
+  return String(v);
+}
+
 /** Партия «$0» → «Партия 1» для панели. */
 export const partLabel = (name: string) => (/^\$\d+$/.test(name) ? `Партия ${Number(name.slice(1)) + 1}` : name);
 
@@ -53,7 +68,7 @@ let scope: Record<string, unknown> | null = null;
 /** Один раз: методы паттерна; возвращает функции для области eval. */
 export function installMt(core: Core): Record<string, unknown> {
   if (scope) return scope;
-  const { Pattern, signal, silence, stack, pure, mini } = core;
+  const { Pattern, signal, silence, pure, mini } = core;
 
   Pattern.prototype.you = function (this: Pattern) {
     info.hasYou = true;
@@ -62,23 +77,30 @@ export function installMt(core: Core): Record<string, unknown> {
 
   const echo = (pat: Pattern) => {
     info.hasYou = true;
-    return stack(pat.mask("<1 0>"), pat.late(1).mask("<0 1>").withValue((v: unknown) => ({ ...asObject(v), mtYou: true, mtEcho: true })));
+    return echoize(core, pat);
   };
 
-  const harmony = (chords: string | Pattern, scale?: string) => {
+  const harmony = (chords: string | Pattern, scale?: string | Pattern) => {
     const pat = typeof chords === "string" ? mini(chords) : chords ?? null;
-    info.harmony = { chords: pat, scale: scale ?? null };
+    info.harmony = { chords: pat, scale: asText(scale) ?? null };
     return silence;
   };
 
-  const kb = (device?: string) => ({
-    note: signal(() => liveKb(device).note),
-    vel: signal(() => liveKb(device).vel),
-    gate: signal(() => (liveKb(device).gate ? 1 : 0)),
-  });
+  const kb = (dev?: string | Pattern) => {
+    const device = asText(dev);
+    return {
+      note: signal(() => liveKb(device).note),
+      vel: signal(() => liveKb(device).vel),
+      gate: signal(() => (liveKb(device).gate ? 1 : 0)),
+    };
+  };
 
   // Как на strudel.cc: const cc = await midin('устройство'); …lpf(cc(74).range(200, 4000))
-  const midin = async (device?: string) => (n: number, chan?: number) => signal(() => liveCc(device, n, chan));
+  const midin = async (dev?: string | Pattern) => {
+    const device = asText(dev);
+    return (n: number | Pattern, chan?: number | Pattern) =>
+      signal(() => liveCc(device, Number(asText(n)), chan === undefined ? undefined : Number(asText(chan))));
+  };
 
   scope = { echo, harmony, kb, midin, pure };
   return scope;
@@ -96,13 +118,30 @@ export function beforeEvalMt(core: Core) {
     const name = typeof id === "string" && id.includes("$") ? `${id}${counter++}` : String(id);
     if (!info.parts.includes(name)) info.parts.push(name);
     let pat: Pattern = this.withValue((v: unknown) => ({ ...asObject(v), mtPart: name }));
-    if (panel.echoPart === name) pat = core.stack(pat.mask("<1 0>"), pat.late(1).mask("<0 1>").withValue((v: any) => ({ ...v, mtYou: true, mtEcho: true })));
+    if (panel.echoPart === name) pat = echoize(core, pat);
     else if (panel.myPart === name) pat = pat.withValue((v: any) => ({ ...v, mtYou: true }));
     if (panel.kbTranspose && panel.myPart !== name) pat = transposeByKb(pat);
     return orig.call(pat, id);
   };
   (wrapped as any).__mt = true;
   Pattern.prototype.p = wrapped;
+}
+
+/**
+ * «Повтори за мной»: фраза k (цикл k исходной партии) звучит на цикле 2k, а на цикле 2k+1 — та же фраза
+ * как «моя» (не звучит, оценивается). Так ни одна фраза не теряется, даже у `<a b c>`.
+ */
+export function echoize(core: Core, pat: Pattern): Pattern {
+  return new core.Pattern((state: any) => {
+    const out: any[] = [];
+    for (const span of state.span.spanCycles) {
+      const c = span.begin.sam().valueOf();
+      const k = Math.floor(c / 2);
+      const sub = pat.late(c - k).query(state.setSpan(span));
+      out.push(...(c % 2 === 1 ? sub.map((h: any) => h.withValue((v: unknown) => ({ ...asObject(v), mtYou: true, mtEcho: true }))) : sub));
+    }
+    return out;
+  });
 }
 
 /** Ноты партии сдвигаются на (последняя нота с клавиатуры − 60); ударные (без note/n) не трогаем. */
