@@ -20,6 +20,7 @@ const screens = {
   trainers: () => import("./screens/Trainers"),
   course: () => import("./screens/Course"),
   journal: () => import("./screens/Journal"),
+  code: () => import("./screens/Code"),
 };
 const Exercises = lazy(() => screens.exercises().then((m) => ({ default: m.Exercises })));
 const Guitar = lazy(() => screens.guitar().then((m) => ({ default: m.Guitar })));
@@ -32,8 +33,9 @@ const Settings = lazy(() => screens.settings().then((m) => ({ default: m.Setting
 const Trainers = lazy(() => screens.trainers().then((m) => ({ default: m.Trainers })));
 const Course = lazy(() => screens.course().then((m) => ({ default: m.Course })));
 const Journal = lazy(() => screens.journal().then((m) => ({ default: m.Journal })));
+const Code = lazy(() => screens.code().then((m) => ({ default: m.Code })));
 
-export type Screen = "home" | "course" | "journal" | "pieces" | "exercises" | "trainer" | "guitar" | "drums" | "studio" | "reference" | "progress" | "settings";
+export type Screen = "home" | "course" | "journal" | "pieces" | "exercises" | "trainer" | "guitar" | "drums" | "studio" | "code" | "reference" | "progress" | "settings";
 
 export function App() {
   const { ready, init, prefs } = useApp();
@@ -56,7 +58,7 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (e.target as HTMLElement)?.isContentEditable) return;
       if (e.key === "?" || e.key === "F1") {
         e.preventDefault();
         setHelp(true);
@@ -66,6 +68,12 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // «В код» с любого экрана — перейти на вкладку «Код» (запрос забирает она сама).
+  useEffect(() => {
+    const onCode = () => setScreen("code");
+    window.addEventListener("mt-open-code", onCode);
+    return () => window.removeEventListener("mt-open-code", onCode);
+  }, []);
   useEffect(() => {
     init().catch((e) => setError(String(e)));
   }, [init]);
@@ -166,6 +174,7 @@ export function App() {
       {screen === "guitar" && <Guitar />}
       {screen === "drums" && <Drums />}
       {screen === "studio" && <Studio />}
+      {screen === "code" && <Code />}
       {screen === "settings" && <Settings />}
       </Suspense>
     </div>

@@ -22,6 +22,7 @@ import type {
   TrainerTarget,
 } from "./api";
 import { createPracticeMock } from "./mockPractice";
+import { createCodeMock } from "./mockCode";
 
 const PADS_DEVICE = "Пэды";
 import odeToJoy from "./pieces/ode-to-joy.musicxml?raw";
@@ -38,6 +39,8 @@ export function createMock() {
 
   const start = performance.now();
   const practice = createPracticeMock();
+  const codeMock = createCodeMock();
+  (window as unknown as { __mockCode: typeof codeMock }).__mockCode = codeMock;
   const inputs: Record<string, InputSettings> = {
     "Демо-пианино": { enabled: true, route: { kind: "internal" }, range: null },
     "Демо-клавиатура": { enabled: true, route: { kind: "internal" }, range: null },
@@ -131,7 +134,8 @@ export function createMock() {
     emit("midi", {
       device,
       channel: 0,
-      timeUs: Math.round((performance.now() - start) * 1000),
+      // Те же часы, что clock_now (в ядре нажатия и часы — одна шкала).
+      timeUs: Math.round(performance.now() * 1000),
       ...ev,
     } as MidiEvent);
 
@@ -139,7 +143,7 @@ export function createMock() {
   if (typeof window !== "undefined") {
     window.addEventListener("keydown", (e) => {
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
-      if ((e.target as HTMLElement)?.tagName === "INPUT") return;
+      if ((e.target as HTMLElement)?.tagName === "INPUT" || (e.target as HTMLElement)?.isContentEditable) return;
       const key = e.key.toLowerCase();
       const lo = LOWER.indexOf(key);
       const hi = UPPER.indexOf(key);
@@ -336,6 +340,7 @@ export function createMock() {
 
   const handlers: Record<string, (args: Record<string, never>) => unknown> = {
     ...(practice.handlers as unknown as Record<string, (args: Record<string, never>) => unknown>),
+    ...(codeMock.handlers as unknown as Record<string, (args: Record<string, never>) => unknown>),
     clock_now: () => nowUs(),
     rhythm_start: ({ notes, config }) => {
       stopRhythmMock();

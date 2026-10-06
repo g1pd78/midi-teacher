@@ -2,6 +2,7 @@
 //! команды и события Tauri и хранит настройки.
 
 mod backup;
+mod code;
 mod guitar;
 mod journal;
 mod library;
@@ -205,6 +206,7 @@ fn simulate_midi(state: State<AppState>, device: String, bytes: Vec<u8>) {
 
 pub fn run() {
     tauri::Builder::default()
+        .register_asynchronous_uri_scheme_protocol(code::SCHEME, code::protocol)
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
@@ -374,6 +376,7 @@ pub fn run() {
             app.manage(practice_hub);
             app.manage(midi_hub);
             app.manage(studio_hub);
+            app.manage(Arc::new(code::CodeHub::default()));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -404,6 +407,18 @@ pub fn run() {
             journal::journal_write,
             journal::journal_delete,
             journal::journal_open_folder,
+            code::code_folder,
+            code::code_list,
+            code::code_read,
+            code::code_write,
+            code::code_create,
+            code::code_rename,
+            code::code_delete,
+            code::code_open_folder,
+            code::code_sample_banks,
+            code::code_import_samples,
+            code::code_save_wav,
+            code::code_net_text,
             practice::journal_events,
             library::rocksmith_open,
             library::library_add_text,

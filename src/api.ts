@@ -666,6 +666,11 @@ export interface FullState {
   audioDevices: AudioDevices;
 }
 
+export interface CodeFile {
+  name: string;
+  modified: number;
+}
+
 export type MidiEvent = { device: string; channel: number; timeUs: number } & (
   | { type: "noteOn"; note: number; velocity: number }
   | { type: "noteOff"; note: number }
@@ -754,6 +759,20 @@ export const api = {
   journalWrite: (name: string, text: string) => invoke<void>("journal_write", { name, text }),
   journalDelete: (name: string) => invoke<void>("journal_delete", { name }),
   journalOpenFolder: () => invoke<void>("journal_open_folder"),
+  codeFolder: () => invoke<string>("code_folder"),
+  codeList: () => invoke<CodeFile[]>("code_list"),
+  /** Текст и время изменения; null — файла нет. */
+  codeRead: (name: string) => invoke<[string, number] | null>("code_read", { name }),
+  codeWrite: (name: string, text: string) => invoke<number>("code_write", { name, text }),
+  codeCreate: (name: string, text: string) => invoke<string>("code_create", { name, text }),
+  codeRename: (from: string, to: string) => invoke<string>("code_rename", { from, to }),
+  codeDelete: (name: string) => invoke<void>("code_delete", { name }),
+  codeOpenFolder: (which: "code" | "samples") => invoke<void>("code_open_folder", { which }),
+  codeSampleBanks: () => invoke<{ user: Record<string, string[]>; rec: string[] }>("code_sample_banks"),
+  codeImportSamples: (paths: string[], folder: string) => invoke<string>("code_import_samples", { paths, folder }),
+  /** WAV в base64 → «Треки»; возвращает путь. */
+  codeSaveWav: (name: string, data: string) => invoke<string>("code_save_wav", { name, data }),
+  codeNetText: (url: string) => invoke<string>("code_net_text", { url }),
   pieceStart: (notes: PieceNoteIn[], config: PieceConfig) => invoke<number>("piece_start", { notes, config }),
   pieceStop: () => invoke<void>("piece_stop"),
   rhythmStart: (notes: PieceNoteIn[], beats: { ms: number; accent: boolean }[], config: RhythmConfig) =>
