@@ -8,8 +8,8 @@ use mt_core::fingering::{self, FingerNote, Fingering};
 use mt_core::piece::{HandMode, MeasureErrors};
 use mt_core::practice::{self, Hands, Outcome, Pass, PracticeView, UnitState};
 use mt_core::store::{
-    AttemptRecord, ExerciseAttempt, ExerciseResult, ExerciseStat, PieceActivity, PieceMeta,
-    PieceRecord, Store, TodayStatus, PLAY_BUCKET_SECS,
+    AttemptRecord, ExerciseAttempt, ExerciseResult, ExerciseStat, Journal, PieceActivity,
+    PieceMeta, PieceRecord, Store, TodayStatus, PLAY_BUCKET_SECS,
 };
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -349,6 +349,12 @@ pub fn exercise_history(
     since: i64,
 ) -> Result<Vec<ExerciseAttempt>, String> {
     hub.with_store(|s| s.exercise_history(&prefix, since))
+}
+
+/// История для дневника с момента `since` (секунды Unix).
+#[tauri::command]
+pub fn journal_events(hub: State<Arc<PracticeHub>>, since: i64) -> Result<Journal, String> {
+    hub.with_store(|s| s.journal(since))
 }
 
 #[tauri::command]

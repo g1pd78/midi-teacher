@@ -3,6 +3,7 @@
 
 mod backup;
 mod guitar;
+mod journal;
 mod library;
 mod midi_import;
 mod piece;
@@ -398,6 +399,12 @@ pub fn run() {
             library::library_read,
             library::library_import,
             library::library_open_folder,
+            journal::journal_folder,
+            journal::journal_read,
+            journal::journal_write,
+            journal::journal_delete,
+            journal::journal_open_folder,
+            practice::journal_events,
             library::rocksmith_open,
             library::library_add_text,
             piece::piece_start,

@@ -11,6 +11,7 @@ MIDI Teacher распространяется по [GPL-3.0-or-later](LICENSE). 
 | [alphaTab](https://github.com/CoderLine/alphaTab) © Daniel Kuschny и соавторы | MPL-2.0 | Чтение файлов Guitar Pro 3–8 |
 | [React](https://react.dev), React DOM | MIT | Интерфейс |
 | [Zustand](https://github.com/pmndrs/zustand) | MIT | Состояние интерфейса |
+| [yaml](https://github.com/eemeli/yaml) | ISC | Дневник и планы в YAML |
 | [@tauri-apps/api](https://tauri.app) и плагины dialog, opener | MIT OR Apache-2.0 | Связь с ядром |
 
 ## Ядро и приложение (crates.io)

@@ -18,6 +18,8 @@ const SECTIONS: { title: string; text: string; stage: string; screen?: Screen }[
 export interface TodayActions {
   /** Урок курса (текущий). */
   course: () => void;
+  /** Дневник: план на сегодня или повторение. */
+  journal: (focus: "plan" | "review") => void;
   warmup: () => void;
   trainer: () => void;
   reading: () => void;
@@ -42,6 +44,9 @@ function Today({ actions }: { actions: TodayActions }) {
   const [gtr, setGtr] = useState<{ instrument: "guitar" | "bass"; today: number } | null>(null);
   // Шаг «Урок курса»: текущий урок выбранного инструмента и шаги, сделанные сегодня.
   const [course, setCourse] = useState<{ title: string; n: number; today: number; done: boolean } | null>(null);
+  // Шаги из дневника: план на сегодня (из план.yaml) и повторение выученного по срокам.
+  const [planDay, setPlanDay] = useState<{ title: string; total: number; done: number } | null>(null);
+  const [due, setDue] = useState<number>(0);
   useEffect(() => {
     api
       .todayStatus(dayStartSecs())
@@ -70,9 +75,41 @@ function Today({ actions }: { actions: TodayActions }) {
         setCourse({ title: lesson.title, n, today, done: today >= COURSE_STEPS_PER_DAY });
       })
       .catch(() => {});
+    Promise.all([import("../lib/plan"), import("../lib/srs"), import("../lib/course"), api.journalRead("план.yaml").catch(() => null), api.journalEvents(0), api.exerciseStats(), api.trainerOverview().then((o) => o.levelStats).catch(() => [])])
+      .then(([pl, srs, c, text, journal, stats, trainer]) => {
+        setDue(srs.dueToday(srs.reviewItems(journal)).length);
+        const plan = text ? pl.parsePlan(text).plan : null;
+        const day = plan?.days.find((d) => d.date === pl.todayKey());
+        if (!plan || !day) return;
+        const steps = pl.dayPlanSteps(plan, day);
+        const p = { stats, trainer };
+        const done = steps.filter((x) => c.stepPlayedSince(x.step, plan.instrument, p, dayStartSecs())).length;
+        setPlanDay({ title: plan.title, total: steps.length, done });
+      })
+      .catch(() => {});
   }, []);
   if (!st) return null;
   const steps = [
+    ...(planDay
+      ? [
+          {
+            done: planDay.total > 0 && planDay.done >= planDay.total,
+            title: "По плану",
+            text: `«${planDay.title}» — сделано ${planDay.done} из ${planDay.total}`,
+            go: () => actions.journal("plan"),
+          },
+        ]
+      : []),
+    ...(due
+      ? [
+          {
+            done: false,
+            title: "Повторить",
+            text: `Выученное по срокам: ${due}`,
+            go: () => actions.journal("review"),
+          },
+        ]
+      : []),
     ...(course
       ? [
           {

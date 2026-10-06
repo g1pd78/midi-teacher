@@ -70,6 +70,9 @@ export function Header({
         <button className={screen === "progress" ? "tab active" : "tab"} onClick={() => onNavigate("progress")}>
           Прогресс
         </button>
+        <button className={screen === "journal" ? "tab active" : "tab"} onClick={() => onNavigate("journal")}>
+          Дневник
+        </button>
         <button className={screen === "settings" ? "tab active" : "tab"} onClick={() => onNavigate("settings")}>
           Настройки
         </button>

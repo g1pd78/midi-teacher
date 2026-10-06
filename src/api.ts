@@ -429,6 +429,28 @@ export interface RhythmConfig {
 }
 
 /** Одна попытка упражнения (для статистики по дням). */
+/** История для дневника (с момента `since`). */
+export interface Journal {
+  exercises: { exercise: string; finishedAt: number; tempo: number; accuracy: number; timingSdMs: number; passed: boolean }[];
+  attempts: {
+    piece: string;
+    title: string;
+    from: number;
+    to: number;
+    level: number | null;
+    mode: string;
+    hands: string;
+    tempo: number;
+    accuracy: number;
+    durationMs: number;
+    finishedAt: number;
+    hard: number[];
+  }[];
+  trainer: { level: number; finishedAt: number; notes: number; firstTry: number; avgReactionMs: number; passed: boolean }[];
+  /** [начало 15-минутной корзины, секунды игры]. */
+  play: [number, number][];
+}
+
 export interface ExerciseAttempt {
   exercise: string;
   finishedAt: number;
@@ -726,6 +748,12 @@ export const api = {
   libraryAddText: (name: string, text: string) => invoke<string>("library_add_text", { name, text }),
   libraryImport: (paths: string[]) => invoke<string[]>("library_import", { paths }),
   libraryOpenFolder: () => invoke<void>("library_open_folder"),
+  journalEvents: (since: number) => invoke<Journal>("journal_events", { since }),
+  journalFolder: () => invoke<string>("journal_folder"),
+  journalRead: (name: string) => invoke<string | null>("journal_read", { name }),
+  journalWrite: (name: string, text: string) => invoke<void>("journal_write", { name, text }),
+  journalDelete: (name: string) => invoke<void>("journal_delete", { name }),
+  journalOpenFolder: () => invoke<void>("journal_open_folder"),
   pieceStart: (notes: PieceNoteIn[], config: PieceConfig) => invoke<number>("piece_start", { notes, config }),
   pieceStop: () => invoke<void>("piece_stop"),
   rhythmStart: (notes: PieceNoteIn[], beats: { ms: number; accent: boolean }[], config: RhythmConfig) =>

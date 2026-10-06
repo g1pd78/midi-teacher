@@ -3378,3 +3378,119 @@ button.ex-star.on,
   gap: 16px;
   flex-wrap: wrap;
 }
+
+/* Дневник */
+.course-step-hint {
+  display: block;
+  font-size: 12px;
+  margin-top: 2px;
+}
+.journal-goal {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.journal-goal label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.journal-goal label:first-child {
+  flex: 1;
+  min-width: 260px;
+}
+.journal-goal-min input {
+  width: 110px;
+}
+.journal-day-h {
+  font-size: 15px;
+  margin: 12px 0 8px;
+}
+.journal-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.button-like {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  cursor: pointer;
+}
+.journal-paste {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.journal-paste textarea,
+.journal-prompt {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+}
+.journal-lessons {
+  margin-top: 12px;
+}
+.journal-days {
+  margin-top: 12px;
+}
+.journal-days ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  line-height: 1.7;
+}
+.journal-days li.past {
+  opacity: 0.6;
+}
+.journal-days li.today {
+  color: var(--right-hand);
+}
+.journal-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.journal-history-head {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+.journal-history-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.journal-goal input {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.journal-history-items .chip {
+  max-width: 420px;
+}
+.journal-history li {
+  display: flex;
+  flex-direction: column;
+}

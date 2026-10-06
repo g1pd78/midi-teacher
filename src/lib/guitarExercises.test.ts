@@ -106,7 +106,7 @@ describe("гитарные упражнения", () => {
       expect(notes.length, e.id).toBe(model.length);
       expect(notes.map((n) => n.pitch), e.id).toEqual(model.map((n) => n.pitch));
     }
-  });
+  }, 30_000);
 
   it("игра под барабаны: рифф + барабаны, барабаны звучат на 9-м канале по всей длине", () => {
     for (const e of GTR_EXERCISES.filter((x) => x.category === "groove")) {

@@ -10,7 +10,7 @@
 // Используется голый протокол W3C WebDriver поверх fetch — без WebdriverIO.
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1587,6 +1587,68 @@ try {
   const songSteps = await playWait("песня на барабанах", songHit);
   ok(`барабаны к песне: «Ода к радости» сыграна на пэдах — ${songSteps} шагов, сбивки по томам и тарелка, 0 ошибок`);
   await waitFor("к барабанам", () => click("← Барабаны"));
+
+  console.log("Сквозной тест: дневник");
+  const setField = (sel, value) =>
+    js(
+      "const [sel, value] = arguments; const el = document.querySelector(sel); if (!el) return false;" +
+        "const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;" +
+        "Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true }));" +
+        "el.dispatchEvent(new FocusEvent('focusout', { bubbles: true })); return true;",
+      [sel, value],
+    );
+  await waitFor("вкладка «Дневник»", () => click("Дневник"));
+  const historyDays = await waitFor("история занятий", () => js("return Number(document.querySelector('[data-journal-history]')?.dataset.journalHistory ?? 0);"), 15000);
+  // Недельный файл дневника в папке: формат, пьесы и упражнения сегодняшнего теста.
+  const journalDir = join(docs, "MIDI Teacher", "Дневник");
+  const weekFile = await waitFor("файл недели", () => existsSync(journalDir) && readdirSync(journalDir).find((f) => /^\d{4}-W\d{2}\.yaml$/.test(f)), 10000);
+  const weekText = readFileSync(join(journalDir, weekFile), "utf8");
+  if (!weekText.includes("format: midi-teacher/journal@1") || !weekText.includes("Ода к радости") || !weekText.includes("course-piece-twinkle"))
+    throw new Error(`дневник недели:\n${weekText.slice(0, 600)}`);
+  ok(`дневник: ${historyDays} дн. в истории, файл ${weekFile} в папке (пьесы, упражнения, точность)`);
+  // Цель и запрос для Claude.
+  await setField("[data-goal-text]", "Сыграть «К Элизе» к Новому году");
+  await waitFor("цель сохранена", () => existsSync(join(journalDir, "цель.yaml")) && readFileSync(join(journalDir, "цель.yaml"), "utf8").includes("К Элизе"), 5000);
+  const prompt = await js("return document.querySelector('[data-claude-prompt]')?.value ?? '';");
+  if (!prompt.includes("midi-teacher/plan@1") || !prompt.includes("К Элизе» к Новому году") || !prompt.includes("piece: fur-elise")) throw new Error("запрос для Claude неполный");
+  ok(`запрос для Claude: цель, формат плана, каталог и дневник (${Math.round(prompt.length / 1000)} тыс. знаков)`);
+  // План из YAML: ошибка показывается, верный план загружается и виден на сегодня.
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  await waitFor("вставить план", () => clickSel("[data-plan-paste]"));
+  await setField("[data-plan-text]", "lessons:\n  - id: a\n    steps:\n      - exercise: nope\n");
+  await waitFor("проверить", () => clickSel("[data-plan-load]"));
+  await waitFor("ошибка в плане", () => js("return (document.querySelector('[data-plan-import-errors]')?.innerText ?? '').includes('нет такого задания');"), 5000);
+  const planYaml = [
+    "format: midi-teacher/plan@1",
+    "title: Тест дневника",
+    "instrument: piano",
+    "lessons:",
+    "  - id: t1",
+    "    title: Урок из файла",
+    "    steps:",
+    "      - theory: durations",
+    "      - exercise: major-C-rh",
+    "        target: { tempo: 0.8 }",
+    "plan:",
+    `  - date: ${todayStr}`,
+    "    lesson: t1",
+  ].join("\n");
+  await setField("[data-plan-text]", planYaml);
+  await waitFor("загрузить", () => clickSel("[data-plan-load]"));
+  await waitFor("план на сегодня", () => js("return document.querySelectorAll('[data-plan-today] [data-course-step]').length === 2;"), 5000);
+  if (!existsSync(join(journalDir, "план.yaml"))) throw new Error("план.yaml не сохранён");
+  await waitFor("шаг теории из плана", () => clickSel("[data-plan-today] [data-course-run='0']"));
+  await waitFor("«Понятно»", () => clickSel("[data-course-theory-ok]"));
+  await waitFor("шаг плана сделан сегодня", () => js("return document.querySelector('[data-plan-today] [data-course-step=\"0\"]')?.dataset.stepDone === '1';"), 5000);
+  ok("план из YAML: ошибки с местом, верный план загружен, шаг дня сделан");
+  await waitFor("главная", () => click("Главная"));
+  const planStep = await waitFor("шаг «По плану»", () =>
+    js("const b = [...document.querySelectorAll('.today-step')].find((b) => b.textContent.includes('По плану')); return b ? b.innerText.replace(/\\s+/g, ' ') : '';"),
+    10000,
+  );
+  if (!planStep.includes("сделано 1 из 2")) throw new Error(`шаг «По плану»: ${planStep}`);
+  ok(`главная: ${planStep}`);
 
   console.log("Сквозной тест: доводка");
   // Панель пьесы: редкое — в меню «⋯»; Esc закрывает только меню.

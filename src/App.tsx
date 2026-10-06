@@ -19,6 +19,7 @@ const screens = {
   settings: () => import("./screens/Settings"),
   trainers: () => import("./screens/Trainers"),
   course: () => import("./screens/Course"),
+  journal: () => import("./screens/Journal"),
 };
 const Exercises = lazy(() => screens.exercises().then((m) => ({ default: m.Exercises })));
 const Guitar = lazy(() => screens.guitar().then((m) => ({ default: m.Guitar })));
@@ -30,8 +31,9 @@ const Reference = lazy(() => screens.reference().then((m) => ({ default: m.Refer
 const Settings = lazy(() => screens.settings().then((m) => ({ default: m.Settings })));
 const Trainers = lazy(() => screens.trainers().then((m) => ({ default: m.Trainers })));
 const Course = lazy(() => screens.course().then((m) => ({ default: m.Course })));
+const Journal = lazy(() => screens.journal().then((m) => ({ default: m.Journal })));
 
-export type Screen = "home" | "course" | "pieces" | "exercises" | "trainer" | "guitar" | "drums" | "studio" | "reference" | "progress" | "settings";
+export type Screen = "home" | "course" | "journal" | "pieces" | "exercises" | "trainer" | "guitar" | "drums" | "studio" | "reference" | "progress" | "settings";
 
 export function App() {
   const { ready, init, prefs } = useApp();
@@ -47,6 +49,8 @@ export function App() {
   const [drillReq, setDrillReq] = useState(false);
   // «Курс»: открыть текущий урок с главной.
   const [courseReq, setCourseReq] = useState(false);
+  // «Дневник»: прокрутить к плану или повторению (переход с главной).
+  const [journalFocus, setJournalFocus] = useState<"plan" | "review" | null>(null);
   // Окно горячих клавиш: «?» или F1 на любом экране.
   const [help, setHelp] = useState(false);
   useEffect(() => {
@@ -121,11 +125,25 @@ export function App() {
               setOpenPiece(id);
               setScreen("pieces");
             },
+            journal: (focus) => {
+              setJournalFocus(focus);
+              setScreen("journal");
+            },
           }}
         />
       )}
       <Suspense fallback={<div className="loading">Загрузка…</div>}>
       {screen === "course" && <Course openLesson={courseReq} onOpened={() => setCourseReq(false)} />}
+      {screen === "journal" && (
+        <Journal
+          focus={journalFocus}
+          onFocused={() => setJournalFocus(null)}
+          onOpenPiece={(id) => {
+            setOpenPiece(id);
+            setScreen("pieces");
+          }}
+        />
+      )}
       {screen === "pieces" && <Pieces initial={openPiece} onInitialOpened={() => setOpenPiece(null)} />}
       {screen === "progress" && (
         <Progress

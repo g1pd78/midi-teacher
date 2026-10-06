@@ -140,6 +140,57 @@ pub struct ExerciseAttempt {
     pub passed: bool,
 }
 
+/// История для дневника: все попытки с момента `since`.
+#[derive(Debug, Clone, PartialEq, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Journal {
+    pub exercises: Vec<JournalExercise>,
+    pub attempts: Vec<JournalAttempt>,
+    pub trainer: Vec<JournalTrainer>,
+    /// (начало 15-минутной корзины, секунды игры).
+    pub play: Vec<(i64, f64)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JournalExercise {
+    pub exercise: String,
+    pub finished_at: i64,
+    pub tempo: f64,
+    pub accuracy: f64,
+    pub timing_sd_ms: f64,
+    pub passed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JournalAttempt {
+    pub piece: String,
+    pub title: String,
+    pub from: u32,
+    pub to: u32,
+    pub level: Option<u8>,
+    pub mode: String,
+    pub hands: String,
+    pub tempo: f64,
+    pub accuracy: f64,
+    pub duration_ms: u32,
+    pub finished_at: i64,
+    /// Такты с ошибками в этой попытке.
+    pub hard: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JournalTrainer {
+    pub level: u32,
+    pub finished_at: i64,
+    pub notes: u32,
+    pub first_try: u32,
+    pub avg_reaction_ms: u32,
+    pub passed: bool,
+}
+
 /// Что сделано за сегодня (с начала местных суток).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -635,6 +686,85 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Всё, что играли с момента `since_secs`: упражнения, попытки пьес, серии тренажёра, время игры.
+    pub fn journal(&self, since_secs: i64) -> Result<Journal> {
+        let mut stmt = self.conn.prepare(
+            "SELECT exercise, finished_at, tempo, accuracy, timing_sd_ms, passed FROM exercise_results
+             WHERE finished_at >= ?1 ORDER BY id",
+        )?;
+        let exercises = stmt
+            .query_map(params![since_secs], |r| {
+                Ok(JournalExercise {
+                    exercise: r.get(0)?,
+                    finished_at: r.get(1)?,
+                    tempo: r.get(2)?,
+                    accuracy: r.get(3)?,
+                    timing_sd_ms: r.get(4)?,
+                    passed: r.get(5)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut stmt = self.conn.prepare(
+            "SELECT a.id, a.piece, COALESCE(p.title, a.piece), a.from_m, a.to_m, a.level, a.mode, a.hands,
+                    a.tempo, a.accuracy, a.duration_ms, a.finished_at
+             FROM practice_attempts a LEFT JOIN pieces p ON p.id = a.piece
+             WHERE a.finished_at >= ?1 ORDER BY a.id",
+        )?;
+        let rows = stmt
+            .query_map(params![since_secs], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    JournalAttempt {
+                        piece: r.get(1)?,
+                        title: r.get(2)?,
+                        from: r.get(3)?,
+                        to: r.get(4)?,
+                        level: r.get(5)?,
+                        mode: r.get(6)?,
+                        hands: r.get(7)?,
+                        tempo: r.get(8)?,
+                        accuracy: r.get(9)?,
+                        duration_ms: r.get(10)?,
+                        finished_at: r.get(11)?,
+                        hard: Vec::new(),
+                    },
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut hard = self.conn.prepare(
+            "SELECT measure FROM attempt_measures WHERE attempt = ?1 AND errors > 0 ORDER BY measure",
+        )?;
+        let mut attempts = Vec::with_capacity(rows.len());
+        for (id, mut a) in rows {
+            a.hard = hard
+                .query_map(params![id], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            attempts.push(a);
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT level, finished_at, notes, first_try, avg_reaction_ms, passed FROM trainer_sessions
+             WHERE finished_at >= ?1 ORDER BY id",
+        )?;
+        let trainer = stmt
+            .query_map(params![since_secs], |r| {
+                Ok(JournalTrainer {
+                    level: r.get(0)?,
+                    finished_at: r.get(1)?,
+                    notes: r.get(2)?,
+                    first_try: r.get(3)?,
+                    avg_reaction_ms: r.get(4)?,
+                    passed: r.get(5)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(Journal {
+            exercises,
+            attempts,
+            trainer,
+            play: self.play_time(since_secs)?,
+        })
+    }
+
     /// Разминка дня пройдена (момент — секунды Unix).
     pub fn set_warmup_done(&mut self, now_secs: i64) -> Result<()> {
         self.conn.execute(
@@ -679,7 +809,7 @@ impl Store {
                    AND exercise NOT LIKE 'chord-%' AND exercise NOT LIKE 'gtr-%'
                    AND exercise NOT LIKE 'bass-%' AND exercise NOT LIKE 'fret-%'
                    AND exercise NOT LIKE 'gchord-%' AND exercise NOT LIKE 'gchange-%'
-                   AND exercise NOT LIKE 'ear-%'",
+                   AND exercise NOT LIKE 'ear-%' AND exercise NOT LIKE 'course-%'",
             )?,
             trainer_sessions: count(
                 "SELECT COUNT(*) FROM trainer_sessions WHERE finished_at >= ?1",
@@ -1067,5 +1197,63 @@ mod tests {
         assert_eq!(store.unlocked_level().unwrap(), 2);
         assert_eq!(store.note_stats().unwrap().len(), 5);
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn journal_collects_attempts_exercises_and_hard_bars() {
+        let mut store = Store::open_in_memory().unwrap();
+        let meta = PieceMeta {
+            id: "builtin:ode".into(),
+            title: "Ода к радости".into(),
+            measures: 8,
+            phrase_ends: vec![4, 8],
+            measure_hands: vec![3; 8],
+        };
+        store.open_piece(&meta, 100).unwrap();
+        let attempt = AttemptRecord {
+            from: 1,
+            to: 4,
+            level: Some(2),
+            mode: "wait".into(),
+            hands: "both".into(),
+            tempo: 0.8,
+            accuracy: 0.9,
+            duration_ms: 20_000,
+            trouble: vec![
+                MeasureErrorsIn {
+                    measure: 3,
+                    errors: 2,
+                },
+                MeasureErrorsIn {
+                    measure: 4,
+                    errors: 0,
+                },
+            ],
+        };
+        store.record_attempt("builtin:ode", &attempt, 200).unwrap();
+        store.record_attempt("builtin:ode", &attempt, 50).unwrap();
+        store
+            .record_exercise(
+                &ExerciseResult {
+                    exercise: "major-C-rh".into(),
+                    tempo: 1.0,
+                    accuracy: 0.97,
+                    timing_sd_ms: 30.0,
+                    loudness: 0.9,
+                    passed: true,
+                },
+                210,
+            )
+            .unwrap();
+        store.add_play_time(&[(0, 120.0), (900, 60.0)]).unwrap();
+        let j = store.journal(100).unwrap();
+        assert_eq!(j.attempts.len(), 1);
+        assert_eq!(j.attempts[0].title, "Ода к радости");
+        assert_eq!(j.attempts[0].hard, vec![3]);
+        assert_eq!(j.attempts[0].level, Some(2));
+        assert_eq!(j.exercises.len(), 1);
+        assert!(j.exercises[0].passed);
+        assert_eq!(j.play, vec![(900, 60.0)]);
+        assert!(j.trainer.is_empty());
     }
 }

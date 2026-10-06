@@ -57,6 +57,24 @@ export function createPracticeMock() {
   const manual = new Map<string, Map<string, number>>();
   const exResults: { exercise: string; at: number; tempo: number; accuracy: number; timingSdMs: number; loudness: number; passed: boolean }[] = [];
   let warmupAt = 0;
+  const files = new Map<string, string>();
+  // ?journal — история за прошлые дни для проверки дневника и повторения в браузере.
+  if (typeof location !== "undefined" && location.search.includes("journal")) {
+    const day = 86400;
+    const now = Date.now() / 1000;
+    const ex = (exercise: string, daysAgo: number, passed: boolean, accuracy = passed ? 0.97 : 0.8) =>
+      exResults.push({ exercise, at: now - daysAgo * day, tempo: 1, accuracy, timingSdMs: 35, loudness: 0.9, passed });
+    ex("five-C-updown-right", 9, true);
+    ex("five-C-updown-right", 8, true);
+    ex("major-C-rh", 4, true);
+    ex("course-theory-staff", 9, true);
+    ex("course-theory-treble-clef", 9, true);
+    ex("course-theory-fingering", 9, true);
+    ex("rhythm-line-1", 8, true);
+    ex("course-piece-twinkle", 8, true);
+    ex("ear-interval-1", 8, true);
+    ex("read-2-wait", 2, false);
+  }
   const exStats = () => {
     const by = new Map<string, typeof exResults>();
     for (const r of exResults) by.set(r.exercise, [...(by.get(r.exercise) ?? []), r]);
@@ -198,6 +216,40 @@ export function createPracticeMock() {
         exResults
           .filter((r) => r.exercise.startsWith(prefix) && r.at >= since)
           .map((r) => ({ exercise: r.exercise, finishedAt: r.at, accuracy: r.accuracy, passed: r.passed })),
+      journal_events: ({ since }: { since: number }) => ({
+        exercises: exResults
+          .filter((r) => r.at >= since)
+          .map((r) => ({ exercise: r.exercise, finishedAt: Math.round(r.at), tempo: r.tempo, accuracy: r.accuracy, timingSdMs: r.timingSdMs, passed: r.passed })),
+        attempts: [...pieces.values()].flatMap((r) =>
+          r.attempts
+            .filter((x) => x.at >= since)
+            .map((x) => ({
+              piece: r.meta.id,
+              title: r.meta.title,
+              from: x.a.from,
+              to: x.a.to,
+              level: x.a.level,
+              mode: x.a.mode,
+              hands: x.a.hands,
+              tempo: x.a.tempo,
+              accuracy: x.a.accuracy,
+              durationMs: x.a.durationMs,
+              finishedAt: Math.round(x.at),
+              hard: x.a.trouble.filter((t) => t.errors > 0).map((t) => t.measure),
+            })),
+        ),
+        trainer: [],
+        play: [...play.entries()].filter(([b]) => b >= since).sort((a, b) => a[0] - b[0]),
+      }),
+      journal_folder: () => "Документы/MIDI Teacher/Дневник",
+      journal_read: ({ name }: { name: string }) => files.get(name) ?? null,
+      journal_write: ({ name, text }: { name: string; text: string }) => {
+        files.set(name, text);
+      },
+      journal_delete: ({ name }: { name: string }) => {
+        files.delete(name);
+      },
+      journal_open_folder: () => undefined,
       warmup_done: () => {
         warmupAt = Date.now() / 1000;
       },
@@ -205,7 +257,7 @@ export function createPracticeMock() {
         const last = [...pieces.values()].sort((a, b) => b.openedAt - a.openedAt)[0];
         return {
           warmupDone: warmupAt >= dayStart,
-          exercises: exResults.filter((r) => r.at >= dayStart && !/^(read|rhythm)-/.test(r.exercise)).length,
+          exercises: exResults.filter((r) => r.at >= dayStart && !/^(read|rhythm|course)-/.test(r.exercise)).length,
           trainerSessions: 0,
           pieceAttempts: [...pieces.values()].reduce((n, r) => n + r.attempts.filter((a) => a.at >= dayStart).length, 0),
           lastPiece: last ? [last.meta.id, last.meta.title] : null,

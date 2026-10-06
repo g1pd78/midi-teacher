@@ -215,8 +215,27 @@ export function Course({ openLesson, onOpened }: { openLesson?: boolean; onOpene
   );
 }
 
-function StepList({ steps, instrument, progress, onRun, review }: { steps: CourseStep[]; instrument: CourseInstrument; progress: CourseProgress; onRun: (s: CourseStep) => void; review?: CourseStep | null }) {
-  const firstUndone = steps.findIndex((s) => !stepDone(s, instrument, progress));
+export function StepList({
+  steps,
+  instrument,
+  progress,
+  onRun,
+  review,
+  hints,
+  done,
+}: {
+  steps: CourseStep[];
+  instrument: CourseInstrument;
+  progress: CourseProgress;
+  onRun: (s: CourseStep) => void;
+  review?: CourseStep | null;
+  /** Пояснение под шагом (цель, заметка) — по номеру шага. */
+  hints?: (string | undefined)[];
+  /** Своё «сделано» по номеру шага (план дня — сыграно сегодня); иначе — засчитано когда-либо. */
+  done?: boolean[];
+}) {
+  const isDone = (s: CourseStep, i: number) => done?.[i] ?? stepDone(s, instrument, progress);
+  const firstUndone = steps.findIndex((s, i) => !isDone(s, i));
   return (
     <ol className="course-steps">
       {review && (
@@ -232,13 +251,16 @@ function StepList({ steps, instrument, progress, onRun, review }: { steps: Cours
         </li>
       )}
       {steps.map((s, i) => {
-        const done = stepDone(s, instrument, progress);
+        const stepIsDone = isDone(s, i);
         return (
-          <li key={i} className={`course-step${done ? " done" : ""}${i === firstUndone ? " next" : ""}`} data-course-step={i} data-step-done={done ? "1" : "0"} data-step-kind={s.kind}>
-            <span className="course-step-mark">{done ? "✓" : i + 1}</span>
-            <span className="course-step-title">{stepTitle(s, instrument)}</span>
+          <li key={i} className={`course-step${stepIsDone ? " done" : ""}${i === firstUndone ? " next" : ""}`} data-course-step={i} data-step-done={stepIsDone ? "1" : "0"} data-step-kind={s.kind}>
+            <span className="course-step-mark">{stepIsDone ? "✓" : i + 1}</span>
+            <span className="course-step-title">
+              {stepTitle(s, instrument)}
+              {hints?.[i] && <span className="course-step-hint muted">{hints[i]}</span>}
+            </span>
             <button className={`small${i === firstUndone ? " primary" : ""}`} onClick={() => onRun(s)} data-course-run={i}>
-              {done ? "Ещё раз" : "▶"}
+              {stepIsDone ? "Ещё раз" : "▶"}
             </button>
           </li>
         );
@@ -327,7 +349,7 @@ const BACK = "← Курс";
  * Нотный шаг (упражнение, пьеса, песня, чтение, ритм): источник и зачёт. Собираются один раз на шаг —
  * новый объект источника на каждой перерисовке перезапускал бы пьесу и сбрасывал режим ожидания.
  */
-function stepPiece(step: CourseStep, tuning: number[] | null, seed: number): { source: PieceSource; exercise?: ExerciseContext; run?: Run } | null {
+function stepPiece(step: CourseStep, tuning: number[] | null, seed: number, BACK: string): { source: PieceSource; exercise?: ExerciseContext; run?: Run } | null {
   switch (step.kind) {
     case "exercise": {
       const ex = EXERCISE_BY_ID.get(step.id)!;
@@ -407,14 +429,14 @@ function stepPiece(step: CourseStep, tuning: number[] | null, seed: number): { s
 }
 
 /** Запуск шага урока: то же задание, что в разделе приложения; «назад» — в урок. */
-function StepRun({ step, instrument, onDone }: { step: CourseStep; instrument: CourseInstrument; onDone: () => void }) {
+export function StepRun({ step, instrument, onDone, backLabel = BACK }: { step: CourseStep; instrument: CourseInstrument; onDone: () => void; backLabel?: string }) {
   const [seed, setSeed] = useState(freshSeed);
   const strings = instrument === "bass" ? "bass" : "guitar";
   const tuning = useStringTuning(strings);
   const tuningKey = tuning?.join(",") ?? "";
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const piece = useMemo(() => stepPiece(step, tuning, seed), [step, tuningKey, seed]);
-  const back = BACK;
+  const piece = useMemo(() => stepPiece(step, tuning, seed, backLabel), [step, tuningKey, seed, backLabel]);
+  const back = backLabel;
   if (piece?.run) return <DrillRun key={seed} run={piece.run} source={piece.source} backLabel={back} onBack={onDone} onAgain={() => setSeed((s) => s + 1)} onRecorded={() => {}} />;
   if (piece) return <PieceView key={piece.source.id} source={piece.source} onBack={onDone} exercise={piece.exercise} />;
   switch (step.kind) {
