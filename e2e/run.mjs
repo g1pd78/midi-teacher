@@ -563,10 +563,15 @@ try {
   ok("мастер пэдов: 4 пэда назначены, повторный пэд отклонён");
 
   // Экранный пэд: удар звучит и приходит от «Пэдов».
+  // Вспышка длится 150 мс — ловим её наблюдателем за классом, а не опросом.
   await waitFor("экранный пэд", () =>
-    js("const b = document.querySelector(\".drums [data-drum='snare']\"); if (!b) return false; b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); return true;"),
+    js(
+      "const b = document.querySelector(\".drums [data-drum='snare']\"); if (!b) return false;" +
+        "window.__padFlash = false; new MutationObserver(() => { if (b.classList.contains('held')) window.__padFlash = true; }).observe(b, { attributes: true, attributeFilter: ['class'] });" +
+        "b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); return true;",
+    ),
   );
-  await waitFor("экранный пэд вспыхнул", () => js("return !!document.querySelector(\".drums [data-drum='snare'].held\");"), 3000);
+  await waitFor("экранный пэд вспыхнул", () => js("return window.__padFlash === true;"), 3000);
   ok("удар по экранному пэду приходит от устройства «Пэды»");
 
   // Бот играет грув на пэдах в режиме ожидания: каждый нужный барабан — удар по назначенному пэду.
