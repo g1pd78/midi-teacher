@@ -134,6 +134,9 @@ jobs:
           g++ -std=c++17 -Wall -Wextra -Werror -I hardware/key-lights/firmware/MIDITeacherLights \
             hardware/key-lights/firmware/test/lights_core_test.cpp -o lights_core_test
           ./lights_core_test
+          g++ -std=c++17 -Wall -Wextra -Werror -I hardware/key-lights/firmware/MIDITeacherLights \
+            hardware/key-lights/firmware/test/radio_core_test.cpp -o radio_core_test
+          ./radio_core_test
 
       - uses: arduino/setup-arduino-cli@v2
 
