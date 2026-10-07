@@ -161,6 +161,12 @@ fn lights_send(state: State<AppState>, bytes: Vec<u8>) -> bool {
     state.devices.lights_send(&bytes)
 }
 
+/// Имитация сообщения от платы подсветки (статус радио) — для сквозных тестов без платы.
+#[tauri::command]
+fn lights_inject(state: State<AppState>, bytes: Vec<u8>) {
+    state.devices.lights_inject(&bytes);
+}
+
 /// Удар по экранному пэду: барабан звучит и засчитывается, как удар по настоящему.
 #[tauri::command]
 fn hit_drum(state: State<AppState>, drum: u8, velocity: u8) {
@@ -421,6 +427,7 @@ pub fn run() {
             lights_state,
             lights_frame,
             lights_send,
+            lights_inject,
             hit_drum,
             set_audio_config,
             set_prefs,

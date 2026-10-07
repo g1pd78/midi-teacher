@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LIGHT, LIGHT_DIM, keyCenter, ledOf, lightsFrame, lightsFromHighlight, lightsKey, sysex, withPresses } from "./lights";
+import { LIGHT, LIGHT_DIM, keyCenter, ledOf, lightsFrame, lightsFromHighlight, lightsKey, signalWord, statusSysex, sysex, withPresses } from "./lights";
 
 describe("lightsFromHighlight", () => {
   it("переводит цвета экрана в цвета платы, пропускает нажатые и тусклит слабые подсказки", () => {
@@ -99,5 +99,26 @@ describe("кадр и мои нажатия", () => {
 
   it("заранее в темпе — тусклым (слабая подсказка)", () => {
     expect(lightsFromHighlight({ 62: { color: "#5AA9FF", strength: 0.2 } })).toEqual([[62, LIGHT.right + LIGHT_DIM]]);
+  });
+});
+
+describe("радио", () => {
+  it("команды связки и статус как в прошивке", () => {
+    expect(sysex.status()).toEqual([0xf0, 0x7d, 0x4d, 0x54, 0x05, 0xf7]);
+    expect(sysex.pair()).toEqual([0xf0, 0x7d, 0x4d, 0x54, 0x06, 0xf7]);
+    expect(sysex.unpair()).toEqual([0xf0, 0x7d, 0x4d, 0x54, 0x07, 0xf7]);
+    // Тот же статус проверяет g++-тест прошивки (radio_core_test.cpp).
+    expect(statusSysex(1, 2, -58, 3)).toEqual([0xf0, 0x7d, 0x4d, 0x54, 0x20, 1, 1, 2, 58, 3, 0xf7]);
+    expect(statusSysex(0, 0, 0, 250)).toEqual([0xf0, 0x7d, 0x4d, 0x54, 0x20, 1, 0, 0, 0, 100, 0xf7]);
+  });
+
+  it("сигнал словами", () => {
+    expect(signalWord(-50)).toBe("хороший");
+    expect(signalWord(-67)).toBe("хороший");
+    expect(signalWord(-75)).toBe("средний");
+    expect(signalWord(-80)).toBe("средний");
+    expect(signalWord(-90)).toBe("слабый");
+    expect(signalWord(null)).toBeNull();
+    expect(signalWord(0)).toBeNull();
   });
 });

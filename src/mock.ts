@@ -14,6 +14,7 @@ import type {
   FullState,
   InputSettings,
   MidiEvent,
+  LightsLink,
   LightsSettings,
   PadBinding,
   PieceNoteIn,
@@ -116,11 +117,28 @@ export function createMock() {
       pads,
       lights,
       lightsPort: demoLights && lights.enabled && (!lights.port || lights.port === "MIDI Teacher Lights") ? "MIDI Teacher Lights" : null,
+      lightsLink: demoLights && lights.enabled ? lightsLink : null,
     };
   };
   let pads: PadBinding[] = [];
   let lights: LightsSettings = { enabled: true, port: null, brightness: 25, showPresses: true };
   let lit: [number, number][] = [];
+  // Демо-плата — свисток: «Связать» через 2 секунды находит ленту.
+  let lightsLink: LightsLink = { link: "wired", pairing: "idle", rssi: null, loss: 0 };
+  const LINKS = ["wired", "online", "lost"] as const;
+  const PAIRINGS = ["idle", "searching", "done", "notFound"] as const;
+  const onLightsSysex = (bytes: number[]) => {
+    if (bytes[4] === 0x06) {
+      lightsLink = { ...lightsLink, pairing: "searching" };
+      setTimeout(() => {
+        lightsLink = { link: "online", pairing: "done", rssi: -58, loss: 1 };
+        emit("devices", snapshot());
+      }, 2000);
+    } else if (bytes[4] === 0x07) {
+      lightsLink = { link: "wired", pairing: "idle", rssi: null, loss: 0 };
+    } else return;
+    emit("devices", snapshot());
+  };
   const songs: Record<string, Song> = {};
 
   type Body = { type: "noteOn"; note: number; velocity: number } | { type: "noteOff"; note: number };
@@ -691,7 +709,17 @@ export function createMock() {
     },
     lights_state: () => lit,
     lights_frame: () => [0xf0, 0x7d, 0x4d, 0x54, 0x10, Math.round((lights.brightness * 127) / 100), ...[...lit].sort((a, b) => a[0] - b[0]).flat(), 0xf7],
-    lights_send: () => demoLights && lights.enabled,
+    lights_send: ({ bytes }) => {
+      if (!demoLights || !lights.enabled) return false;
+      onLightsSysex(bytes as number[]);
+      return true;
+    },
+    lights_inject: ({ bytes }) => {
+      const b = bytes as number[];
+      if (b[4] !== 0x20) return;
+      lightsLink = { link: LINKS[b[6]] ?? "wired", pairing: PAIRINGS[b[7]] ?? "idle", rssi: b[8] ? -b[8] : null, loss: b[9] };
+      emit("devices", snapshot());
+    },
     hit_drum: ({ drum, velocity }) => {
       send(PADS_DEVICE, { type: "noteOn", note: drum as number, velocity: velocity as number });
       setTimeout(() => emitMidi(PADS_DEVICE, { type: "noteOff", note: drum as number }), 150);

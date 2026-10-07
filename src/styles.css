@@ -3937,3 +3937,15 @@ button.ex-star.on,
 .lights-wizard .hint {
   margin: 0;
 }
+.lights-radio {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lights-radio p {
+  margin: 0;
+}

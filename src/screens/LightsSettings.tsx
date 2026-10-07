@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { api, listen, PADS_DEVICE, type LightsSettings } from "../api";
+import { api, listen, PADS_DEVICE, type LightsLink, type LightsSettings } from "../api";
 import { useLights, usePublishLights } from "../components/LightsBridge";
-import { LIGHT, LIGHT_CSS, LIGHT_DIM, sysex } from "../lib/lights";
+import { LIGHT, LIGHT_CSS, LIGHT_DIM, signalWord, sysex } from "../lib/lights";
 import { fullName, keyboardLayout } from "../lib/notes";
 import { useApp } from "../store";
 
@@ -12,7 +12,11 @@ export function LightsSection() {
   const [wizard, setWizard] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const save = (next: Partial<LightsSettings>) => void api.setLightsSettings({ ...lights, ...next });
-  const connected = !!devices.lightsPort;
+  // Статус радио приходит только с подключённой платы (без платы — из сквозного теста).
+  const link = devices.lightsLink ?? null;
+  const port = devices.lightsPort ?? (link ? "MIDI Teacher Lights" : null);
+  const connected = !!port;
+  const how = !link ? "" : link.link === "wired" ? " — по проводу" : link.link === "online" ? " — по радио через свисток" : " — лента не отвечает";
 
   return (
     <section className="card" data-lights-section data-lights-connected={connected ? "1" : "0"}>
@@ -25,8 +29,8 @@ export function LightsSection() {
       <div className="field">
         <span>Плата</span>
         <span className="lights-status">
-          <span className={connected ? "chip good" : "chip"} data-lights-status>
-            {connected ? devices.lightsPort : "не найдена"}
+          <span className={!connected ? "chip" : link?.link === "lost" ? "chip warn" : "chip good"} data-lights-status data-lights-link={link?.link ?? "none"}>
+            {connected ? `${port}${how}` : "не найдена"}
           </span>
           <label className="switch" title="Включить подсветку">
             <input type="checkbox" checked={lights.enabled} onChange={(e) => save({ enabled: e.target.checked })} data-lights-enabled />
@@ -71,9 +75,59 @@ export function LightsSection() {
         </span>
       </div>
       {note && <p className="hint">{note}</p>}
+      {connected && <RadioBlock link={link} />}
       {wizard && <Calibration naming={prefs.noteNames} onDone={() => setWizard(false)} />}
       <LightsPreview />
     </section>
+  );
+}
+
+/** «Без провода»: качество связи, связка свистка с лентой. */
+function RadioBlock({ link }: { link: LightsLink | null }) {
+  if (!link) {
+    return (
+      <div className="lights-radio" data-lights-radio="none">
+        <b>Без провода</b>
+        <p className="hint">
+          Плата не сообщает о радио. Чтобы огоньки шли на ленту без провода через свисток, обнови прошивку платы — файл
+          MIDI-Teacher-Lights-esp32s3 из той же сборки, что и приложение.
+        </p>
+      </div>
+    );
+  }
+  const paired = link.link !== "wired";
+  const word = signalWord(link.rssi);
+  const searching = link.pairing === "searching";
+  return (
+    <div className="lights-radio" data-lights-radio={link.pairing}>
+      <b>Без провода</b>
+      {link.link === "online" && (
+        <p className="muted" data-lights-quality>
+          Сигнал {word ? `${word} (${link.rssi} дБм)` : "неизвестен"} · потери {link.loss}%
+          {word === "слабый" || link.loss >= 10 ? " — поставь свисток ближе к пианино или на удлинитель, на виду" : ""}
+        </p>
+      )}
+      {link.link === "lost" && <p className="hint">Лента не отвечает: проверь блок питания ленты и что свисток вставлен в компьютер.</p>}
+      <p className="hint">
+        Свисток — вторая плата ESP32-S3 в USB компьютера — передаёт огоньки ленте по радио. Чтобы связать: выключи и включи блок
+        питания ленты, затем в течение 2 минут нажми «Связать с лентой».
+      </p>
+      <div className="buttons">
+        <button onClick={() => void api.lightsSend(sysex.pair())} disabled={searching} data-lights-pair>
+          {paired ? "Связать заново" : "Связать с лентой"}
+        </button>
+        {paired && (
+          <button className="ghost" onClick={() => void api.lightsSend(sysex.unpair())} data-lights-unpair>
+            Забыть ленту
+          </button>
+        )}
+      </div>
+      {searching && <p className="muted">Ищу ленту…</p>}
+      {link.pairing === "done" && <p className="muted">Связано: огоньки идут на ленту по радио.</p>}
+      {link.pairing === "notFound" && (
+        <p className="hint">Лента не нашлась: выключи и включи её питание и в течение 2 минут нажми «Связать» ещё раз.</p>
+      )}
+    </div>
   );
 }
 

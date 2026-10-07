@@ -1843,6 +1843,34 @@ try {
   const build = await waitFor("номер сборки", () => js("return document.querySelector('[data-about]')?.dataset.build ?? '';"));
   if (build === "dev" || build.length < 7) throw new Error(`номер сборки: ${build}`);
 
+  // Подсветка без провода: статус радио от платы (без платы — имитация сообщения от неё).
+  // F0 7D 4D 54 20 <версия> <связь> <связка> <−дБм> <потери> F7; статус живёт 3 секунды — повторяем, пока ждём.
+  const radio = async (name, bytes, check) =>
+    waitFor(name, async () => {
+      await invoke("lights_inject", { bytes });
+      return js(check);
+    }, 5000);
+  const online = [0xf0, 0x7d, 0x4d, 0x54, 0x20, 1, 1, 2, 58, 1, 0xf7];
+  const radioText = await radio(
+    "лента по радио на связи",
+    online,
+    "const s = document.querySelector('[data-lights-status]'); const q = document.querySelector('[data-lights-quality]'); return s?.dataset.lightsLink === 'online' && q && document.querySelector('[data-lights-radio]')?.dataset.lightsRadio === 'done' && document.querySelector('[data-lights-unpair]') ? s.textContent + ' · ' + q.textContent : false;",
+  );
+  if (!radioText.includes("по радио") || !radioText.includes("хороший (-58 дБм)")) throw new Error(`статус радио: ${radioText}`);
+  await radio(
+    "лента не отвечает",
+    [0xf0, 0x7d, 0x4d, 0x54, 0x20, 1, 2, 0, 0, 0, 0xf7],
+    "const s = document.querySelector('[data-lights-status]'); return s?.dataset.lightsLink === 'lost' && s.classList.contains('warn') && s.textContent.includes('не отвечает');",
+  );
+  await radio(
+    "по проводу, кнопка «Связать»",
+    [0xf0, 0x7d, 0x4d, 0x54, 0x20, 1, 0, 3, 0, 0, 0xf7],
+    "const s = document.querySelector('[data-lights-status]'); return s?.dataset.lightsLink === 'wired' && s.textContent.includes('по проводу') && document.querySelector('[data-lights-radio]')?.dataset.lightsRadio === 'notFound' && !!document.querySelector('[data-lights-pair]') && !document.querySelector('[data-lights-unpair]');",
+  );
+  // Статус перестал приходить (плату выдернули) — через 3 секунды его нет.
+  await waitFor("статус радио устарел", () => js("return document.querySelector('[data-lights-section]')?.dataset.lightsConnected === '0' && !document.querySelector('[data-lights-radio]');"), 8000);
+  ok(`подсветка без провода: ${radioText.replace(/\s+/g, " ").trim()}; «не отвечает», «по проводу», статус устаревает`);
+
   // Резервная копия: сохранить → удалить трек → восстановить (трек сразу, настройки и база — при запуске).
   const backupPath = join(profile, "копия.mtbackup");
   const backupInfo = await invoke("backup_export", { path: backupPath });

@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Weak};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const CLIENT_NAME: &str = "MIDI Teacher";
 /// Имя USB-MIDI устройства подсветки клавиш (прошивка в `hardware/key-lights`).
@@ -23,6 +23,72 @@ pub const LIGHTS_NAME: &str = "MIDI Teacher Lights";
 /// Кадр подсветки — SysEx `F0 7D 4D 54 10 <яркость 0–127> (<клавиша> <цвет>)… F7`: полный список горящих
 /// клавиш. Одни и те же байты годятся для USB-MIDI и (потом) для радио: потерянный кадр исправит следующий.
 const LIGHTS_FRAME: [u8; 5] = [0xF0, 0x7D, 0x4D, 0x54, 0x10];
+
+/// Статус радио от платы: `F0 7D 4D 54 20 <версия> <связь> <связка> <−дБм> <потери %> F7`
+/// (прошивка — `radio_core.h`). Плата шлёт его раз в секунду; старше этого — статуса нет.
+const LIGHTS_STATUS: [u8; 5] = [0xF0, 0x7D, 0x4D, 0x54, 0x20];
+const LIGHTS_STATUS_TTL: Duration = Duration::from_secs(3);
+/// Запросить статус у платы (SysEx `05`).
+const LIGHTS_STATUS_REQUEST: [u8; 6] = [0xF0, 0x7D, 0x4D, 0x54, 0x05, 0xF7];
+
+/// Как лента связана с компьютером.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LightsLinkState {
+    /// Ленты по радио нет: лента на этой же плате, по проводу.
+    Wired,
+    /// Лента по радио на связи.
+    Online,
+    /// Лента связана, но не отвечает.
+    Lost,
+}
+
+/// Связка свистка с лентой.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LightsPairing {
+    Idle,
+    Searching,
+    Done,
+    NotFound,
+}
+
+/// Статус радио платы подсветки.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LightsLink {
+    pub link: LightsLinkState,
+    pub pairing: LightsPairing,
+    /// Сила сигнала, дБм; `None` — неизвестно.
+    pub rssi: Option<i16>,
+    /// Потери кадров за 10 секунд, %.
+    pub loss: u8,
+}
+
+/// Разбор статуса радио от платы; `None` — это не статус.
+pub fn parse_lights_status(bytes: &[u8]) -> Option<LightsLink> {
+    if bytes.len() < 11 || bytes[..5] != LIGHTS_STATUS || bytes[bytes.len() - 1] != 0xF7 {
+        return None;
+    }
+    let link = match bytes[6] {
+        0 => LightsLinkState::Wired,
+        1 => LightsLinkState::Online,
+        2 => LightsLinkState::Lost,
+        _ => return None,
+    };
+    let pairing = match bytes[7] {
+        1 => LightsPairing::Searching,
+        2 => LightsPairing::Done,
+        3 => LightsPairing::NotFound,
+        _ => LightsPairing::Idle,
+    };
+    Some(LightsLink {
+        link,
+        pairing,
+        rssi: (bytes[8] > 0).then(|| -i16::from(bytes[8])),
+        loss: bytes[9].min(100),
+    })
+}
 
 /// Порт — плата подсветки, а не инструмент.
 pub fn is_lights_port(name: &str) -> bool {
@@ -214,6 +280,8 @@ pub struct DevicesSnapshot {
     pub lights: LightsSettings,
     /// Выход, на который сейчас идёт подсветка (подключён).
     pub lights_port: Option<String>,
+    /// Статус радио от платы; `None` — плата его не шлёт (прошивка без радио) или не подключена.
+    pub lights_link: Option<LightsLink>,
 }
 
 /// Куда отправить звук для события с входа.
@@ -311,11 +379,28 @@ struct Shared {
     settings: RwLock<DeviceSettings>,
     outputs: Mutex<HashMap<String, MidiOutputConnection>>,
     lights: Mutex<LightsState>,
+    /// Последний статус радио от платы и когда пришёл.
+    lights_link: Mutex<Option<(LightsLink, Instant)>>,
     audio: AudioEngine,
     events: Sender<DeviceEvent>,
 }
 
 impl Shared {
+    /// Сообщение от платы подсветки (её вход): статус радио.
+    fn on_lights_input(&self, bytes: &[u8]) {
+        if let Some(link) = parse_lights_status(bytes) {
+            *self.lights_link.lock() = Some((link, Instant::now()));
+        }
+    }
+
+    /// Статус радио, если он свежий.
+    fn lights_link(&self) -> Option<LightsLink> {
+        self.lights_link
+            .lock()
+            .filter(|(_, at)| at.elapsed() <= LIGHTS_STATUS_TTL)
+            .map(|(l, _)| l)
+    }
+
     /// Вызывается из потока MIDI-драйвера на каждое входящее сообщение.
     fn on_midi(&self, device: &str, bytes: &[u8]) {
         let time_us = clock::now_us();
@@ -393,6 +478,8 @@ struct InputState {
 pub struct DeviceManager {
     shared: Arc<Shared>,
     inputs: Mutex<BTreeMap<String, InputState>>,
+    /// Вход платы подсветки (статус радио). Отдельно от `Shared`: закрытие ждёт колбэк, а он берёт `Shared`.
+    lights_input: Mutex<Option<(String, MidiInputConnection<()>)>>,
     available_outputs: Mutex<Vec<String>>,
     last_snapshot: Mutex<DevicesSnapshot>,
     sound_needed: Mutex<Option<bool>>,
@@ -414,10 +501,12 @@ impl DeviceManager {
                 settings: RwLock::new(settings),
                 outputs: Mutex::new(HashMap::new()),
                 lights: Mutex::new(LightsState::default()),
+                lights_link: Mutex::new(None),
                 audio,
                 events,
             }),
             inputs: Mutex::new(BTreeMap::new()),
+            lights_input: Mutex::new(None),
             available_outputs: Mutex::new(Vec::new()),
             last_snapshot: Mutex::new(DevicesSnapshot::default()),
             sound_needed: Mutex::new(None),
@@ -548,6 +637,12 @@ impl DeviceManager {
         }
     }
 
+    /// Имитация сообщения от платы подсветки (статус радио) — для сквозных тестов без платы.
+    pub fn lights_inject(&self, bytes: &[u8]) {
+        self.shared.on_lights_input(bytes);
+        self.rescan();
+    }
+
     /// Удар по барабану без пэда (экранные пэды, тесты): звучит и приходит как с «Пэдов»;
     /// через 150 мс — отпускание, чтобы пэд на экране погас.
     pub fn hit_drum(&self, drum: u8, velocity: u8) {
@@ -649,7 +744,12 @@ impl DeviceManager {
     /// Сверяет список портов с подключениями и настройками.
     pub fn rescan(&self) {
         let (mut in_names, out_names) = scan_ports();
-        // Плата подсветки видна и как вход — это не инструмент.
+        // Плата подсветки видна и как вход — это не инструмент: с него приходит только статус радио.
+        let lights_in: Vec<String> = in_names
+            .iter()
+            .filter(|n| is_lights_port(n))
+            .cloned()
+            .collect();
         in_names.retain(|n| !is_lights_port(n));
 
         // Новые устройства получают настройки по умолчанию.
@@ -663,6 +763,7 @@ impl DeviceManager {
 
         self.sync_outputs(&settings, &out_names);
         *self.available_outputs.lock() = out_names.clone();
+        self.sync_lights_input(&lights_in);
 
         let mut inputs = self.inputs.lock();
         for name in settings.inputs.keys() {
@@ -723,6 +824,7 @@ impl DeviceManager {
             pads: settings.pads.clone(),
             lights: settings.lights.clone(),
             lights_port: self.shared.lights.lock().port.clone(),
+            lights_link: self.shared.lights_link(),
         };
         drop(inputs);
 
@@ -794,6 +896,53 @@ impl DeviceManager {
                 let _ = conn.send(&lights_frame(settings.lights.brightness, &lit));
             }
         }
+    }
+
+    /// Держит открытым вход платы подсветки, пока подсветка идёт на плату (её выход подключён).
+    fn sync_lights_input(&self, lights_in: &[String]) {
+        let out = self.shared.lights.lock().port.clone();
+        // Вход с тем же именем, что выход; иначе — первый с именем платы.
+        let want = out.and_then(|o| {
+            lights_in
+                .iter()
+                .find(|n| **n == o)
+                .or_else(|| lights_in.first())
+                .cloned()
+        });
+        let mut cur = self.lights_input.lock();
+        if cur.as_ref().map(|(n, _)| n) == want.as_ref() {
+            return;
+        }
+        *cur = None;
+        let Some(name) = want else {
+            return;
+        };
+        match self.connect_lights_input(&name) {
+            Ok(conn) => {
+                log::info!("Вход платы подсветки подключён: {name}");
+                *cur = Some((name, conn));
+                drop(cur);
+                // Статус сразу, не дожидаясь секундного.
+                self.lights_send(&LIGHTS_STATUS_REQUEST);
+            }
+            Err(e) => log::warn!("Вход платы подсветки {name}: {e}"),
+        }
+    }
+
+    fn connect_lights_input(&self, name: &str) -> Result<MidiInputConnection<()>, String> {
+        let mut input = MidiInput::new(CLIENT_NAME).map_err(|e| e.to_string())?;
+        input.ignore(Ignore::None);
+        let port = find_port(&input.ports(), |p| input.port_name(p).ok(), name)
+            .ok_or("устройство не найдено")?;
+        let shared = self.shared.clone();
+        input
+            .connect(
+                &port,
+                "mt-lights-in",
+                move |_, bytes, _| shared.on_lights_input(bytes),
+                (),
+            )
+            .map_err(|e| e.to_string())
     }
 
     fn connect_input(&self, name: &str) -> Result<MidiInputConnection<()>, String> {
@@ -1090,5 +1239,50 @@ mod tests {
         );
         assert_eq!(brightness_cc(30), 38);
         assert_eq!(brightness_cc(100), 127);
+    }
+
+    #[test]
+    fn lights_status() {
+        let st = [0xF0, 0x7D, 0x4D, 0x54, 0x20, 1, 1, 2, 58, 3, 0xF7];
+        assert_eq!(
+            parse_lights_status(&st),
+            Some(LightsLink {
+                link: LightsLinkState::Online,
+                pairing: LightsPairing::Done,
+                rssi: Some(-58),
+                loss: 3,
+            })
+        );
+        let wired = [0xF0, 0x7D, 0x4D, 0x54, 0x20, 1, 0, 0, 0, 0, 0xF7];
+        let l = parse_lights_status(&wired).unwrap();
+        assert_eq!(
+            (l.link, l.pairing, l.rssi),
+            (LightsLinkState::Wired, LightsPairing::Idle, None)
+        );
+        let lost = [0xF0, 0x7D, 0x4D, 0x54, 0x20, 1, 2, 3, 0, 0, 0xF7];
+        let l = parse_lights_status(&lost).unwrap();
+        assert_eq!(
+            (l.link, l.pairing),
+            (LightsLinkState::Lost, LightsPairing::NotFound)
+        );
+        // Не статус: кадр, чужой SysEx, обрезанное сообщение, неизвестная связь.
+        assert_eq!(
+            parse_lights_status(&[0xF0, 0x7D, 0x4D, 0x54, 0x10, 32, 0xF7]),
+            None
+        );
+        assert_eq!(parse_lights_status(&[0xF0, 0x41, 0x10, 0x42, 0xF7]), None);
+        assert_eq!(parse_lights_status(&st[..10]), None);
+        let mut bad = st;
+        bad[6] = 9;
+        assert_eq!(parse_lights_status(&bad), None);
+        // Статус хранится 3 секунды.
+        let link = Mutex::new(Some((
+            parse_lights_status(&st).unwrap(),
+            Instant::now() - LIGHTS_STATUS_TTL - Duration::from_millis(10),
+        )));
+        assert!(link
+            .lock()
+            .filter(|(_, at)| at.elapsed() <= LIGHTS_STATUS_TTL)
+            .is_none());
     }
 }

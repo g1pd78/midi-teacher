@@ -48,6 +48,19 @@ export interface DevicesSnapshot {
   lights: LightsSettings;
   /** Выход, на который сейчас идёт подсветка (подключён). */
   lightsPort: string | null;
+  /** Статус радио от платы; null — плата его не шлёт (прошивка без радио) или не подключена. */
+  lightsLink?: LightsLink | null;
+}
+
+/** Статус радио платы подсветки: как подключена лента, связка свистка, качество связи. */
+export interface LightsLink {
+  /** wired — лента на этой плате (провод); online — по радио на связи; lost — связана, но не отвечает. */
+  link: "wired" | "online" | "lost";
+  pairing: "idle" | "searching" | "done" | "notFound";
+  /** Сила сигнала, дБм; null — неизвестно. */
+  rssi: number | null;
+  /** Потери кадров за 10 секунд, %. */
+  loss: number;
 }
 
 /** Подсветка клавиш: светодиодная лента над клавиатурой (плата «MIDI Teacher Lights»). */
@@ -753,6 +766,7 @@ export const api = {
   lightsState: () => invoke<[number, number][]>("lights_state"),
   lightsSend: (bytes: number[]) => invoke<boolean>("lights_send", { bytes }),
   lightsFrame: () => invoke<number[]>("lights_frame"),
+  lightsInject: (bytes: number[]) => invoke<void>("lights_inject", { bytes }),
   hitDrum: (drum: number, velocity: number) => invoke<void>("hit_drum", { drum, velocity }),
   setAudioConfig: (config: AudioConfig) => invoke<void>("set_audio_config", { config }),
   setPrefs: (prefs: UiPrefs) => invoke<void>("set_prefs", { prefs }),
