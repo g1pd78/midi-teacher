@@ -1784,7 +1784,10 @@ try {
   };
   const pieceFrame = await waitFor("кадр подсветки с нотой пьесы", async () => {
     const f = await framePairs();
-    return f.pairs.some(([n, c]) => n === 64 && c === 1) ? f : false;
+    if (f.pairs.some(([n, c]) => n === 64 && c === 1)) return f;
+    const lightsDev = (await invoke("get_state")).devices?.lights;
+    const active = await js("return [...document.querySelectorAll('.session-piano .key.active')].map((k) => k.dataset.note ?? k.textContent).join(',');");
+    throw new Error(`кадр ${JSON.stringify(f)}, горит ${JSON.stringify(await invoke("lights_state"))}, настройки ${JSON.stringify(lightsDev)}, на экране: ${active}`);
   }, 5000);
   if (pieceFrame.head !== "240,125,77,84,16") throw new Error(`кадр подсветки: ${pieceFrame.head}`);
   ok(`подсветка клавиш: кадр SysEx, горит ${pieceFrame.pairs.map(([n, c]) => `${n}:${c}`).join(" ")}`);
