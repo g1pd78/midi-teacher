@@ -1790,12 +1790,14 @@ try {
     for (let i = 6; i + 1 < f.length - 0; i += 2) if (f[i] !== 0xf7) out.push([f[i], f[i + 1]]);
     return { head: f.slice(0, 5).join(","), pairs: out };
   };
-  const pieceFrame = await waitFor("кадр подсветки с нотой пьесы", async () => {
+  // В кадре — те же клавиши, что подсвечены на экранной клавиатуре, цветом руки (1 — правая, 2 — левая).
+  const pieceFrame = await waitFor("кадр подсветки с подсказками пьесы", async () => {
     const f = await framePairs();
-    if (f.pairs.some(([n, c]) => n === 64 && c === 1)) return f;
+    const screen = await js("return [...document.querySelectorAll('.session-piano .key.active')].map((k) => Number(k.dataset.note));");
+    const hints = f.pairs.filter(([, c]) => c === 1 || c === 2).map(([n]) => n);
+    if (hints.length && hints.every((n) => screen.includes(n))) return f;
     const lightsDev = (await invoke("get_state")).devices?.lights;
-    const active = await js("return [...document.querySelectorAll('.session-piano .key.active')].map((k) => k.dataset.note ?? k.textContent).join(',');");
-    throw new Error(`кадр ${JSON.stringify(f)}, горит ${JSON.stringify(await invoke("lights_state"))}, настройки ${JSON.stringify(lightsDev)}, на экране: ${active}`);
+    throw new Error(`кадр ${JSON.stringify(f)}, настройки ${JSON.stringify(lightsDev)}, на экране: ${screen}`);
   }, 5000);
   if (pieceFrame.head !== "240,125,77,84,16") throw new Error(`кадр подсветки: ${pieceFrame.head}`);
   ok(`подсветка клавиш: кадр SysEx, горит ${pieceFrame.pairs.map(([n, c]) => `${n}:${c}`).join(" ")}`);
