@@ -948,7 +948,10 @@ try {
       for (const p of cur.split(",").map(Number)) await press(shift(p));
       await waitFor(`${label}: шаг ${step}`, async () => (await stepNo()) !== step || (await js("return document.querySelector('.score-scroll')?.dataset.finished;")) === "1", 8000);
     }
-    await waitFor(`${label}: итог`, () => js("return !!document.querySelector('.summary');"), 10000);
+    await waitFor(`${label}: итог`, () => js("return !!document.querySelector('.summary');"), 10000).catch(async (e) => {
+      const st = await js("const s = document.querySelector('.score-scroll'); return JSON.stringify({ step: s?.dataset.currentStep, pitches: s?.dataset.currentPitches, finished: s?.dataset.finished, mode: [...document.querySelectorAll('.piece-bar button.on, .piece-bar .primary')].map((b) => b.textContent).join('|'), toast: document.querySelector('.toast')?.textContent });");
+      throw new Error(`${e.message}; экран ${st}`);
+    });
     const errors = await js("return document.querySelector('.summary .big')?.textContent;");
     if (errors !== "0") throw new Error(`${label}: ошибок ${errors}`);
   };
