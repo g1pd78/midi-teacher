@@ -18,7 +18,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const CLIENT_NAME: &str = "MIDI Teacher";
-/// Имя USB-MIDI устройства подсветки клавиш (прошивка в `hardware/key-lights`).
+/// Имя USB-MIDI устройства подсветки клавиш (прошивка и протокол — репозиторий midi-teacher-lights, PROTOCOL.md).
 pub const LIGHTS_NAME: &str = "MIDI Teacher Lights";
 /// Кадр подсветки — SysEx `F0 7D 4D 54 10 <яркость 0–127> (<клавиша> <цвет>)… F7`: полный список горящих
 /// клавиш. Одни и те же байты годятся для USB-MIDI и (потом) для радио: потерянный кадр исправит следующий.
@@ -1242,6 +1242,7 @@ mod tests {
     }
 
     #[test]
+    // Байты статуса и кадра — контрольные примеры PROTOCOL.md в midi-teacher-lights (их же проверяет прошивка).
     fn lights_status() {
         let st = [0xF0, 0x7D, 0x4D, 0x54, 0x20, 1, 1, 2, 58, 3, 0xF7];
         assert_eq!(

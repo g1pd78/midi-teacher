@@ -840,16 +840,17 @@ CustomsForge), команда `rocksmith_open` читает файл в фоне
 - Ядро (`crates/mt-core/src/devices.rs`): выход «MIDI Teacher Lights» по имени (или выбранный), кадр
   `lights_frame` — SysEx `F0 7D 4D 54 10 <яркость> (<клавиша> <цвет>)… F7` при изменении и раз в секунду из
   потока опроса устройств; при появлении платы — сразу кадр. Плата не показывается среди входов.
-- Прошивка (`hardware/key-lights/firmware/`): `lights_core.h` — логика без Arduino (разбор SysEx, геометрия клавиш
+- Прошивка — отдельный репозиторий [midi-teacher-lights](https://github.com/g1pd78/midi-teacher-lights) (`firmware/`; протокол — `PROTOCOL.md`): `lights_core.h` — логика без Arduino (разбор SysEx, геометрия клавиш
   как `keyCenter` в приложении, калибровка по двум клавишам, яркость ≤ 60%, потолок тока, гашение без кадров 3 с),
   тест на g++; скетч — USB-MIDI (TinyUSB, `USBMIDI`), сборка SysEx из пакетов, лента через Adafruit NeoPixel,
-  калибровка в NVS. CI собирает объединённый `.bin` (arduino-cli, esp32 3.1.1).
+  калибровка в NVS. CI того репозитория собирает объединённый `.bin` (arduino-cli, esp32 3.1.1) на каждый коммит и
+  выпускает его на странице Releases по тегу `vX.Y.Z` (или кнопкой в Actions).
 - Настройки — `src/screens/LightsSettings.tsx`: плата, яркость, мои нажатия, «Проверить» (SysEx 03), калибровка
   (указка SysEx 02 → нажатие клавиши → SysEx 01), предпросмотр «Сейчас на ленте».
 
 ## 7щ. Подсветка без провода
 
-- Прошивка одна на обе платы (`hardware/key-lights/firmware/MIDITeacherLights/radio_core.h` — логика без Arduino,
+- Прошивка одна на обе платы (`firmware/MIDITeacherLights/radio_core.h` в midi-teacher-lights — логика без Arduino,
   тест на g++). Роль — по USB-событиям TinyUSB: есть хост — «USB» (кадры зажигают свою ленту и, если лента
   связана, уходят по ESP-NOW); хоста нет (блок 5 В, зарядка, спящий компьютер) — «приёмник». На связку приёмник
   соглашается, только пробыв приёмником 3 с и в первые 2 минуты после включения.

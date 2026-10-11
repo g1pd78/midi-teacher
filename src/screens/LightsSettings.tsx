@@ -24,7 +24,7 @@ export function LightsSection() {
       <p className="hint">
         Светодиодная лента над клавишами показывает, куда нажимать: следующие клавиши в пьесе (правая рука — голубым, левая —
         янтарным), подсказки тренажёров, звуки аккорда. Нужна плата «MIDI Teacher Lights» (ESP32-S3 по USB) — что купить, как собрать и
-        прошить, описано в папке hardware/key-lights проекта.
+        прошить, описано в репозитории midi-teacher-lights.
       </p>
       <div className="field">
         <span>Плата</span>
@@ -89,8 +89,8 @@ function RadioBlock({ link }: { link: LightsLink | null }) {
       <div className="lights-radio" data-lights-radio="none">
         <b>Без провода</b>
         <p className="hint">
-          Плата не сообщает о радио. Чтобы огоньки шли на ленту без провода через свисток, обнови прошивку платы — файл
-          MIDI-Teacher-Lights-esp32s3 из той же сборки, что и приложение.
+          Плата не сообщает о радио. Чтобы огоньки шли на ленту без провода через свисток, обнови прошивку платы — последний выпуск
+          в репозитории midi-teacher-lights (страница Releases).
         </p>
       </div>
     );

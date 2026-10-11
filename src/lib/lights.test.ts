@@ -107,7 +107,7 @@ describe("радио", () => {
     expect(sysex.status()).toEqual([0xf0, 0x7d, 0x4d, 0x54, 0x05, 0xf7]);
     expect(sysex.pair()).toEqual([0xf0, 0x7d, 0x4d, 0x54, 0x06, 0xf7]);
     expect(sysex.unpair()).toEqual([0xf0, 0x7d, 0x4d, 0x54, 0x07, 0xf7]);
-    // Тот же статус проверяет g++-тест прошивки (radio_core_test.cpp).
+    // Контрольные примеры PROTOCOL.md (midi-teacher-lights): те же байты проверяют тесты прошивки.
     expect(statusSysex(1, 2, -58, 3)).toEqual([0xf0, 0x7d, 0x4d, 0x54, 0x20, 1, 1, 2, 58, 3, 0xf7]);
     expect(statusSysex(0, 0, 0, 250)).toEqual([0xf0, 0x7d, 0x4d, 0x54, 0x20, 1, 0, 0, 0, 100, 0xf7]);
   });

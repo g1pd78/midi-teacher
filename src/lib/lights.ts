@@ -1,7 +1,7 @@
 // Подсветка клавиш: что горит на ленте над клавиатурой. Источник — подсказки экранной клавиатуры (те же
 // клавиши и цвета, что на экране) и мои нажатия. Плата «MIDI Teacher Lights» принимает кадры SysEx — полный
 // список горящих клавиш (по проводу или по радио через свисток); настройка и связка — тоже SysEx
-// (протокол — hardware/key-lights/firmware/MIDITeacherLights/lights_core.h и radio_core.h).
+// (протокол — PROTOCOL.md в репозитории midi-teacher-lights).
 
 /** Цвета платы (сила ноты); +16 — тускло. */
 export const LIGHT = { right: 1, left: 2, good: 3, bad: 4, warn: 5, neutral: 6, violet: 7 } as const;
