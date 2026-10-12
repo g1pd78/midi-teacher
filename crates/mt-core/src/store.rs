@@ -96,7 +96,28 @@ CREATE TABLE IF NOT EXISTS play_time (
     bucket INTEGER PRIMARY KEY,
     seconds REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS finger_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    piece TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    correct INTEGER NOT NULL,
+    total INTEGER NOT NULL,
+    confusions TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS finger_stats_piece ON finger_stats (piece, at);
 ";
+
+/// Попытка с данными об аппликатуре: сколько нот сыграно нужным пальцем.
+/// Пальцы сообщает плагин; без плагина таблица пустая.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FingerAttempt {
+    pub at: i64,
+    pub correct: u32,
+    pub total: u32,
+    /// Путаницы JSON: [{"expected":4,"played":3,"count":5,"measures":[5,6]}, …].
+    pub confusions: String,
+}
 
 /// Корзина учёта времени игры — 15 минут: так интерфейс может разложить
 /// время по дням в любом часовом поясе (смещения кратны 15 минутам).
@@ -625,6 +646,30 @@ impl Store {
             )?,
         };
         Ok(())
+    }
+
+    pub fn record_finger_attempt(&mut self, piece: &str, a: &FingerAttempt) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO finger_stats (piece, at, correct, total, confusions) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![piece, a.at, a.correct, a.total, a.confusions],
+        )?;
+        Ok(())
+    }
+
+    /// Попытки с аппликатурой по пьесе, от новых к старым.
+    pub fn finger_attempts(&self, piece: &str, limit: u32) -> Result<Vec<FingerAttempt>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT at, correct, total, confusions FROM finger_stats WHERE piece = ?1 ORDER BY at DESC, id DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![piece, limit], |r| {
+            Ok(FingerAttempt {
+                at: r.get(0)?,
+                correct: r.get(1)?,
+                total: r.get(2)?,
+                confusions: r.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     pub fn record_exercise(&mut self, r: &ExerciseResult, now_secs: i64) -> Result<()> {
@@ -1255,5 +1300,36 @@ mod tests {
         assert!(j.exercises[0].passed);
         assert_eq!(j.play, vec![(900, 60.0)]);
         assert!(j.trainer.is_empty());
+    }
+
+    #[test]
+    fn finger_attempts_by_piece() {
+        let mut s = Store::open_in_memory().unwrap();
+        assert!(s.finger_attempts("p", 10).unwrap().is_empty());
+        for (at, c) in [(100, 7), (200, 9)] {
+            s.record_finger_attempt(
+                "p",
+                &FingerAttempt {
+                    at,
+                    correct: c,
+                    total: 10,
+                    confusions: "[]".into(),
+                },
+            )
+            .unwrap();
+        }
+        s.record_finger_attempt(
+            "q",
+            &FingerAttempt {
+                at: 300,
+                correct: 1,
+                total: 1,
+                confusions: "[]".into(),
+            },
+        )
+        .unwrap();
+        let p = s.finger_attempts("p", 10).unwrap();
+        assert_eq!(p.iter().map(|a| a.correct).collect::<Vec<_>>(), vec![9, 7]);
+        assert_eq!(s.finger_attempts("p", 1).unwrap().len(), 1);
     }
 }

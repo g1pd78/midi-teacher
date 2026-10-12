@@ -8,6 +8,7 @@ mod journal;
 mod library;
 mod midi_import;
 mod piece;
+mod plugins;
 mod practice;
 mod rhythm;
 mod settings;
@@ -243,6 +244,7 @@ fn simulate_midi(state: State<AppState>, device: String, bytes: Vec<u8>) {
 pub fn run() {
     tauri::Builder::default()
         .register_asynchronous_uri_scheme_protocol(code::SCHEME, code::protocol)
+        .register_asynchronous_uri_scheme_protocol(plugins::SCHEME, plugins::protocol)
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
@@ -428,6 +430,13 @@ pub fn run() {
             lights_frame,
             lights_send,
             lights_inject,
+            piece::piece_confirm_hits,
+            piece::piece_confirm,
+            practice::finger_record,
+            practice::finger_history,
+            plugins::plugin_list,
+            plugins::plugin_storage_get,
+            plugins::plugin_storage_set,
             hit_drum,
             set_audio_config,
             set_prefs,

@@ -167,6 +167,9 @@ pub struct PieceConfig {
     /// Повторять по кругу (выбранные такты): после последнего шага — снова первый.
     pub looping: bool,
     pub key_map: KeyMap,
+    /// Подтверждение нажатий извне (плагином): верная нота засчитывается после `confirm`,
+    /// а без ответа за `CONFIRM_TIMEOUT_MS` — сама. Без плагина выключено.
+    pub confirm_hits: bool,
 }
 
 impl Default for PieceConfig {
@@ -177,6 +180,7 @@ impl Default for PieceConfig {
             tempo: 0.8,
             looping: false,
             key_map: KeyMap::Exact,
+            confirm_hits: false,
         }
     }
 }
@@ -217,9 +221,17 @@ pub enum PieceEvent {
         index: usize,
         note_ids: Vec<String>,
     },
-    /// Нажата лишняя нота.
+    /// Нажата лишняя нота — или нужная, но подтверждение отклонило нажатие (`rejected`).
     #[serde(rename_all = "camelCase")]
     Wrong {
+        index: usize,
+        pitch: u8,
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        rejected: bool,
+    },
+    /// Нужная нота нажата и ждёт подтверждения (`PieceConfig::confirm_hits`).
+    #[serde(rename_all = "camelCase")]
+    Pending {
         index: usize,
         pitch: u8,
     },
@@ -263,6 +275,18 @@ pub enum Action {
 }
 
 const APP_VELOCITY: u8 = 70;
+/// Сколько нажатие ждёт подтверждения, прежде чем засчитаться само: игра не встаёт, если плагин молчит.
+pub const CONFIRM_TIMEOUT_MS: u32 = 300;
+/// Таймеры подтверждений — отдельно от таймеров шагов.
+const CONFIRM_TOKEN: u64 = 1 << 62;
+
+/// Нажатие, ждущее подтверждения: нажатая клавиша, ноты шага, таймер.
+#[derive(Debug, Clone)]
+struct Pending {
+    pitch: u8,
+    notes: Vec<(String, u8)>,
+    token: u64,
+}
 const MIN_AUTO_DELAY_MS: u32 = 60;
 
 pub struct PieceSession {
@@ -281,6 +305,8 @@ pub struct PieceSession {
     started_us: u64,
     finished: bool,
     pass: u32,
+    pending: Vec<Pending>,
+    confirm_seq: u64,
 }
 
 impl PieceSession {
@@ -300,7 +326,22 @@ impl PieceSession {
             started_us: 0,
             finished: false,
             pass: 0,
+            pending: Vec::new(),
+            confirm_seq: 0,
         }
+    }
+
+    /// Включить или выключить подтверждение нажатий на ходу.
+    pub fn set_confirm_hits(&mut self, on: bool, t_us: u64) -> Vec<Action> {
+        self.cfg.confirm_hits = on;
+        let mut out = Vec::new();
+        if !on {
+            // Ждущие нажатия засчитываются сразу.
+            for p in std::mem::take(&mut self.pending) {
+                self.accept(p.notes, t_us, &mut out);
+            }
+        }
+        out
     }
 
     pub fn steps(&self) -> &[Step] {
@@ -345,6 +386,7 @@ impl PieceSession {
     fn activate(&mut self, i: usize, t_us: u64, out: &mut Vec<Action>) {
         self.index = i;
         self.pressed.clear();
+        self.pending.clear();
         self.accompanied = false;
         self.token += 1;
 
@@ -490,27 +532,35 @@ impl PieceSession {
 
         if !matched.is_empty() {
             // Нажатые ноты шага — по высоте ноты в записи (при «любой октаве» она может отличаться).
-            let fresh: Vec<&(String, u8)> = matched
-                .iter()
-                .filter(|(_, p)| !self.pressed.contains(p))
+            let fresh: Vec<(String, u8)> = matched
+                .into_iter()
+                .filter(|(_, p)| {
+                    !self.pressed.contains(p)
+                        && !self
+                            .pending
+                            .iter()
+                            .any(|q| q.notes.iter().any(|n| n.1 == *p))
+                })
                 .collect();
             if fresh.is_empty() {
                 return out; // повторное нажатие той же ноты аккорда
             }
-            let hit_ids: Vec<String> = fresh.iter().map(|(id, _)| id.clone()).collect();
-            for (_, p) in &fresh {
-                self.pressed.insert(*p);
+            if self.cfg.confirm_hits {
+                self.confirm_seq += 1;
+                let token = CONFIRM_TOKEN | self.confirm_seq;
+                self.pending.push(Pending {
+                    pitch,
+                    notes: fresh,
+                    token,
+                });
+                out.push(Action::Event(PieceEvent::Pending { index: i, pitch }));
+                out.push(Action::Schedule {
+                    token,
+                    delay_ms: CONFIRM_TIMEOUT_MS,
+                });
+                return out;
             }
-            out.push(Action::Event(PieceEvent::Hit {
-                index: i,
-                note_ids: hit_ids,
-            }));
-            // Вторая рука вступает вместе с первой нажатой нотой ученика.
-            self.accompany(&mut out);
-            let done = self.required(i).all(|n| self.pressed.contains(&n.pitch));
-            if done {
-                self.activate(i + 1, t_us, &mut out);
-            }
+            self.accept(fresh, t_us, &mut out);
             return out;
         }
 
@@ -519,15 +569,69 @@ impl PieceSession {
             return out;
         }
 
+        self.error(pitch, false, &mut out);
+        out
+    }
+
+    /// Засчитать нажатые ноты текущего шага; все нажаты — следующий шаг.
+    fn accept(&mut self, fresh: Vec<(String, u8)>, t_us: u64, out: &mut Vec<Action>) {
+        let i = self.index;
+        if self.finished || i >= self.steps.len() {
+            return;
+        }
+        let hit_ids: Vec<String> = fresh.iter().map(|(id, _)| id.clone()).collect();
+        for (_, p) in &fresh {
+            self.pressed.insert(*p);
+        }
+        out.push(Action::Event(PieceEvent::Hit {
+            index: i,
+            note_ids: hit_ids,
+        }));
+        // Вторая рука вступает вместе с первой нажатой нотой ученика.
+        self.accompany(out);
+        let done = self.required(i).all(|n| self.pressed.contains(&n.pitch));
+        if done {
+            self.activate(i + 1, t_us, out);
+        }
+    }
+
+    fn error(&mut self, pitch: u8, rejected: bool, out: &mut Vec<Action>) {
+        let i = self.index;
         self.errors += 1;
         let measure = self.required(i).map(|n| n.measure).next().unwrap_or(0);
         *self.errors_by_measure.entry(measure).or_default() += 1;
-        out.push(Action::Event(PieceEvent::Wrong { index: i, pitch }));
+        out.push(Action::Event(PieceEvent::Wrong {
+            index: i,
+            pitch,
+            rejected,
+        }));
+    }
+
+    /// Ответ на ждущее нажатие клавиши `pitch`: `ok` — засчитать, иначе — ошибка (шаг не продвигается).
+    pub fn confirm(&mut self, pitch: u8, ok: bool, t_us: u64) -> Vec<Action> {
+        let mut out = Vec::new();
+        let Some(k) = self.pending.iter().position(|p| p.pitch == pitch) else {
+            return out;
+        };
+        let p = self.pending.remove(k);
+        if ok {
+            self.accept(p.notes, t_us, &mut out);
+        } else {
+            self.error(pitch, true, &mut out);
+        }
         out
     }
 
     pub fn on_timer(&mut self, token: u64, t_us: u64) -> Vec<Action> {
         let mut out = Vec::new();
+        if token & CONFIRM_TOKEN != 0 {
+            // Подтверждения нет — засчитать само.
+            if let Some(k) = self.pending.iter().position(|p| p.token == token) {
+                let p = self.pending.remove(k);
+                self.accept(p.notes, t_us, &mut out);
+            }
+            return out;
+        }
         if self.finished || token != self.token {
             return out;
         }
@@ -762,7 +866,8 @@ mod tests {
             events(&a),
             vec![&PieceEvent::Wrong {
                 index: 0,
-                pitch: 61
+                pitch: 61,
+                rejected: false
             }]
         );
         assert_eq!(s.index(), 0);
@@ -804,6 +909,7 @@ mod tests {
                 tempo: 1.0,
                 looping: false,
                 key_map: KeyMap::Exact,
+                confirm_hits: false,
             },
         );
         let a = s.start(0);
@@ -852,6 +958,7 @@ mod tests {
                 tempo: 0.5,
                 looping: false,
                 key_map: KeyMap::Exact,
+                confirm_hits: false,
             },
         );
         s.start(0);
@@ -879,6 +986,7 @@ mod tests {
                 tempo: 1.0,
                 looping: false,
                 key_map: KeyMap::Exact,
+                confirm_hits: false,
             },
         );
         let a = s.start(0);
@@ -942,6 +1050,7 @@ mod tests {
                 tempo: 1.0,
                 looping: false,
                 key_map: KeyMap::Exact,
+                confirm_hits: false,
             },
         );
         s.start(0);
@@ -957,5 +1066,112 @@ mod tests {
         let a = s.stop();
         assert!(s.is_finished());
         assert!(a.iter().all(|x| matches!(x, Action::AppNoteOff { .. })));
+    }
+
+    fn confirming() -> PieceSession {
+        let mut s = PieceSession::new(
+            piece(),
+            PieceConfig {
+                hands: HandMode::Right,
+                confirm_hits: true,
+                ..Default::default()
+            },
+        );
+        s.start(0);
+        s
+    }
+
+    fn timer_token(actions: &[Action]) -> u64 {
+        actions
+            .iter()
+            .find_map(|a| match a {
+                Action::Schedule { token, delay_ms } if *delay_ms == CONFIRM_TIMEOUT_MS => {
+                    Some(*token)
+                }
+                _ => None,
+            })
+            .expect("таймер подтверждения")
+    }
+
+    #[test]
+    fn confirm_hits_waits_then_accepts_or_rejects() {
+        let mut s = confirming();
+        // Верная нота ждёт подтверждения, шаг не продвигается.
+        let a = s.on_note_on(60, 10);
+        assert_eq!(
+            events(&a),
+            vec![&PieceEvent::Pending {
+                index: 0,
+                pitch: 60
+            }]
+        );
+        assert_eq!(s.index(), 0);
+        // Повторное нажатие той же клавиши, пока ждём, — ничего.
+        assert!(s.on_note_on(60, 20).is_empty());
+        // Отклонено (не тот палец) — ошибка, шаг на месте; снова нажать — снова ждёт.
+        let a = s.confirm(60, false, 30);
+        assert_eq!(
+            events(&a),
+            vec![&PieceEvent::Wrong {
+                index: 0,
+                pitch: 60,
+                rejected: true
+            }]
+        );
+        assert_eq!(s.index(), 0);
+        s.on_note_on(60, 40);
+        let a = s.confirm(60, true, 50);
+        assert!(matches!(events(&a)[0], PieceEvent::Hit { .. }));
+        assert_eq!(s.index(), 1);
+        // Подтверждение без ждущего нажатия — ничего.
+        assert!(s.confirm(62, true, 60).is_empty());
+    }
+
+    #[test]
+    fn confirm_hits_times_out_and_accepts() {
+        let mut s = confirming();
+        let a = s.on_note_on(60, 10);
+        let token = timer_token(&a);
+        let a = s.on_timer(token, 10 + 300_000);
+        assert!(
+            matches!(events(&a)[0], PieceEvent::Hit { .. }),
+            "нет ответа — засчитать само"
+        );
+        assert_eq!(s.index(), 1);
+        // Старый таймер после перехода шага ничего не делает.
+        assert!(s.on_timer(token, 400_000).is_empty());
+    }
+
+    #[test]
+    fn confirm_hits_chord_needs_every_note() {
+        let mut s = confirming();
+        s.on_note_on(60, 0);
+        s.confirm(60, true, 1);
+        s.on_note_on(62, 2);
+        s.confirm(62, true, 3);
+        // Шаг 2 — только левая рука: проходит сам по таймеру шага.
+        let step_token = s.token;
+        s.on_timer(step_token, 1_000_000);
+        assert_eq!(s.index(), 3);
+        s.on_note_on(64, 10);
+        s.on_note_on(67, 11);
+        s.confirm(64, true, 12);
+        assert_eq!(s.index(), 3, "соль ещё ждёт");
+        let a = s.confirm(67, true, 13);
+        assert!(events(&a)
+            .iter()
+            .any(|e| matches!(e, PieceEvent::Finished { .. })));
+    }
+
+    #[test]
+    fn turning_confirm_off_accepts_waiting_notes() {
+        let mut s = confirming();
+        s.on_note_on(60, 0);
+        let a = s.set_confirm_hits(false, 5);
+        assert!(matches!(events(&a)[0], PieceEvent::Hit { .. }));
+        assert_eq!(s.index(), 1);
+        // Дальше — без ожидания.
+        let a = s.on_note_on(62, 10);
+        assert!(matches!(events(&a)[0], PieceEvent::Hit { .. }));
     }
 }

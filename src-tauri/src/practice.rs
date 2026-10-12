@@ -8,8 +8,8 @@ use mt_core::fingering::{self, FingerNote, Fingering};
 use mt_core::piece::{HandMode, MeasureErrors};
 use mt_core::practice::{self, Hands, Outcome, Pass, PracticeView, UnitState};
 use mt_core::store::{
-    AttemptRecord, ExerciseAttempt, ExerciseResult, ExerciseStat, Journal, PieceActivity,
-    PieceMeta, PieceRecord, Store, TodayStatus, PLAY_BUCKET_SECS,
+    AttemptRecord, ExerciseAttempt, ExerciseResult, ExerciseStat, FingerAttempt, Journal,
+    PieceActivity, PieceMeta, PieceRecord, Store, TodayStatus, PLAY_BUCKET_SECS,
 };
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -383,4 +383,37 @@ pub fn warmup_done(hub: State<Arc<PracticeHub>>) -> Result<(), String> {
 #[tauri::command]
 pub fn today_status(hub: State<Arc<PracticeHub>>, day_start: i64) -> Result<TodayStatus, String> {
     hub.with_store(|s| s.today(day_start))
+}
+
+/// Попытка с аппликатурой (пальцы сообщил плагин): сохранить и вернуть историю пьесы.
+#[tauri::command]
+pub fn finger_record(
+    hub: State<Arc<PracticeHub>>,
+    piece: String,
+    correct: u32,
+    total: u32,
+    confusions: String,
+) -> Result<Vec<FingerAttempt>, String> {
+    hub.with_store(|s| {
+        let at = clock::unix_secs();
+        s.record_finger_attempt(
+            &piece,
+            &FingerAttempt {
+                at,
+                correct,
+                total,
+                confusions,
+            },
+        )?;
+        s.finger_attempts(&piece, 30)
+    })
+}
+
+/// История попыток с аппликатурой по пьесе (новые первыми); пусто — плагина не было.
+#[tauri::command]
+pub fn finger_history(
+    hub: State<Arc<PracticeHub>>,
+    piece: String,
+) -> Result<Vec<FingerAttempt>, String> {
+    hub.with_store(|s| s.finger_attempts(&piece, 30))
 }

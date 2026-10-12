@@ -131,3 +131,23 @@ pub fn piece_stop(hub: State<Arc<PieceHub>>) {
     hub.stop();
     hub.devices.set_extra_sound_demand(false);
 }
+
+/// Подтверждение нажатий плагином (режим ожидания): включить или выключить на ходу.
+#[tauri::command]
+pub fn piece_confirm_hits(hub: State<Arc<PieceHub>>, on: bool) {
+    let actions = match hub.session.lock().as_mut() {
+        Some(s) => s.set_confirm_hits(on, clock::now_us()),
+        None => return,
+    };
+    hub.run(actions);
+}
+
+/// Ответ плагина на ждущее нажатие клавиши `pitch`.
+#[tauri::command]
+pub fn piece_confirm(hub: State<Arc<PieceHub>>, pitch: u8, ok: bool) {
+    let actions = match hub.session.lock().as_mut() {
+        Some(s) => s.confirm(pitch, ok, clock::now_us()),
+        None => return,
+    };
+    hub.run(actions);
+}
