@@ -17,6 +17,7 @@
 - **Дневник:** история занятий, планы из YAML и повторение выученного.
 - **Подсветка клавиш:** лента над клавишами — железо и прошивка в
   [midi-teacher-lights](https://github.com/g1pd78/midi-teacher-lights).
+- **Плагины:** дополнения из папки `plugins` — [docs/plugins.md](docs/plugins.md).
 
 **Документы:**
 

@@ -7,7 +7,18 @@ import { grooveTendency, worstSlot, type GrooveStats } from "../../lib/groove";
 import { formatTime, percent } from "./helpers";
 import type { WaitResult } from "./types";
 
-export function WaitSummary({ summary, onAgain, onBack }: { summary: PieceSummary; onAgain: () => void; onBack: () => void }) {
+export function WaitSummary({
+  summary,
+  fingers,
+  onAgain,
+  onBack,
+}: {
+  summary: PieceSummary;
+  /** Итог по пальцам (если плагин их сообщал). */
+  fingers?: string;
+  onAgain: () => void;
+  onBack: () => void;
+}) {
   return (
     <div className="summary-overlay">
       <div className="summary card">
@@ -23,6 +34,11 @@ export function WaitSummary({ summary, onAgain, onBack }: { summary: PieceSummar
           </div>
         </div>
         <Trouble measures={summary.troubleMeasures} />
+        {fingers && (
+          <p className="finger-line" data-finger-summary>
+            {fingers}
+          </p>
+        )}
         <div className="summary-actions">
           <button className="primary" onClick={onAgain}>
             Ещё раз

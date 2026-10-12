@@ -208,6 +208,9 @@ export function createPracticeMock() {
     },
     handlers: {
       exercise_stats: () => exStats(),
+      // Плагинов в демо нет: пальцы никто не сообщает.
+      finger_record: () => [],
+      finger_history: () => [],
       exercise_record: ({ result }: { result: Omit<(typeof exResults)[number], "at"> }) => {
         exResults.push({ ...result, at: Date.now() / 1000 });
         return exStats();

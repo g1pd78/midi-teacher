@@ -625,6 +625,11 @@ export function createMock() {
     piece_stop: () => {
       piece = null;
     },
+    piece_confirm_hits: () => undefined,
+    piece_confirm: () => undefined,
+    plugin_list: () => [],
+    plugin_storage_get: () => null,
+    plugin_storage_set: () => undefined,
     trainer_overview: () => ({
       levels,
       unlocked,

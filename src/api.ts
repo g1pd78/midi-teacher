@@ -443,6 +443,8 @@ export interface PieceConfig {
   tempo: number;
   looping: boolean;
   keyMap?: KeyMap;
+  /** Нажатие засчитывается после подтверждения плагином (`pieceConfirm`); без ответа — через 300 мс. */
+  confirmHits?: boolean;
 }
 
 export interface RhythmConfig {
@@ -522,9 +524,29 @@ export interface PieceSummary {
 export type PieceEvent =
   | { kind: "step"; index: number; noteIds: string[]; required: number[]; auto: boolean }
   | { kind: "hit"; index: number; noteIds: string[] }
-  | { kind: "wrong"; index: number; pitch: number }
+  /** `rejected` — верная клавиша, но плагин её не подтвердил (не тот палец). */
+  | { kind: "wrong"; index: number; pitch: number; rejected?: boolean }
+  /** Верная клавиша ждёт подтверждения плагином (режим `confirmHits`). */
+  | { kind: "pending"; index: number; pitch: number }
   | { kind: "finished"; summary: PieceSummary }
   | { kind: "loopPass"; pass: number; summary: PieceSummary };
+
+/** Попытка с проверкой пальцев; `confusions` — JSON `Confusion[]` из `src/plugins/fingers.ts`. */
+export interface FingerAttempt {
+  at: number;
+  correct: number;
+  total: number;
+  confusions: string;
+}
+
+/** Плагин из папки `plugins` данных приложения (см. docs/plugins.md). */
+export interface PluginManifest {
+  id: string;
+  name: string;
+  version: string;
+  api: number;
+  entry: string;
+}
 
 export interface MeasureErrors {
   measure: number;
@@ -810,6 +832,14 @@ export const api = {
   codeNetText: (url: string) => invoke<string>("code_net_text", { url }),
   pieceStart: (notes: PieceNoteIn[], config: PieceConfig) => invoke<number>("piece_start", { notes, config }),
   pieceStop: () => invoke<void>("piece_stop"),
+  pieceConfirmHits: (on: boolean) => invoke<void>("piece_confirm_hits", { on }),
+  pieceConfirm: (pitch: number, ok: boolean) => invoke<void>("piece_confirm", { pitch, ok }),
+  fingerRecord: (piece: string, correct: number, total: number, confusions: string) =>
+    invoke<FingerAttempt[]>("finger_record", { piece, correct, total, confusions }),
+  fingerHistory: (piece: string) => invoke<FingerAttempt[]>("finger_history", { piece }),
+  pluginList: () => invoke<PluginManifest[]>("plugin_list"),
+  pluginStorageGet: (id: string) => invoke<string | null>("plugin_storage_get", { id }),
+  pluginStorageSet: (id: string, value: string) => invoke<void>("plugin_storage_set", { id, value }),
   rhythmStart: (notes: PieceNoteIn[], beats: { ms: number; accent: boolean }[], config: RhythmConfig) =>
     invoke<void>("rhythm_start", { notes, beats, config }),
   rhythmStop: () => invoke<void>("rhythm_stop"),

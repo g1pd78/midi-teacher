@@ -14,6 +14,8 @@ export interface PalmHit {
   /** Палец сыгранной ноты; null — мимо (MIDI не знает, каким пальцем нажата клавиша). */
   finger: number | null;
   ok: boolean;
+  /** Нажато не тем пальцем (сообщил плагин): `finger` — каким. */
+  wrongFinger?: boolean;
 }
 
 const uniq = (xs: number[]) => [...new Set(xs)].sort((a, b) => a - b);

@@ -1,0 +1,7 @@
+{
+  "id": "echo",
+  "name": "Эхо",
+  "version": "1.0",
+  "api": 1,
+  "entry": "plugin.js"
+}

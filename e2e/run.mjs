@@ -10,7 +10,7 @@
 // Используется голый протокол W3C WebDriver поверх fetch — без WebdriverIO.
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1782,6 +1782,7 @@ try {
   const palmHit = await waitFor("вспышка пальца", () => js("return document.querySelector('[data-palm-last]')?.dataset.palmLast ?? '';"), 3000);
   await invoke("simulate_midi", { device: "E2E", bytes: [0x80, 64, 0] });
   if (!palmHit.endsWith(":ok")) throw new Error(`ладонь: ${palmHit}`);
+  if (await js("return !!document.querySelector('.plugin-overlays');")) throw new Error("без плагинов в пьесе есть окно плагина");
   ok(`ладони: палец ${palmNext} правой руки, нажатие — вспышка пальца ${palmHit.split(":")[1]} (${palmHit.split(":")[0]})`);
   // Подсветка клавиш (без платы — по последнему кадру ядра): следующая нота правой руки горит голубым (1).
   const framePairs = async () => {
@@ -1842,6 +1843,7 @@ try {
   await waitFor("вкладка настроек", () => click("Настройки"));
   const build = await waitFor("номер сборки", () => js("return document.querySelector('[data-about]')?.dataset.build ?? '';"));
   if (build === "dev" || build.length < 7) throw new Error(`номер сборки: ${build}`);
+  if (await js("return !!document.querySelector('[data-plugins], [data-plugin-section]');")) throw new Error("без плагинов в настройках есть раздел плагинов");
 
   // Подсветка без провода: статус радио от платы (без платы — имитация сообщения от неё).
   // F0 7D 4D 54 20 <версия> <связь> <связка> <−дБм> <потери> F7; статус живёт 3 секунды — повторяем, пока ждём.
@@ -1892,6 +1894,83 @@ try {
     rmSync(p);
   }
   ok(`сборка ${build.slice(0, 7)}; резервная копия: настройки, прогресс и ${backupInfo.songs} трека — сохранена и восстановлена`);
+
+  // --- Этап «Я»: плагины. Тестовый плагин «Эхо» сообщает пальцы по аппликатуре (верно / неверно / молчит) ---
+  console.log("Сквозной тест: плагины");
+  const pluginDir = join(profile, "data", "com.g1pd78.miditeacher", "plugins", "echo");
+  cpSync(join(root, "e2e", "fixtures", "plugins", "echo"), pluginDir, { recursive: true });
+  await js("location.reload();");
+  await waitFor("главный экран", () => js("return !!document.querySelector('.home');"));
+  await waitFor("плагин загрузился", () => js("return !!window.__echo;"), 10000);
+  await waitFor("вкладка настроек", () => click("Настройки"));
+  const pluginCard = await waitFor("раздел плагина и список плагинов", () =>
+    js("return document.querySelector('[data-plugin-section=echo] [data-echo-settings]') && document.querySelector('[data-plugins]')?.textContent;"),
+  );
+  if (!pluginCard.includes("Эхо 1.0") || pluginCard.includes("не загрузился")) throw new Error(`плагины: ${pluginCard}`);
+  const stored = JSON.parse(readFileSync(join(pluginDir, "storage.json"), "utf8"));
+  if (stored.activated !== 1) throw new Error(`настройки плагина: ${JSON.stringify(stored)}`);
+  ok("плагин из папки plugins: раздел в настройках, строка в списке, свои настройки в storage.json");
+
+  const echoMode = (m) => js("window.__echo.mode = arguments[0];", [m]);
+  await waitFor("вкладка пьес", () => click("Пьесы"));
+  await waitFor("карточка «Оды к радости»", () =>
+    js("const b = [...document.querySelectorAll('.piece-card')].find((b) => b.textContent.includes('Ода к радости')); if (!b) return false; b.click(); return true;"),
+  );
+  await waitFor("ноты пьесы", () => js("return !!document.querySelector('.score-page svg g.note');"), 30000);
+  await waitFor("«Свободно»", () => click("Свободно"));
+  await waitFor("кнопка «Правая»", () => click("Правая"));
+  await waitFor("окно плагина в пьесе", () => js("return !!document.querySelector('.plugin-overlays [data-echo-overlay]');"));
+  await waitFor("переключатель «Ладони»", () =>
+    js("const l = [...document.querySelectorAll('label.toggle')].find((l) => l.textContent.trim() === 'Ладони'); if (!l) return false; const i = l.querySelector('input'); if (!i.checked) i.click(); return true;"),
+  );
+  await waitFor("поле «с такта»", () => setInput(".loop-fields input", 0, 2));
+  await waitFor("поле «по такт»", () => setInput(".loop-fields input", 1, 2));
+  await waitFor("шаг цикла", async () => (await pitches()) === "67");
+  // Круг такта 2: первая нота — не тем пальцем, остальные верно.
+  for (const [i, note] of [67, 65, 64, 62].entries()) {
+    await echoMode(i === 0 ? "wrong" : "right");
+    const step = await stepNo();
+    await waitFor(`нота ${note}`, async () => (await pitches()) === String(note), 5000);
+    await press(note);
+    await waitFor("следующий шаг", async () => (await stepNo()) !== step, 5000);
+    if (i === 0) {
+      const last = await waitFor("ладонь: не тот палец", async () => {
+        const v = await js("return document.querySelector('[data-palm-last]')?.dataset.palmLast ?? '';");
+        return v.endsWith(":finger") ? v : false;
+      }, 3000);
+      await waitFor("жёлтая нота на стане", () => js("return !!document.querySelector('g.note.mark-finger');"), 3000);
+      ok(`не тот палец: отметка на ладони (${last}) и жёлтая нота на стане`);
+    }
+  }
+  const fingerToast = await waitFor("итог круга с пальцами", () => js("const t = document.querySelector('.toast')?.textContent ?? ''; return t.includes('Пальцы') ? t : false;"), 5000);
+  if (!/Пальцы: 75% верно, чаще всего \d вместо \d — такт 2/.test(fingerToast)) throw new Error(`итог круга: ${fingerToast}`);
+  ok(`итог круга: «${fingerToast}»`);
+
+  // «Пальцы обязательны»: не тот палец — шаг стоит; верный — идёт; плагин молчит — идёт через 300 мс.
+  await js("window.__echo.host.setConfirmHits(true);");
+  await waitFor("начало круга", async () => (await pitches()) === "67", 5000);
+  await echoMode("wrong");
+  const held = await stepNo();
+  await press(67);
+  await sleep(900);
+  if ((await stepNo()) !== held || (await pitches()) !== "67") throw new Error("не тот палец, а шаг продвинулся");
+  await echoMode("right");
+  await press(67);
+  await waitFor("верный палец — шаг дальше", async () => (await pitches()) === "65", 3000);
+  await echoMode("silent");
+  await press(65);
+  await waitFor("плагин молчит — шаг дальше по тайм-ауту", async () => (await pitches()) === "64", 3000);
+  await js("window.__echo.host.setConfirmHits(false);");
+  ok("пальцы обязательны: неверный палец держит шаг, верный и молчание плагина — пропускают");
+  await echoMode("right");
+  await escape(); // первый Esc снимает цикл
+  await waitFor("цикл снят", () => js("return document.querySelectorAll('.loop-rect').length === 0;"));
+  await escape();
+  await waitFor("список пьес", () => js("return !!document.querySelector('.piece-card');"));
+  await waitFor("вкладка «Прогресс»", () => click("Прогресс"));
+  const fingerDays = await waitFor("пальцы по дням", () => js("return document.querySelector('[data-finger-days]')?.textContent ?? false;"), 10000);
+  if (!/Пальцы: \d\d\.\d\d — \d+%/.test(fingerDays)) throw new Error(`прогресс пальцев: ${fingerDays}`);
+  ok(`«Прогресс»: ${fingerDays}`);
 
   console.log("Готово: все проверки пройдены");
 } catch (e) {

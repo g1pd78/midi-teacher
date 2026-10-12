@@ -103,9 +103,28 @@ pub fn mime(path: &str) -> &'static str {
     }
 }
 
+/// `%D0%AD` → байты UTF-8; неверная запись — `None`.
+fn percent_decode(s: &str) -> Option<String> {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' {
+            let hex = std::str::from_utf8(b.get(i + 1..i + 3)?).ok()?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
 /// Путь `/<id>/<файл>` протокола → файл в папке плагина.
 pub fn resolve(dir: &Path, uri_path: &str) -> Option<PathBuf> {
-    let path = uri_path.trim_start_matches('/');
+    let path = percent_decode(uri_path)?;
+    let path = path.trim_start_matches('/');
     let (id, rel) = path.split_once('/')?;
     (safe_id(id) && safe_rel(rel)).then(|| dir.join(id).join(rel))
 }
@@ -211,6 +230,12 @@ mod tests {
         assert_eq!(resolve(d, "/echo/../x"), None);
         assert_eq!(resolve(d, "/../echo/x"), None);
         assert_eq!(resolve(d, "/echo"), None);
+        assert_eq!(
+            resolve(d, "/echo/%D0%BC%D0%BE%D0%B4%D0%B5%D0%BB%D1%8C.task"),
+            Some(PathBuf::from("/p/echo/модель.task"))
+        );
+        assert_eq!(resolve(d, "/echo/%2E%2E/x"), None);
+        assert_eq!(resolve(d, "/echo/%zz"), None);
         assert_eq!(mime("a.wasm"), "application/wasm");
         assert_eq!(mime("plugin.js"), "text/javascript");
         assert_eq!(mime("model.task"), "application/octet-stream");

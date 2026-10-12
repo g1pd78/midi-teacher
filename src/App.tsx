@@ -7,6 +7,7 @@ import { Home } from "./screens/Home";
 import type { ExInstrument } from "./screens/Exercises";
 import type { TrainerSection } from "./screens/Trainers";
 import { Wizard } from "./screens/Wizard";
+import { loadPlugins } from "./plugins/loader";
 
 // Разделы грузятся отдельно: при запуске — только главная, остальное подгружается в фоне сразу после.
 const screens = {
@@ -78,6 +79,10 @@ export function App() {
   useEffect(() => {
     init().catch((e) => setError(String(e)));
   }, [init]);
+  // Плагины из папки plugins данных приложения: нет плагинов — нет и следов в интерфейсе.
+  useEffect(() => {
+    if (ready) void loadPlugins();
+  }, [ready]);
   // Когда главная показана — подгрузить остальные разделы, чтобы переходы были мгновенными.
   useEffect(() => {
     if (!ready) return;

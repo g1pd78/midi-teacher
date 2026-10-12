@@ -12,6 +12,7 @@ import {
 } from "../api";
 import { Notices } from "../components/Notices";
 import { LightsSection } from "./LightsSettings";
+import { PluginSettings } from "../plugins/Slots";
 import { fullName, keyLabel } from "../lib/notes";
 import { deviceColor, useApp, useMidi } from "../store";
 
@@ -41,6 +42,7 @@ export function Settings() {
           <SynthSection />
           <MonitorSection />
           <BackupSection />
+          <PluginSettings />
           <AboutSection />
         </div>
       </div>

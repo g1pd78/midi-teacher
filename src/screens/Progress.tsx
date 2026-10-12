@@ -6,6 +6,7 @@ import { RHYTHM_LEVELS, rhythmLevelPassed } from "../lib/rhythm";
 import { LEVELS, minutesByDay } from "../lib/practice";
 import { keyLabel } from "../lib/notes";
 import { useApp } from "../store";
+import { fingerByDay } from "../plugins/fingers";
 
 const DAYS = 28;
 const WEEKDAY = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
@@ -129,6 +130,28 @@ function PieceRow({ piece, onOpen }: { piece: PieceProgress; onOpen: () => void 
         </span>
       </div>
       <FragmentStrip piece={piece} />
+      <FingerLine piece={piece.id} />
+    </div>
+  );
+}
+
+/** Точность пальцев по дням — только если плагин сообщал пальцы в этой пьесе. */
+function FingerLine({ piece }: { piece: string }) {
+  const [days, setDays] = useState<{ day: string; pct: number }[]>([]);
+  useEffect(() => {
+    let alive = true;
+    api
+      .fingerHistory(piece)
+      .then((a) => alive && setDays(fingerByDay(a)))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [piece]);
+  if (!days.length) return null;
+  return (
+    <div className="muted finger-days" data-finger-days>
+      Пальцы: {days.map((d) => `${d.day} — ${d.pct}%`).join(", ")}
     </div>
   );
 }

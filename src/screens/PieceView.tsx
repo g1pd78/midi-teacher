@@ -75,6 +75,9 @@ import { Toggle } from "../components/Toggle";
 import { Palm } from "../components/Hands";
 import { handFingers, handOfMiss, type PalmHit } from "../lib/hands";
 import { GuidePanel, SuggestionBar } from "./piece/GuidePanel";
+import { FINISH_GRACE_MS, FingerTally, fingerSummaryText, type ExpectedNote } from "../plugins/fingers";
+import { publishStep, setBridge, snapshot as pluginsSnapshot, type PieceBridge } from "../plugins/registry";
+import { PluginOverlays } from "../plugins/Slots";
 import { ExerciseSummary, ExerciseWaitSummary, RhythmSummaryPanel, WaitSummary } from "./piece/Summaries";
 import {
   ACCID,
@@ -219,7 +222,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   // Последняя вспышка — для сквозных тестов (сама вспышка гаснет через 350 мс).
   const palmLast = useRef("");
   const flashPalm = useCallback((h: PalmHit) => {
-    palmLast.current = `${h.hand}:${h.finger ?? ""}:${h.ok ? "ok" : "miss"}`;
+    palmLast.current = `${h.hand}:${h.finger ?? ""}:${h.ok ? "ok" : h.wrongFinger ? "finger" : "miss"}`;
     setPalmHit(h);
     window.clearTimeout(palmTimer.current);
     palmTimer.current = window.setTimeout(() => setPalmHit(null), 350);
@@ -234,6 +237,15 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
   const loopClicks = useRef(0);
   const [toast, setToast] = useState<string | null>(null);
   const noteStates = useRef(new Map<string, NoteState>());
+  // Пальцы от плагина: сверка с аппликатурой, ноты «не тем пальцем» (жёлтые на стане) и итог попытки.
+  const fingerTally = useRef(new FingerTally());
+  const fingerWrong = useRef(new Set<string>());
+  const [fingerText, setFingerText] = useState("");
+  /** Шаг ожидания → ноты для сверки и для плагинов; обновляется на каждой отрисовке. */
+  const fingerStepRef = useRef<(noteIds: string[], index: number) => void>(() => {});
+  const fingerReportRef = useRef<PieceBridge["report"]>(() => null);
+  /** Проход закончен: чуть позже (ждём запоздавших сообщений) сохранить статистику пальцев и показать строку. */
+  const fingerDoneRef = useRef<(show: (line: string) => void) => void>(() => {});
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -596,6 +608,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
 
   const resetMarks = useCallback(() => {
     noteStates.current = new Map();
+    fingerWrong.current.clear();
     setMarksVersion((v) => v + 1);
   }, []);
 
@@ -610,7 +623,9 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     const inRange = (n: { measure: number }) => !rangeFrom || (n.measure >= rangeFrom && n.measure <= rangeTo);
     const selected = [...sc.notes.filter(inRange).map(toIn), ...(accompany ? accompAll.filter(inRange) : [])];
     setWaitResult(null);
-    void api.pieceStart(selected, { hands, accompany, tempo, looping: !!rangeFrom, keyMap });
+    fingerTally.current.reset();
+    setFingerText("");
+    void api.pieceStart(selected, { hands, accompany, tempo, looping: !!rangeFrom, keyMap, confirmHits: pluginsSnapshot().confirmHits });
   }, [notesKey, hands, accompany, tempo, rangeFrom, rangeTo, rhythmMode, ready, otherReady, run, resetMarks, accompAll, keyMap]);
 
   // При переходе в режим ритма — остановить ожидание; при выходе — остановить ритм.
@@ -814,20 +829,29 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         setCurrent({ index: e.index, noteIds: e.noteIds, required: e.required });
         setHits(new Set());
         if (e.index === 0) resetMarks();
+        fingerStepRef.current(e.noteIds, e.index);
       } else if (e.kind === "hit") {
         setHits((h) => new Set([...h, ...e.noteIds]));
         for (const id of e.noteIds) noteStates.current.set(id, "hit");
         palmHitRef.current(e.noteIds);
       } else if (e.kind === "wrong") {
-        flashWrong(e.pitch);
+        if (e.rejected) {
+          // Не тот палец (режим «пальцы обязательны»): нота снова ждёт, ладонь уже отмечена жёлтым.
+          const again = fingerTally.current.expected().find((n) => n.pitch === e.pitch);
+          if (again) fingerTally.current.retry(again.id);
+          flashKey(e.pitch);
+        } else flashWrong(e.pitch);
       } else if (e.kind === "finished") {
         setCurrent(null);
+        publishStep(null);
+        fingerDoneRef.current(setFingerText);
         setWaitSummary(e.summary);
         exWaitRef.current(e.summary);
         passRef.current(waitAccuracy(e.summary.requiredNotes, e.summary.errors), e.summary.durationMs, e.summary.troubleMeasures);
       } else if (e.kind === "loopPass") {
-        if (!guidedRef.current)
-          setToast(`Круг ${e.pass}: ${e.summary.errors === 0 ? "без ошибок" : `ошибок: ${e.summary.errors}`}`);
+        const passText = `Круг ${e.pass}: ${e.summary.errors === 0 ? "без ошибок" : `ошибок: ${e.summary.errors}`}`;
+        if (!guidedRef.current) setToast(passText);
+        fingerDoneRef.current((line) => !guidedRef.current && setToast(`${passText}. ${line}`));
         passRef.current(waitAccuracy(e.summary.requiredNotes, e.summary.errors), e.summary.durationMs, e.summary.troubleMeasures);
       }
     }).then(keep);
@@ -876,9 +900,21 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
 
   function flashWrong(pitch: number) {
     palmMissRef.current(pitch);
+    flashKey(pitch);
+  }
+  function flashKey(pitch: number) {
     setWrongKey(pitch);
     setTimeout(() => setWrongKey((k) => (k === pitch ? null : k)), 600);
   }
+
+  // Связь с плагинами: сверка пальцев здесь, по аппликатуре этой пьесы.
+  useEffect(() => {
+    setBridge({ report: (r) => fingerReportRef.current(r) });
+    return () => {
+      setBridge(null);
+      publishStep(null);
+    };
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -958,7 +994,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     const root = scrollRef.current;
     if (!root) return;
     for (const el of marked.current)
-      el.classList.remove("mark-right", "mark-left", "mark-app", "mark-hit", "mark-poor", "mark-miss", "mark-select");
+      el.classList.remove("mark-right", "mark-left", "mark-app", "mark-hit", "mark-poor", "mark-miss", "mark-select", "mark-finger");
     marked.current = [];
     const mark = (id: string, cls: string) => {
       for (const el of elsOf(root, id)) {
@@ -976,6 +1012,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
       else if (st === "poor") mark(id, "mark-poor");
       else if (st === "miss") mark(id, "mark-miss");
     }
+    for (const id of fingerWrong.current) mark(id, "mark-finger");
     for (const id of cursorIds) {
       const n = noteById.get(id);
       if (!n || noteStates.current.has(id)) continue;
@@ -1249,6 +1286,36 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
     const id = ids.find((x) => fingerOf.get(x)) ?? ids[0];
     const n = id ? noteById.get(id) : undefined;
     if (n) flashPalm({ hand: n.hand, finger: fingerOf.get(id)?.finger ?? null, ok: true });
+  };
+  fingerStepRef.current = (noteIds, index) => {
+    const exp: ExpectedNote[] = [];
+    for (const id of noteIds) {
+      const n = noteById.get(id);
+      if (!n || hands === "none" || !shows(n.hand)) continue;
+      exp.push({ id, pitch: n.pitch, hand: n.hand, finger: fingerOf.get(id)?.finger ?? null, measure: n.measure });
+    }
+    fingerTally.current.setStep(exp, performance.now());
+    publishStep({ index, notes: exp.map(({ pitch, hand, finger }) => ({ pitch, hand, finger })) });
+  };
+  fingerReportRef.current = (r) => {
+    const v = fingerTally.current.judge(r, performance.now());
+    if (v && !v.ok) {
+      fingerWrong.current.add(v.note.id);
+      setMarksVersion((x) => x + 1);
+      if (showPalms) flashPalm({ hand: v.hand ?? v.note.hand, finger: v.played, ok: false, wrongFinger: true });
+    }
+    return v;
+  };
+  fingerDoneRef.current = (show) => {
+    const tally = fingerTally.current;
+    const pass = tally.endPass(performance.now());
+    const piece = practiceId;
+    window.setTimeout(() => {
+      const s = tally.summary(pass);
+      if (!s.total) return;
+      void api.fingerRecord(piece, s.correct, s.total, JSON.stringify(s.confusions)).catch(() => {});
+      show(fingerSummaryText(s));
+    }, FINISH_GRACE_MS);
   };
   palmMissRef.current = (pitch) => {
     if (!showPalms) return;
@@ -2074,6 +2141,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         )}
       </section>
       <TheoryPlaque features={theoryFeatures} />
+      <PluginOverlays />
       {trackDialog && midiInfo && source.midi && (
         <TrackDialog
           fileId={source.midi}
@@ -2090,7 +2158,7 @@ export function PieceView({ source, onBack, exercise }: { source: PieceSource; o
         />
       )}
       {/* Итоги — поверх всего экрана игры, чтобы помещались при любой высоте нот. */}
-        {waitSummary && !rhythmMode && !exercise?.waitRecord && <WaitSummary summary={waitSummary} onAgain={restart} onBack={onBack} />}
+        {waitSummary && !rhythmMode && !exercise?.waitRecord && <WaitSummary summary={waitSummary} fingers={fingerText} onAgain={restart} onBack={onBack} />}
       {waitResult && !rhythmMode && exercise && (
         <ExerciseWaitSummary
           result={waitResult}

@@ -17,19 +17,19 @@ export function Palm({ side, fingers, hit }: { side: HandSide; fingers: HandFing
   const mine = hit && hit.hand === side ? hit : null;
   return (
     <svg
-      className={`palm ${side}${mine && !mine.ok ? " miss" : ""}`}
+      className={`palm ${side}${mine && !mine.ok && !mine.wrongFinger ? " miss" : ""}`}
       viewBox="0 0 100 124"
       role="img"
       aria-label={`${side === "left" ? "Левая" : "Правая"} рука: ${fingers.next.length ? `палец ${fingers.next.join(", ")}` : "свободна"}`}
       data-palm={side}
       data-next={fingers.next.join(",")}
-      data-hit={mine ? `${mine.finger ?? ""}:${mine.ok ? "ok" : "miss"}` : ""}
+      data-hit={mine ? `${mine.finger ?? ""}:${mine.ok ? "ok" : mine.wrongFinger ? "finger" : "miss"}` : ""}
     >
       <g transform={side === "left" ? "translate(100 0) scale(-1 1)" : undefined}>
         <rect className="palm-base" x="26" y="62" width="68" height="56" rx="16" />
         {FINGERS.map((f) => {
           const cls = fingers.next.includes(f.n) ? "next" : fingers.soon.includes(f.n) ? "soon" : "";
-          const flash = mine?.ok && mine.finger === f.n ? " hit" : "";
+          const flash = mine?.finger === f.n ? (mine.ok ? " hit" : mine.wrongFinger ? " wrong" : "") : "";
           const cx = f.x;
           // Цифра — у кончика пальца, без наклона (точка кончика поворачивается вместе с пальцем).
           const a = ((f.tilt ?? 0) * Math.PI) / 180;
