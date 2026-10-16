@@ -8,6 +8,9 @@ import ode from "./ode-to-joy.musicxml?raw";
 import bereza from "./vo-pole-bereza.musicxml?raw";
 import bells from "./jingle-bells.musicxml?raw";
 import kalinka from "./kalinka.musicxml?raw";
+import seni from "./seni.musicxml?raw";
+import vSaduLi from "./v-sadu-li.musicxml?raw";
+import surok from "./surok.musicxml?raw";
 import brahms from "./brahms-lullaby.musicxml?raw";
 import oldFrench from "./old-french-song.musicxml?raw";
 import minuet from "./minuet-g-anh114.musicxml?raw";
@@ -87,6 +90,30 @@ export const BUILTIN_PIECES: BuiltinPiece[] = [
     level: "Начальный",
     description: "Ре минор, затакт, пунктирный ритм. Играется дважды, левая рука чередует ля и ре.",
     data: kalinka,
+  },
+  {
+    id: "builtin:seni",
+    title: "Ах вы, сени, мои сени",
+    composer: "Русская народная песня",
+    level: "Начальный",
+    description: "Плясовая в до мажоре: восьмые, фразы спускаются ступенями. Левая рука — бас по гармонии.",
+    data: seni,
+  },
+  {
+    id: "builtin:v-sadu-li",
+    title: "В саду ли, в огороде",
+    composer: "Русская народная песня",
+    level: "Начальный",
+    description: "До мажор, затакт восьмой, мелодия во второй октаве. Куплет дважды.",
+    data: vSaduLi,
+  },
+  {
+    id: "builtin:surok",
+    title: "Сурок",
+    composer: "Л. ван Бетховен, op. 52 №7",
+    level: "Начальный",
+    description: "Ля минор, затакт, четверти и восьмые. Песня шарманщика; левая рука чередует ля и ми.",
+    data: surok,
   },
   {
     id: "builtin:canon",
